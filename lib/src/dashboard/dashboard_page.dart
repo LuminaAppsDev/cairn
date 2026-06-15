@@ -44,7 +44,9 @@ class _DashboardPageState extends State<DashboardPage> {
       final start = end.subtract(const Duration(days: 1));
       for (final metric in HealthMetric.values) {
         if (!granted.contains(metric)) {
-          lines.add('${metric.name}: not granted');
+          const suffix = ': not granted';
+          lines.add('${metric.name}$suffix');
+          debugPrint('${metric.name}$suffix');
           continue;
         }
         final samples = await repository.readSamples(
@@ -52,10 +54,12 @@ class _DashboardPageState extends State<DashboardPage> {
           start: start,
           end: end,
         );
-        lines.add('${metric.name}: ${samples.length} sample(s)');
+        final line = '${metric.name}: ${samples.length} sample(s)';
+        lines.add(line);
+        debugPrint(line);
         if (samples.isNotEmpty) {
           final encoded = jsonEncode(mapper.toDataPoint(samples.first));
-          debugPrint('${metric.name} → $encoded');
+          debugPrint('  first → $encoded');
         }
       }
     } on Exception catch (error) {

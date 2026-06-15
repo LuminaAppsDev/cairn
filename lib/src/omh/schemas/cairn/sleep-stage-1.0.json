@@ -15,7 +15,8 @@
                 "rem",
                 "asleep_unspecified",
                 "in_bed",
-                "out_of_bed"
+                "out_of_bed",
+                "session"
             ]
         },
         "effective_time_frame": {

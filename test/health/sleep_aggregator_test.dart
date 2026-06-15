@@ -91,4 +91,24 @@ void main() {
     expect(e.awakenings, 1);
     expect(e.totalSleep, const Duration(minutes: 100)); // deep 60 + rem 40
   });
+
+  test('a session-only sleep totals the session duration', () {
+    final t = DateTime(2026, 6, 13, 23);
+    final episodes = aggregator.aggregate([
+      seg(SleepStage.session, t, 450),
+    ]);
+    expect(episodes.single.totalSleep, const Duration(minutes: 450));
+    expect(episodes.single.isMainSleep, isTrue);
+  });
+
+  test('a session overlapping its stages is not double-counted', () {
+    final t = DateTime(2026, 6, 13, 23);
+    final episodes = aggregator.aggregate([
+      seg(SleepStage.session, t, 480), // whole session
+      seg(SleepStage.deep, t.add(const Duration(minutes: 30)), 90),
+      seg(SleepStage.rem, t.add(const Duration(minutes: 180)), 60),
+    ]);
+    // Union of asleep intervals = the 480-min session, not 480 + 90 + 60.
+    expect(episodes.single.totalSleep, const Duration(minutes: 480));
+  });
 }

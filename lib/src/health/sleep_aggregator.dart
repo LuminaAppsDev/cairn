@@ -29,7 +29,8 @@ class SleepEpisode {
   /// Provenance, taken from the episode's first segment.
   final HealthSource source;
 
-  /// Total time spent asleep (sum of asleep-stage segment durations).
+  /// Total time spent asleep, as the duration of the union of asleep-stage
+  /// intervals (so an overall session is not double-counted with its stages).
   final Duration totalSleep;
 
   /// Whether this is the night's main sleep (vs a nap).
@@ -102,7 +103,6 @@ class SleepEpisodeAggregator {
   _EpisodeStats _statsFor(List<SleepSegmentSample> group) {
     final start = group.first.start;
     var end = group.first.end;
-    var asleep = Duration.zero;
     var awakenings = 0;
     final stageDurations = <SleepStage, Duration>{};
     for (final segment in group) {
@@ -110,17 +110,45 @@ class SleepEpisodeAggregator {
       final duration = segment.end.difference(segment.start);
       stageDurations[segment.stage] =
           (stageDurations[segment.stage] ?? Duration.zero) + duration;
-      if (segment.stage.isAsleep) asleep += duration;
       if (segment.stage == SleepStage.awake) awakenings++;
     }
     return _EpisodeStats(
       start: start,
       end: end,
       source: group.first.source,
-      totalSleep: asleep,
+      totalSleep: _asleepUnion(group),
       stageDurations: stageDurations,
       awakenings: awakenings,
     );
+  }
+
+  /// Total time asleep as the duration of the *union* of asleep-stage
+  /// intervals. Using the union (not a sum) means an overall session segment
+  /// that overlaps its own stage segments is not double-counted.
+  Duration _asleepUnion(List<SleepSegmentSample> group) {
+    final intervals = [
+      for (final s in group)
+        if (s.stage.isAsleep) (start: s.start, end: s.end),
+    ]..sort((a, b) => a.start.compareTo(b.start));
+
+    var total = Duration.zero;
+    DateTime? mergeStart;
+    DateTime? mergeEnd;
+    for (final interval in intervals) {
+      if (mergeEnd == null || interval.start.isAfter(mergeEnd)) {
+        if (mergeStart != null && mergeEnd != null) {
+          total += mergeEnd.difference(mergeStart);
+        }
+        mergeStart = interval.start;
+        mergeEnd = interval.end;
+      } else if (interval.end.isAfter(mergeEnd)) {
+        mergeEnd = interval.end;
+      }
+    }
+    if (mergeStart != null && mergeEnd != null) {
+      total += mergeEnd.difference(mergeStart);
+    }
+    return total;
   }
 
   DateTime _night(DateTime t) => DateTime(t.year, t.month, t.day);

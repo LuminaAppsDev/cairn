@@ -51,7 +51,12 @@ enum SleepStage {
   inBed,
 
   /// Out of bed during the sleep period (distinct from an in-bed awakening).
-  outOfBed;
+  outOfBed,
+
+  /// An overall sleep session with no per-stage breakdown (e.g. a manual
+  /// entry). Counts as time asleep, but is tracked separately from the stages
+  /// so it is never conflated with `asleepUnspecified` sub-segments.
+  session;
 
   /// The wire value emitted in the `cairn:sleep-stage` schema body.
   String get wireName => switch (this) {
@@ -62,6 +67,7 @@ enum SleepStage {
     SleepStage.asleepUnspecified => 'asleep_unspecified',
     SleepStage.inBed => 'in_bed',
     SleepStage.outOfBed => 'out_of_bed',
+    SleepStage.session => 'session',
   };
 
   /// Whether this stage counts as time asleep, for total-sleep-time
@@ -70,7 +76,8 @@ enum SleepStage {
     SleepStage.light ||
     SleepStage.deep ||
     SleepStage.rem ||
-    SleepStage.asleepUnspecified => true,
+    SleepStage.asleepUnspecified ||
+    SleepStage.session => true,
     SleepStage.awake || SleepStage.inBed || SleepStage.outOfBed => false,
   };
 }

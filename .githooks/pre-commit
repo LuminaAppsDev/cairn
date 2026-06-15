@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+#
+# Refuse to commit signing secrets, even if `git add -f` bypassed .gitignore.
+# Activated repo-wide via: git config core.hooksPath .githooks
+set -euo pipefail
+
+secrets=$(
+	git diff --cached --name-only \
+		| grep -E '(^|/)key\.properties$|\.(keystore|jks|p12|pfx)$' || true
+)
+
+if [ -n "${secrets}" ]; then
+	echo "ERROR: refusing to commit signing secrets:" >&2
+	while IFS= read -r path; do
+		echo "  - ${path}" >&2
+	done <<<"${secrets}"
+	echo "These must stay out of version control (see .gitignore)." >&2
+	echo "Move them outside the repo, or fix .gitignore, then re-stage." >&2
+	exit 1
+fi

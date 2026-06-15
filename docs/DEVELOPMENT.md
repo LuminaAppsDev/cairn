@@ -212,6 +212,15 @@ Reference: Nextcloud Developer Manual —
 
 ## 6. Before you commit
 
+**One-time setup:** activate the secret-guard hook in your clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+It refuses to commit signing secrets (`key.properties`, keystores) even if
+`git add -f` bypassed `.gitignore`.
+
 The pre-commit gate is binding — see [CLAUDE.md](../CLAUDE.md):
 
 1. Run `/review` and `/security-audit`; resolve all findings.

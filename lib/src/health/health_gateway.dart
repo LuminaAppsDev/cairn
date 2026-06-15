@@ -47,13 +47,13 @@ final class HealthPackageGateway implements HealthGateway {
 
   @override
   Future<void> requestReadAuthorization(Set<HealthMetric> metrics) async {
-    final types = metrics.expand(_typesFor).toList();
+    final types = metrics.expand(_authTypesFor).toList();
     await _health.requestAuthorization(types);
   }
 
   @override
   Future<bool?> hasReadPermission(HealthMetric metric) =>
-      _health.hasPermissions(_typesFor(metric));
+      _health.hasPermissions(_readTypesFor(metric));
 
   @override
   Future<List<HealthSample>> readSamples({
@@ -62,7 +62,7 @@ final class HealthPackageGateway implements HealthGateway {
     required DateTime end,
   }) async {
     final points = await _health.getHealthDataFromTypes(
-      types: _typesFor(metric),
+      types: _readTypesFor(metric),
       startTime: start,
       endTime: end,
     );
@@ -72,12 +72,25 @@ final class HealthPackageGateway implements HealthGateway {
         .toList();
   }
 
-  List<HealthDataType> _typesFor(HealthMetric metric) => switch (metric) {
+  List<HealthDataType> _readTypesFor(HealthMetric metric) => switch (metric) {
     HealthMetric.heartRate => const [HealthDataType.HEART_RATE],
     HealthMetric.steps => const [HealthDataType.STEPS],
     HealthMetric.weight => const [HealthDataType.WEIGHT],
     HealthMetric.activity => const [HealthDataType.WORKOUT],
     HealthMetric.sleep => _isIos ? _iosSleepTypes : _androidSleepTypes,
+  };
+
+  // Authorisation must also cover the records the plugin reads alongside a
+  // workout (distance + calories); without them the WORKOUT read fails with a
+  // SecurityException for those record types.
+  List<HealthDataType> _authTypesFor(HealthMetric metric) => switch (metric) {
+    HealthMetric.activity => const [
+      HealthDataType.WORKOUT,
+      HealthDataType.DISTANCE_DELTA,
+      HealthDataType.TOTAL_CALORIES_BURNED,
+      HealthDataType.ACTIVE_ENERGY_BURNED,
+    ],
+    _ => _readTypesFor(metric),
   };
 
   HealthSample? _toSample(HealthMetric metric, HealthDataPoint point) {
@@ -157,6 +170,11 @@ final class HealthPackageGateway implements HealthGateway {
     HealthDataType.SLEEP_AWAKE_IN_BED => SleepStage.awake,
     HealthDataType.SLEEP_OUT_OF_BED => SleepStage.outOfBed,
     HealthDataType.SLEEP_IN_BED => SleepStage.inBed,
+    // The whole-session record (Android), used when a sleep has no per-stage
+    // breakdown (e.g. a manual entry). A distinct stage so it is not conflated
+    // with SLEEP_ASLEEP sub-segments; the aggregator unions asleep intervals so
+    // a session never double-counts against its stages.
+    HealthDataType.SLEEP_SESSION => SleepStage.session,
     _ => null,
   };
 
@@ -170,6 +188,7 @@ final class HealthPackageGateway implements HealthGateway {
   ];
 
   static const List<HealthDataType> _androidSleepTypes = [
+    HealthDataType.SLEEP_SESSION,
     HealthDataType.SLEEP_ASLEEP,
     HealthDataType.SLEEP_AWAKE,
     HealthDataType.SLEEP_AWAKE_IN_BED,

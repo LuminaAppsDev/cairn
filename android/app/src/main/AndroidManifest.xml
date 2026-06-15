@@ -6,6 +6,11 @@
     <uses-permission android:name="android.permission.health.READ_WEIGHT"/>
     <uses-permission android:name="android.permission.health.READ_EXERCISE"/>
     <uses-permission android:name="android.permission.health.READ_SLEEP"/>
+    <!-- A workout read is enriched with its distance + calorie records, which
+         need their own READ grants or Health Connect denies the whole read. -->
+    <uses-permission android:name="android.permission.health.READ_DISTANCE"/>
+    <uses-permission android:name="android.permission.health.READ_TOTAL_CALORIES_BURNED"/>
+    <uses-permission android:name="android.permission.health.READ_ACTIVE_CALORIES_BURNED"/>
     <!-- Required to read step/fitness data. -->
     <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION"/>
 

@@ -27,8 +27,19 @@ All notable changes to this project are documented in this file.
 - Offline schema-validation tests against vendored OMH + IEEE 1752.1 schemas
   (Apache-2.0) via `json_schema`, plus golden and unit tests.
 - Debug-only on-device "read health now" harness on the dashboard.
+- `.githooks/pre-commit` blocks accidental commits of signing secrets
+  (`key.properties`, `*.keystore`/`*.jks`/`*.p12`/`*.pfx`), even via `git add
+  -f`; enable per clone with `git config core.hooksPath .githooks`.
 
 ### Fixed
+
+- Workouts now read (Android): authorisation also requests the distance and
+  calorie permissions the plugin reads alongside an exercise session, which
+  previously failed with a `SecurityException` and returned no activities.
+- Sleep now reads (Android): `SLEEP_SESSION` is included, so session-only
+  entries (e.g. a manual sleep with no per-stage breakdown) are captured.
+- Sleep total uses the union of asleep intervals, so an overall session segment
+  is not double-counted against its own stage segments.
 
 ### Security
 
