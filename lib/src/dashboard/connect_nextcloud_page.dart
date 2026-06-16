@@ -75,6 +75,18 @@ class _ConnectNextcloudPageState extends State<ConnectNextcloudPage> {
       _fail(error.message);
     } on FormatException catch (error) {
       _fail('Invalid host: ${error.message}');
+    } on Exception catch (error) {
+      // Fail-closed: any unexpected error must surface, never freeze the UI.
+      _fail('Could not connect: $error');
+    } finally {
+      // Last resort: if a non-Exception Error escaped (it still propagates to
+      // the zone handler), at least re-enable the UI so the button isn't stuck.
+      if (mounted && (_busy || _polling)) {
+        setState(() {
+          _busy = false;
+          _polling = false;
+        });
+      }
     }
   }
 
@@ -91,6 +103,11 @@ class _ConnectNextcloudPageState extends State<ConnectNextcloudPage> {
         }
       } on NextcloudSyncException catch (error) {
         _fail(error.message);
+        return;
+      } on Exception catch (error) {
+        // Fail-closed: e.g. a secure-storage PlatformException on the store
+        // step must show a message, not leave the screen stuck "waiting".
+        _fail('Could not complete connection: $error');
         return;
       }
       await Future<void>.delayed(_pollInterval);

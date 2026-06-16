@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:cairn/src/sync/nextcloud_auth.dart';
 import 'package:cairn/src/sync/nextcloud_credentials.dart';
@@ -58,12 +59,17 @@ final class HttpNextcloudAuth implements NextcloudAuth {
       session.pollEndpoint,
       body: {'token': session.pollToken},
     );
-    // 404 = not authorised yet; keep polling.
-    if (response.statusCode == 404) return null;
-    if (response.statusCode != 200) {
+    // The flow is complete only on a 200. Anything else means "not yet": 404
+    // is the documented pending status, and a 3xx can appear when Nextcloud
+    // sits behind a reverse proxy or in a sub-path (the POST is not auto-
+    // followed) — so keep polling rather than aborting a flow the browser
+    // will finish.
+    final code = response.statusCode;
+    if (code == 404 || (code >= 300 && code < 400)) return null;
+    if (code != 200) {
       throw NextcloudSyncException(
         'Login Flow v2 poll failed',
-        statusCode: response.statusCode,
+        statusCode: code,
       );
     }
     return _parseCredentials(response.body);
@@ -83,6 +89,16 @@ final class HttpNextcloudAuth implements NextcloudAuth {
           .timeout(_requestTimeout);
     } on TimeoutException {
       throw const NextcloudSyncException('Login Flow v2 request timed out');
+    } on http.ClientException catch (error) {
+      throw NextcloudSyncException(
+        'Login Flow v2 network error: '
+        '${error.message}',
+      );
+    } on SocketException catch (error) {
+      throw NextcloudSyncException(
+        'Login Flow v2 network error: '
+        '${error.message}',
+      );
     }
   }
 
@@ -114,11 +130,32 @@ final class HttpNextcloudAuth implements NextcloudAuth {
   }
 
   void _requireSameHttpsHost(Uri url, Uri host, String label) {
-    if (url.scheme != 'https' || url.host != host.host) {
+    if (url.scheme != 'https' || !_serverHostAllowed(url.host, host.host)) {
       throw NextcloudSyncException(
         'Login Flow v2 $label must be https on ${host.host}',
       );
     }
+  }
+
+  /// Whether the server-returned [serverHost] is acceptable for the host the
+  /// user [typedHost].
+  ///
+  /// Nextcloud generates the `login`/`poll` URLs from its configured base URL,
+  /// which can legitimately be a sub-domain of what the user typed (e.g. they
+  /// typed `example.com` and Nextcloud serves `www.example.com`). That single
+  /// direction is allowed; everything else is refused so a malicious response
+  /// cannot point the browser hand-off or the poll token at a foreign host.
+  ///
+  /// Constraints that preserve the SSRF intent:
+  /// - exact match always passes;
+  /// - the server host may be a *sub-domain* of the typed host, never a
+  ///   *parent* (a parent could be an attacker-controlled apex);
+  /// - the typed host must be multi-label, so a bare suffix like `com` cannot
+  ///   act as the base and admit `evil.com`.
+  static bool _serverHostAllowed(String serverHost, String typedHost) {
+    if (serverHost.isEmpty || typedHost.isEmpty) return false;
+    if (serverHost == typedHost) return true;
+    return typedHost.contains('.') && serverHost.endsWith('.$typedHost');
   }
 
   NextcloudCredentials _parseCredentials(String body) {

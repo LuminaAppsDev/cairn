@@ -79,6 +79,47 @@ void main() {
     expect(() => auth.begin(host), throwsA(isA<NextcloudSyncException>()));
   });
 
+  test('begin accepts a www sub-domain of the typed apex host', () async {
+    final auth = HttpNextcloudAuth(
+      client: MockClient(
+        (_) async => http.Response(
+          '{"poll":{"token":"PT","endpoint":'
+          '"https://www.cloud.example.com/poll"},'
+          '"login":"https://www.cloud.example.com/flow/abc"}',
+          200,
+        ),
+      ),
+    );
+    final result = await auth.begin(host);
+    expect(result.pollEndpoint.host, 'www.cloud.example.com');
+  });
+
+  test('begin rejects a parent domain of the typed host', () async {
+    // Server tries to redirect the poll token up to example.com when the user
+    // typed cloud.example.com — a possible attacker-controlled apex.
+    final auth = HttpNextcloudAuth(
+      client: MockClient(
+        (_) async => http.Response(
+          '{"poll":{"token":"PT","endpoint":'
+          '"https://example.com/poll"},'
+          '"login":"https://example.com/flow/abc"}',
+          200,
+        ),
+      ),
+    );
+    expect(() => auth.begin(host), throwsA(isA<NextcloudSyncException>()));
+  });
+
+  test('poll keeps polling on a 3xx redirect (reverse proxy)', () async {
+    final auth = HttpNextcloudAuth(
+      client: MockClient(
+        (_) async =>
+            http.Response('', 302, headers: {'location': '/elsewhere'}),
+      ),
+    );
+    expect(await auth.poll(session()), isNull);
+  });
+
   test('poll returns credentials on 200', () async {
     final auth = HttpNextcloudAuth(
       client: MockClient((request) async {

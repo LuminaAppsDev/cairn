@@ -63,6 +63,14 @@ All notable changes to this project are documented in this file.
   entries (e.g. a manual sleep with no per-stage breakdown) are captured.
 - Sleep total uses the union of asleep intervals, so an overall session segment
   is not double-counted against its own stage segments.
+- Nextcloud connect no longer hangs on "Waiting for browser authorisation…": a
+  secure-storage `PlatformException` on the credential write (common on
+  emulators with a reset Keystore) used to escape the poll loop silently. The
+  connect/poll paths are now fail-closed (any error surfaces a message), the
+  token store recovers from a corrupt entry (delete + retry) and otherwise
+  raises a typed error, and a guarded zone in `main.dart` catches stray async
+  errors. The poll also treats `3xx` as "still pending" so reverse-proxy /
+  sub-path installs complete instead of aborting.
 
 ### Security
 
@@ -81,6 +89,10 @@ All notable changes to this project are documented in this file.
   never written into the synced tree or the push journal.
 - The local-file walk ignores symlinks and refuses paths resolving outside the
   cache; the remote conflict scan is depth-capped against a hostile server.
+- The server-returned Login Flow v2 URLs may now be the typed host or a
+  sub-domain of it, but never a parent or foreign domain, and the typed host
+  must be multi-label — so the relaxation for `apex`→`www` deployments cannot
+  be abused to redirect the poll token to an attacker-controlled host.
 
 ### Changed
 
