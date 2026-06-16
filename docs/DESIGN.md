@@ -300,7 +300,7 @@ because the on-disk format is the one genuinely expensive thing to change
 - **Exit:** each metric reads on a real device; emitted datapoints validate
   against the OMH / IEEE 1752.1 schema library in tests (§13).
 
-### Phase 2 — Local persistence (sharded JSONL + manifest) 🔭
+### Phase 2 — Local persistence (sharded JSONL + manifest) ✅
 
 - **Goal:** durable, append-only local cache in the documented file layout.
 - **Layers:** `storage/` (implement `OmhFileStore`: one append-only `.jsonl`
@@ -310,7 +310,7 @@ because the on-disk format is the one genuinely expensive thing to change
 - **Exit:** write/read round-trips are stable; manifest anchors drive the
   incremental read window; appends are crash-safe.
 
-### Phase 3 — Nextcloud connection + sync ⬜
+### Phase 3 — Nextcloud connection + sync 🔭
 
 - **Goal:** the core value loop — health data lands in the user's own Nextcloud.
 - **Layers:** `sync/` (`NextcloudAuth` Login Flow v2 → `SecureTokenStore` app

@@ -26,7 +26,16 @@ All notable changes to this project are documented in this file.
   (IEEE 1752.1 `omh:physical-activity:1.0`); local-offset ISO-8601 timestamps.
 - Offline schema-validation tests against vendored OMH + IEEE 1752.1 schemas
   (Apache-2.0) via `json_schema`, plus golden and unit tests.
-- Debug-only on-device "read health now" harness on the dashboard.
+- **Phase 2 — local persistence.** `JsonlOmhFileStore` writes append-only
+  JSON-Lines shards (one file per metric per day) and an atomically-rewritten
+  `manifest.json` (`format_version` + per-metric sync anchors, §5.3–5.4); reads
+  skip malformed lines and offload large parses to an isolate. A
+  `HealthIngestService` reads each metric over the anchor-driven `[lastSync,
+  now]` window, maps to OMH, groups by local day, persists, and advances the
+  anchor — replacing the fixed look-back. `HealthMetric.slug` and
+  `OmhFileStore.setSyncAnchor` added; the debug harness now persists then reads
+  back from disk.
+- Debug-only on-device "read & persist" harness on the dashboard.
 - `.githooks/pre-commit` blocks accidental commits of signing secrets
   (`key.properties`, `*.keystore`/`*.jks`/`*.p12`/`*.pfx`), even via `git add
   -f`; enable per clone with `git config core.hooksPath .githooks`.

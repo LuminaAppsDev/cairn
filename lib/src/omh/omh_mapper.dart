@@ -1,5 +1,6 @@
 import 'package:cairn/src/health/health_metric.dart';
 import 'package:cairn/src/health/health_sample.dart';
+import 'package:cairn/src/health/sleep_aggregator.dart';
 
 /// Maps raw [HealthSample]s to Open mHealth / IEEE 1752.1 datapoints.
 ///
@@ -10,6 +11,10 @@ import 'package:cairn/src/health/health_sample.dart';
 abstract interface class OmhMapper {
   /// Converts [sample] into an Open mHealth datapoint object.
   Map<String, Object?> toDataPoint(HealthSample sample);
+
+  /// Maps an aggregated nightly [episode] to an `omh:sleep-episode` datapoint —
+  /// the additive standard rollup over the raw `cairn:sleep-stage` segments.
+  Map<String, Object?> sleepEpisodeToDataPoint(SleepEpisode episode);
 
   /// The schema id of the **per-sample** datapoint Cairn emits for [metric]
   /// (e.g. `omh:heart-rate`). Measures without a standard schema use the

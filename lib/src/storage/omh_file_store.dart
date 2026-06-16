@@ -28,4 +28,9 @@ abstract interface class OmhFileStore {
   /// Returns the last-synced anchor recorded in `manifest.json` for [metric],
   /// or `null` if it has never been synced (DESIGN.md §5.4).
   Future<DateTime?> lastSyncAnchor(HealthMetric metric);
+
+  /// Records [anchor] as the last-synced instant for [metric] in
+  /// `manifest.json` (the high-watermark that drives the next incremental read
+  /// window). Persisted atomically.
+  Future<void> setSyncAnchor(HealthMetric metric, DateTime anchor);
 }

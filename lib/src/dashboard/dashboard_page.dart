@@ -1,8 +1,7 @@
-import 'dart:convert';
-
 import 'package:cairn/src/health/health_metric.dart';
 import 'package:cairn/src/health/health_package_repository.dart';
-import 'package:cairn/src/omh/default_omh_mapper.dart';
+import 'package:cairn/src/storage/health_ingest_service.dart';
+import 'package:cairn/src/storage/jsonl_omh_file_store.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
@@ -10,8 +9,8 @@ import 'package:flutter/material.dart';
 ///
 /// In v1 this reads the local Open mHealth cache and renders the in-app
 /// dashboard (DESIGN.md §9, read/display path A). For now it is a placeholder
-/// that — in debug builds only — exposes a manual "read health now" harness for
-/// the Phase 1 on-device exit check (DESIGN.md §15). It is not product UI.
+/// that — in debug builds only — exposes a manual "read & persist" harness for
+/// the Phase 1/2 on-device exit checks (DESIGN.md §15). It is not product UI.
 class DashboardPage extends StatefulWidget {
   /// Creates the dashboard page.
   const DashboardPage({super.key});
@@ -24,42 +23,44 @@ class _DashboardPageState extends State<DashboardPage> {
   String _status = '';
   bool _running = false;
 
-  Future<void> _readHealthNow() async {
-    // Debug-only: never read or log health data in profile/release builds.
+  Future<void> _readAndPersist() async {
+    // Debug-only: never read, persist, or log health data in release builds.
     assert(kDebugMode, 'read-health harness is debug-only');
     if (!kDebugMode) return;
     setState(() {
       _running = true;
-      _status = 'Requesting authorisation…';
+      _status = 'Authorising…';
     });
 
-    final repository = HealthPackageRepository();
-    final mapper = DefaultOmhMapper();
     final lines = <String>[];
     try {
+      final repository = HealthPackageRepository();
       final granted = await repository.requestAuthorization(
         HealthMetric.values.toSet(),
       );
-      final end = DateTime.now();
-      final start = end.subtract(const Duration(days: 1));
-      for (final metric in HealthMetric.values) {
-        if (!granted.contains(metric)) {
-          const suffix = ': not granted';
-          lines.add('${metric.name}$suffix');
-          debugPrint('${metric.name}$suffix');
-          continue;
-        }
-        final samples = await repository.readSamples(
-          metric: metric,
-          start: start,
-          end: end,
+      final store = await JsonlOmhFileStore.appDocuments();
+      final ingest = HealthIngestService(repository: repository, store: store);
+      final results = await ingest.ingest(granted);
+
+      final now = DateTime.now();
+      final from = now.subtract(const Duration(days: 31));
+      for (final result in results) {
+        final onDisk = await store.readRange(
+          metric: result.metric,
+          from: from,
+          to: now,
         );
-        final line = '${metric.name}: ${samples.length} sample(s)';
+        final line =
+            '${result.metric.name}: +${result.dataPointCount} written, '
+            '${onDisk.length} on disk';
         lines.add(line);
         debugPrint(line);
-        if (samples.isNotEmpty) {
-          final encoded = jsonEncode(mapper.toDataPoint(samples.first));
-          debugPrint('  first → $encoded');
+      }
+      for (final metric in HealthMetric.values) {
+        if (!granted.contains(metric)) {
+          final line = '${metric.name}: not granted';
+          lines.add(line);
+          debugPrint(line);
         }
       }
     } on Exception catch (error) {
@@ -85,8 +86,8 @@ class _DashboardPageState extends State<DashboardPage> {
             if (kDebugMode) ...[
               const SizedBox(height: 16),
               FilledButton(
-                onPressed: _running ? null : _readHealthNow,
-                child: const Text('Read health now (debug)'),
+                onPressed: _running ? null : _readAndPersist,
+                child: const Text('Read & persist (debug)'),
               ),
               const SizedBox(height: 16),
               Padding(

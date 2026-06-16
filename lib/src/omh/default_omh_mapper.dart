@@ -40,8 +40,7 @@ final class DefaultOmhMapper implements OmhMapper {
     final SleepSegmentSample s => _sleepStage(s),
   };
 
-  /// Maps an aggregated nightly [episode] to an `omh:sleep-episode` datapoint
-  /// (the additive standard rollup over the raw `cairn:sleep-stage` segments).
+  @override
   Map<String, Object?> sleepEpisodeToDataPoint(SleepEpisode episode) {
     final body = <String, Object?>{
       'effective_time_frame': _intervalFrame(episode.start, episode.end),
