@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:cairn/src/sync/http_nextcloud_auth.dart';
 import 'package:cairn/src/sync/nextcloud_auth.dart';
 import 'package:cairn/src/sync/nextcloud_sync_target.dart';
@@ -108,6 +110,24 @@ void main() {
       ),
     );
     expect(() => auth.begin(host), throwsA(isA<NextcloudSyncException>()));
+  });
+
+  test('poll wraps a network/DNS failure as a retryable error', () async {
+    final auth = HttpNextcloudAuth(
+      client: MockClient(
+        (_) async => throw const SocketException('Failed host lookup'),
+      ),
+    );
+    await expectLater(
+      auth.poll(session()),
+      throwsA(
+        isA<NextcloudSyncException>().having(
+          (e) => e.retryable,
+          'retryable',
+          isTrue,
+        ),
+      ),
+    );
   });
 
   test('poll keeps polling on a 3xx redirect (reverse proxy)', () async {

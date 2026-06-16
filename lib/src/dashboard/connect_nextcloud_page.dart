@@ -102,8 +102,16 @@ class _ConnectNextcloudPageState extends State<ConnectNextcloudPage> {
           return;
         }
       } on NextcloudSyncException catch (error) {
-        _fail(error.message);
-        return;
+        if (!error.retryable) {
+          _fail(error.message);
+          return;
+        }
+        // Transient network/DNS/timeout blip (common on emulators) — show the
+        // cause but keep polling until the deadline rather than aborting.
+        if (mounted) {
+          final cause = error.message;
+          setState(() => _status = 'Network issue, retrying… ($cause)');
+        }
       } on Exception catch (error) {
         // Fail-closed: e.g. a secure-storage PlatformException on the store
         // step must show a message, not leave the screen stuck "waiting".

@@ -88,16 +88,19 @@ final class HttpNextcloudAuth implements NextcloudAuth {
           )
           .timeout(_requestTimeout);
     } on TimeoutException {
-      throw const NextcloudSyncException('Login Flow v2 request timed out');
+      throw const NextcloudSyncException(
+        'Login Flow v2 request timed out',
+        retryable: true,
+      );
     } on http.ClientException catch (error) {
       throw NextcloudSyncException(
-        'Login Flow v2 network error: '
-        '${error.message}',
+        'network error: ${error.message}',
+        retryable: true,
       );
     } on SocketException catch (error) {
       throw NextcloudSyncException(
-        'Login Flow v2 network error: '
-        '${error.message}',
+        'network error: ${error.message}',
+        retryable: true,
       );
     }
   }

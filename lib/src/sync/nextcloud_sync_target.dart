@@ -41,14 +41,22 @@ class RemoteResource {
 /// Base class for failures talking to the Nextcloud WebDAV endpoint.
 class NextcloudSyncException implements Exception {
   /// Creates a sync exception with a human-readable [message] and optional
-  /// HTTP [statusCode].
-  const NextcloudSyncException(this.message, {this.statusCode});
+  /// HTTP [statusCode]. Set [retryable] for transient failures (a timeout or
+  /// network/DNS blip) that a polling caller may retry rather than abort on.
+  const NextcloudSyncException(
+    this.message, {
+    this.statusCode,
+    this.retryable = false,
+  });
 
   /// Description of what failed.
   final String message;
 
   /// The offending HTTP status code, if the failure was an HTTP response.
   final int? statusCode;
+
+  /// Whether the failure is transient and worth retrying (network/DNS/timeout).
+  final bool retryable;
 
   @override
   String toString() => statusCode == null

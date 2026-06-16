@@ -70,7 +70,8 @@ All notable changes to this project are documented in this file.
   token store recovers from a corrupt entry (delete + retry) and otherwise
   raises a typed error, and a guarded zone in `main.dart` catches stray async
   errors. The poll also treats `3xx` as "still pending" so reverse-proxy /
-  sub-path installs complete instead of aborting.
+  sub-path installs complete instead of aborting, and rides out transient
+  network/DNS blips (showing "retrying…") rather than failing on the first one.
 
 ### Security
 
