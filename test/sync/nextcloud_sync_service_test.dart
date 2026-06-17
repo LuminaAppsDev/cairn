@@ -133,6 +133,26 @@ void main() {
     expect(report.skipped, 1);
   });
 
+  test('profile.json is always pushed (additive synced file)', () async {
+    writeFile('manifest.json', '{}');
+    writeFile('profile.json', '{"height":{"value":178}}');
+    final first = await service().push();
+    expect(first.pushed, contains('Cairn/profile.json'));
+
+    // Re-edit to the same byte length; it must still re-push (rewritten in
+    // place, like the manifest), not be size-skipped.
+    writeFile('profile.json', '{"height":{"value":179}}');
+    final second = await service().push();
+    expect(second.pushed, contains('Cairn/profile.json'));
+  });
+
+  test('a non-allowlisted file is not pushed', () async {
+    writeFile('manifest.json', '{}');
+    writeFile('notes.txt', 'scratch');
+    final report = await service().push();
+    expect(report.pushed, isNot(contains('Cairn/notes.txt')));
+  });
+
   test('journal persists pushed state across runs', () async {
     writeFile('manifest.json', '{}');
     writeFile('steps/2026/2026-06-14.jsonl', '{"a":1}\n');

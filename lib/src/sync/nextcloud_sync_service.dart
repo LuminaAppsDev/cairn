@@ -122,10 +122,12 @@ final class NextcloudSyncService {
     );
   }
 
-  /// `manifest.json` is rewritten in place (size-stable) so it is always
-  /// pushed; an append-only shard is pushed only when its size grew.
+  /// `manifest.json` and `profile.json` are rewritten in place (size may not
+  /// change on an edit) so they are always pushed; an append-only shard is
+  /// pushed only when its size grew.
   bool _needsPush(String remotePath, int size, SyncJournal journal) {
-    if (p.basename(remotePath) == 'manifest.json') return true;
+    final name = p.basename(remotePath);
+    if (name == 'manifest.json' || name == 'profile.json') return true;
     final state = journal.files[remotePath];
     return state == null || state.size != size;
   }
@@ -138,7 +140,9 @@ final class NextcloudSyncService {
     for (final entity in entities) {
       if (entity is! File) continue;
       final name = p.basename(entity.path);
-      if (name.endsWith('.jsonl') || name == 'manifest.json') {
+      if (name.endsWith('.jsonl') ||
+          name == 'manifest.json' ||
+          name == 'profile.json') {
         yield entity;
       }
     }

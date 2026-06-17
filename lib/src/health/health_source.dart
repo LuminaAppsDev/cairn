@@ -70,6 +70,20 @@ enum SleepStage {
     SleepStage.session => 'session',
   };
 
+  /// Parses a [wireName] back into a stage, or `null` for an unknown value
+  /// (e.g. a stage added by a newer format version). Inverse of [wireName].
+  static SleepStage? fromWire(String wire) => switch (wire) {
+    'awake' => SleepStage.awake,
+    'light' => SleepStage.light,
+    'deep' => SleepStage.deep,
+    'rem' => SleepStage.rem,
+    'asleep_unspecified' => SleepStage.asleepUnspecified,
+    'in_bed' => SleepStage.inBed,
+    'out_of_bed' => SleepStage.outOfBed,
+    'session' => SleepStage.session,
+    _ => null,
+  };
+
   /// Whether this stage counts as time asleep, for total-sleep-time
   /// aggregation.
   bool get isAsleep => switch (this) {

@@ -46,10 +46,21 @@ All notable changes to this project are documented in this file.
   surfaced, never merged. `NextcloudSyncCoordinator` ties connect → sync
   together. Offline appends accumulate and upload on reconnect; remote→local
   pull-merge is deferred to the multi-device phase (§8).
+- **Phase 4 (slice 1) — in-app dashboard, sleep deep-dive, BMI.** A read path
+  over the local OMH cache (`lib/src/query/`): pure parsers map cache datapoints
+  back to typed readings (timezone-correct via `.toLocal()`), and a
+  `HealthQueryService` answers latest-weight/heart-rate, today's steps, and
+  per-night sleep. A **sleep deep-dive** (the priority screen) renders a
+  hypnogram, a stage-duration donut, headline tiles, and a multi-night trend
+  (`fl_chart`), reconciling stage segments + the stored episode and
+  source-deduplicating. A **dynamic BMI** is computed from the latest weight and
+  a synced `profile.json` (height + date of birth, WHO categories, in-norm
+  indicator); the height/DoB prompt is a non-blocking card. A Material 3
+  navigation shell (Home / Sleep / Settings) replaces the debug dashboard, with
+  Nextcloud connection + manual sync + the profile editor in Settings (raw
+  ingest/sync harness kept behind `kDebugMode`).
 - Guided "Connect your Nextcloud" screen (host → Login Flow v2 in the system
-  browser via `url_launcher` → poll) and a debug "Sync now" + connection-health
-  section on the dashboard.
-- Debug-only on-device "read & persist" harness on the dashboard.
+  browser via `url_launcher` → poll), now in Settings.
 - `.githooks/pre-commit` blocks accidental commits of signing secrets
   (`key.properties`, `*.keystore`/`*.jks`/`*.p12`/`*.pfx`), even via `git add
   -f`; enable per clone with `git config core.hooksPath .githooks`.

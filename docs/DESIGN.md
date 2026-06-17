@@ -277,7 +277,7 @@ so the **format-affecting work (OMH schema + file layout) is stabilized early**,
 because the on-disk format is the one genuinely expensive thing to change
 (§5.4). Phases 1–6 constitute v1; Phase 7 is v1.5; Phase 8 is v2.
 
-> Status legend: ✅ done · 🔭 next · ⬜ planned.
+> Status legend: ✅ done · 🚧 in progress · 🔭 next · ⬜ planned.
 
 ### Phase 0 — Foundation ✅
 
@@ -326,13 +326,20 @@ because the on-disk format is the one genuinely expensive thing to change
   pull-merge** (multi-device convergence) and per-device anchor keying are
   deferred to the change-token / multi-device work in **Phase 8**.
 
-### Phase 4 — In-app dashboard + onboarding 🔭
+### Phase 4 — In-app dashboard + onboarding 🚧
 
 - **Goal:** a usable read path and a guided first run.
-- **Layers:** `dashboard/` (render from the local OMH cache — read path A, §9);
-  data-source onboarding (vendor → Health Connect guidance — §8) and the
-  backup nudge (§10.2).
+- **Layers:** `query/` (read path A over the local OMH cache — §9),
+  `sleep/`/`home/`/`settings/` screens (`fl_chart`), `profile/` (synced BMI
+  profile); data-source onboarding (vendor → Health Connect guidance — §8) and
+  the backup nudge (§10.2).
 - **Exit:** first-run flow complete; dashboard reflects synced data.
+- **Slice 1 ✅:** navigation shell + overview Home + rich sleep-stage deep-dive
+  (hypnogram/stages/trend) + dynamic BMI from a synced `profile.json` + Settings
+  (connection, manual sync, profile editor). Reads are timezone-correct and
+  source-deduplicated.
+- **Remaining:** per-category screens (HR / steps / weight / activity charts)
+  and the **OS-specific setup guide** (Android + iOS) with the backup nudge.
 
 ### Phase 5 — Background sync ⬜
 

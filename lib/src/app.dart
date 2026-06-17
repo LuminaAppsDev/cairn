@@ -1,4 +1,4 @@
-import 'package:cairn/src/dashboard/dashboard_page.dart';
+import 'package:cairn/src/shell/app_shell.dart';
 import 'package:flutter/material.dart';
 
 /// Root widget for the Cairn application.
@@ -10,8 +10,8 @@ class CairnApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Cairn',
-      theme: ThemeData(colorSchemeSeed: Colors.teal),
-      home: const DashboardPage(),
+      theme: ThemeData(colorSchemeSeed: Colors.teal, useMaterial3: true),
+      home: const AppShell(),
     );
   }
 }

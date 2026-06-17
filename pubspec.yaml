@@ -12,6 +12,8 @@ environment:
 # Kept alphabetical to satisfy the `sort_pub_dependencies` lint.
 dependencies:
   cupertino_icons: ^1.0.8
+  # Charts for the dashboard (hypnogram, sleep trend, stage breakdown) (MIT).
+  fl_chart: ^1.0.0
   flutter:
     sdk: flutter
   # App-token storage in Keychain / Android Keystore (BSD-3-Clause).
@@ -40,6 +42,10 @@ dev_dependencies:
   # Validates emitted OMH datapoints against the vendored JSON Schemas in
   # tests (Boost Software License — permissive).
   json_schema: ^5.2.2
+  # Fake the path_provider platform in widget tests (BSD-3-Clause).
+  path_provider_platform_interface: ^2.1.2
+  # MockPlatformInterfaceMixin for the path_provider fake (BSD-3-Clause).
+  plugin_platform_interface: ^2.1.8
   # Strict lint set; configured in analysis_options.yaml (MIT).
   very_good_analysis: ^10.2.0
 
