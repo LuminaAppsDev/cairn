@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:cairn/src/app.dart';
 import 'package:cairn/src/settings/locale_controller.dart';
 import 'package:cairn/src/settings/locale_store.dart';
+import 'package:cairn/src/sync/background_sync.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
@@ -32,6 +33,9 @@ void main() {
           initial: code == null ? null : Locale(code),
         );
         runApp(CairnApp(localeController: localeController));
+        // Schedule opportunistic background sync (DESIGN §4.4); best-effort and
+        // never trusted for correctness, so it must not block or break startup.
+        unawaited(initBackgroundSync());
       },
       (error, stack) => debugPrint('Uncaught zone error: $error'),
     ),

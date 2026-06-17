@@ -349,7 +349,7 @@ because the on-disk format is the one genuinely expensive thing to change
   methods; plus the backup nudge (§10.2). First-run guidance is the setup guide
   + the Settings connect flow (no separate wizard).
 
-### Phase 5 — Background sync ⬜
+### Phase 5 — Background sync 🚧
 
 - **Goal:** opportunistic sync while the app is closed, without trusting it for
   correctness.
@@ -358,6 +358,14 @@ because the on-disk format is the one genuinely expensive thing to change
   and foreground sync on open (§4.4).
 - **Exit:** background sync observed on both platforms; correctness holds even
   if it never fires.
+- **Done:** the guaranteed paths — a real "Sync now" (full read + push) and an
+  opportunistic foreground sync on open — plus the periodic background task
+  (`workmanager`: Android `WorkManager` + iOS `BGAppRefreshTask`, ~6 h,
+  network-required, battery-not-low), reusing the single foreground refresh
+  cycle. Android declares `READ_HEALTH_DATA_IN_BACKGROUND`.
+- **Pending:** on-device confirmation the task actually fires on each platform
+  (scheduler + native config are wired but need a real build to observe);
+  HealthKit push-style delivery (`HKObserverQuery`) remains a later option.
 
 ### Phase 6 — Release hardening (ship v1) ⬜
 

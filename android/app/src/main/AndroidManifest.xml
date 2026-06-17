@@ -13,6 +13,10 @@
     <uses-permission android:name="android.permission.health.READ_ACTIVE_CALORIES_BURNED"/>
     <!-- Required to read step/fitness data. -->
     <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION"/>
+    <!-- Lets the periodic background sync read Health Connect while the app is
+         closed (DESIGN.md §4.4); the user grants it separately in Health
+         Connect. Without it, background reads return nothing. -->
+    <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND"/>
     <!-- WebDAV sync to the user's Nextcloud + Login Flow v2 (DESIGN.md §6). -->
     <uses-permission android:name="android.permission.INTERNET"/>
 

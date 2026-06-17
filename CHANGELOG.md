@@ -6,6 +6,15 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- **Opportunistic background sync (Phase 5, §4.4).** A periodic task (every
+  ~6 h, network-required, not on low battery) reads the health store and
+  uploads to Nextcloud while the app is closed, via `workmanager` (Android
+  `WorkManager` + iOS `BGAppRefreshTask`), reusing the same single refresh cycle
+  as the foreground so they can't diverge. It is best-effort — the OS decides
+  actual timing and correctness never depends on it. Android declares
+  `health.READ_HEALTH_DATA_IN_BACKGROUND` (granted separately in Health
+  Connect); iOS registers the task in `AppDelegate` + `Info.plist`.
+
 - **App icon + identity.** A "cairn" launcher icon — warm stones balanced into
   a stack on a teal gradient — for Android (adaptive: gradient background +
   stones foreground, plus a legacy/round fallback) and iOS. The art is rendered

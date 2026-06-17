@@ -68,5 +68,16 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<!-- Opportunistic background sync (DESIGN.md §4.4) via BGTaskScheduler.
+	     The identifier must match backgroundSyncTask in background_sync.dart
+	     and the registration in AppDelegate.swift. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+	</array>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>io.github.theflipside.cairn.sync</string>
+	</array>
 </dict>
 </plist>

@@ -40,6 +40,9 @@ dependencies:
   url_launcher: ^6.3.1
   # RFC 4122 v4 UUIDs for OMH datapoint header ids (MIT).
   uuid: ^4.5.3
+  # Opportunistic background sync via Android WorkManager / iOS BGTaskScheduler
+  # (MIT; federated workmanager_android + workmanager_apple).
+  workmanager: ^0.9.0+3
   # Parses the WebDAV PROPFIND multistatus XML response (MIT).
   xml: ^6.5.0
 
