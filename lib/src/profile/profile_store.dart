@@ -36,6 +36,26 @@ final class JsonProfileStore {
     return Profile.empty();
   }
 
+  /// The `updated_date_time` recorded in the local profile file, or `null` if
+  /// it is missing, corrupt, or unstamped. Used to reconcile a pulled remote
+  /// profile last-write-wins (a missing local file always loses).
+  Future<DateTime?> updatedAt() async {
+    final file = _file;
+    if (!file.existsSync()) return null;
+    try {
+      final decoded = jsonDecode(await file.readAsString());
+      if (decoded is Map<String, Object?>) {
+        final value = decoded['updated_date_time'];
+        if (value is String) return DateTime.tryParse(value);
+      }
+    } on FormatException {
+      // Corrupt → treat as no timestamp (local loses to a valid remote).
+    } on FileSystemException {
+      // Vanished between the check and the read → no timestamp.
+    }
+    return null;
+  }
+
   /// Writes [profile] atomically (temp file + rename).
   Future<void> write(Profile profile) async {
     await root.create(recursive: true);
@@ -44,6 +64,16 @@ final class JsonProfileStore {
       '  ',
     ).convert(profile.toJson(updatedAt: _now()));
     await tmp.writeAsString(json, flush: true);
+    await tmp.rename(_file.path);
+  }
+
+  /// Writes raw profile JSON [bytes] verbatim (atomic temp + rename), without
+  /// re-stamping. Used to adopt a remote profile pulled from Nextcloud so that
+  /// last-write-wins compares true edit times rather than the pull time.
+  Future<void> writeRaw(List<int> bytes) async {
+    await root.create(recursive: true);
+    final tmp = File('${_file.path}.tmp');
+    await tmp.writeAsBytes(bytes, flush: true);
     await tmp.rename(_file.path);
   }
 }

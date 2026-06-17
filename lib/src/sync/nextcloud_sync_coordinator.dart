@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:cairn/src/sync/nextcloud_auth.dart';
 import 'package:cairn/src/sync/nextcloud_credentials.dart';
@@ -66,6 +67,24 @@ final class NextcloudSyncCoordinator {
       await tokenStore.writeCredentials(credentials);
     }
     return credentials;
+  }
+
+  /// Downloads [remotePath] (relative to the WebDAV root, e.g.
+  /// `Cairn/profile.json`) with the stored credentials, aborting if the body
+  /// would exceed [maxBytes]. Returns `null` if not connected or the file is
+  /// absent (`404`); other failures surface as a [NextcloudSyncException]. A
+  /// read-only primitive for the limited remote→local pull (profile today;
+  /// more in the Phase 8 bidirectional work).
+  Future<Uint8List?> downloadFile(String remotePath, {int? maxBytes}) async {
+    final credentials = await tokenStore.readCredentials();
+    if (credentials == null) return null;
+    try {
+      return await _targetFactory(
+        credentials,
+      ).getFile(remotePath, maxBytes: maxBytes);
+    } on NextcloudNotFoundException {
+      return null;
+    }
   }
 
   /// The stored credentials, or `null` if not connected.

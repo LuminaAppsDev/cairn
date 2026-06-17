@@ -72,7 +72,12 @@ class _SettingsPageState extends State<SettingsPage> {
             ConnectNextcloudPage(coordinator: widget.services.coordinator),
       ),
     );
-    if (connected ?? false) await _load();
+    if (connected ?? false) {
+      // Adopt a newer profile.json from the server (recovers height + DoB on a
+      // fresh install / second device) before showing the loaded profile.
+      await widget.services.pullProfile();
+      await _load();
+    }
   }
 
   Future<void> _disconnect() async {

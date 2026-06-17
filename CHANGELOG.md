@@ -112,6 +112,12 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- The synced profile now comes back on a fresh install / second device:
+  connecting to Nextcloud pulls `profile.json` and adopts it when the remote
+  copy is newer than (or absent on) this device (last-write-wins by
+  `updated_date_time`), recovering height + date of birth. Sync was otherwise
+  push-only. A single-file, size-bounded precursor to the Phase 8 bidirectional
+  sync; the append-only health shards still sync push-only (§8).
 - Per-category chart Y-axis labels no longer overlap or wrap to two lines when
   the value spread is small (e.g. a weight trend within ~1 kg). The axis now
   snaps to a round step (locale-formatted, e.g. `73,0` under German) with a

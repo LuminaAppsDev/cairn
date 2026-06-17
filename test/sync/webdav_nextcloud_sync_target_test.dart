@@ -142,4 +142,17 @@ void main() {
       throwsA(isA<NextcloudNotFoundException>()),
     );
   });
+
+  test('getFile aborts an over-limit body instead of buffering it', () async {
+    final target = WebDavNextcloudSyncTarget(
+      credentials: credentials,
+      client: MockClient(
+        (_) async => http.Response.bytes(List.filled(100, 0), 200),
+      ),
+    );
+    expect(
+      () => target.getFile('Cairn/profile.json', maxBytes: 10),
+      throwsA(isA<NextcloudSyncException>()),
+    );
+  });
 }

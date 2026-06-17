@@ -3,6 +3,7 @@ import 'package:cairn/src/health/health_package_repository.dart';
 import 'package:cairn/src/health/health_repository.dart';
 import 'package:cairn/src/profile/profile.dart';
 import 'package:cairn/src/profile/profile_store.dart';
+import 'package:cairn/src/profile/profile_sync.dart';
 import 'package:cairn/src/query/health_query_service.dart';
 import 'package:cairn/src/storage/health_ingest_service.dart';
 import 'package:cairn/src/storage/jsonl_omh_file_store.dart';
@@ -15,6 +16,10 @@ import 'package:cairn/src/sync/sync_journal.dart';
 import 'package:cairn/src/sync/webdav_nextcloud_sync_target.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+
+/// WebDAV path of the synced profile, relative to the account root. Matches the
+/// sync service's remote root (`Cairn`) + the profile file name.
+const String _profileRemotePath = 'Cairn/profile.json';
 
 /// The outcome of a [CairnServices.refresh], for the UI to localise.
 enum RefreshStatus {
@@ -60,6 +65,7 @@ final class CairnServices {
     required this.profile,
     required this.query,
     required this.coordinator,
+    required this.profileSync,
     required this.repository,
   });
 
@@ -69,20 +75,26 @@ final class CairnServices {
     final store = await JsonlOmhFileStore.appDocuments();
     final journalStore = await JsonSyncJournalStore.appSupport();
     final profileStore = JsonProfileStore(root: store.root);
+    final coordinator = NextcloudSyncCoordinator(
+      auth: HttpNextcloudAuth(client: client),
+      tokenStore: FlutterSecureTokenStore(),
+      localRoot: store.root,
+      journalStore: journalStore,
+      targetFactory: (credentials) =>
+          WebDavNextcloudSyncTarget(credentials: credentials, client: client),
+    );
     return CairnServices(
       client: client,
       store: store,
       profileStore: profileStore,
       profile: ValueNotifier(await profileStore.read()),
       query: OmhHealthQueryService(store: store),
-      coordinator: NextcloudSyncCoordinator(
-        auth: HttpNextcloudAuth(client: client),
-        tokenStore: FlutterSecureTokenStore(),
-        localRoot: store.root,
-        journalStore: journalStore,
-        targetFactory: (credentials) => WebDavNextcloudSyncTarget(
-          credentials: credentials,
-          client: client,
+      coordinator: coordinator,
+      profileSync: ProfileSyncService(
+        store: profileStore,
+        download: () => coordinator.downloadFile(
+          _profileRemotePath,
+          maxBytes: kMaxProfileBytes,
         ),
       ),
       repository: HealthPackageRepository(),
@@ -108,6 +120,9 @@ final class CairnServices {
   /// The Nextcloud connect + sync coordinator.
   final NextcloudSyncCoordinator coordinator;
 
+  /// Pulls `profile.json` back down from Nextcloud (last-write-wins).
+  final ProfileSyncService profileSync;
+
   /// The OS health-store reader (for manual refresh/ingest).
   final HealthRepository repository;
 
@@ -127,6 +142,20 @@ final class CairnServices {
     return _refreshInFlight ??= _runRefresh().whenComplete(() {
       _refreshInFlight = null;
     });
+  }
+
+  /// Pulls a newer `profile.json` down from Nextcloud (if any) and adopts it,
+  /// updating [profile] so the dashboard reflects it without a manual reload.
+  /// Called after connecting, so a fresh install / second device recovers the
+  /// synced height + date of birth. Best-effort: a failed pull (offline, etc.)
+  /// is logged, never thrown, so it can't block the connect flow.
+  Future<void> pullProfile() async {
+    try {
+      final pulled = await profileSync.pull();
+      if (pulled != null) profile.value = pulled;
+    } on Exception catch (error) {
+      debugPrint('Profile pull failed: $error');
+    }
   }
 
   Future<RefreshResult> _runRefresh() async {

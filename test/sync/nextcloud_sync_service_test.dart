@@ -50,7 +50,7 @@ class _FakeTarget implements NextcloudSyncTarget {
   }
 
   @override
-  Future<Uint8List> getFile(String remotePath) async {
+  Future<Uint8List> getFile(String remotePath, {int? maxBytes}) async {
     final bytes = puts[remotePath];
     if (bytes == null) throw NextcloudNotFoundException(remotePath);
     return bytes;

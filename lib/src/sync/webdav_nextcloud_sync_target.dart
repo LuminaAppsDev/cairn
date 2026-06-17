@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:cairn/src/sync/nextcloud_credentials.dart';
 import 'package:cairn/src/sync/nextcloud_sync_target.dart';
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:xml/xml.dart';
 
@@ -86,18 +86,36 @@ final class WebDavNextcloudSyncTarget implements NextcloudSyncTarget {
   }
 
   @override
-  Future<Uint8List> getFile(String remotePath) async {
-    final response = await _send('GET', _url(remotePath));
-    if (response.statusCode == 404) {
+  Future<Uint8List> getFile(String remotePath, {int? maxBytes}) async {
+    final request = http.Request('GET', _url(remotePath))
+      ..headers.addAll(_headers);
+    final http.StreamedResponse streamed;
+    try {
+      streamed = await _client.send(request).timeout(_requestTimeout);
+    } on TimeoutException {
+      throw NextcloudSyncException('GET $remotePath timed out');
+    }
+    // Read the body with a hard ceiling so a hostile or misconfigured response
+    // (even on an error status) can't exhaust memory before a size check runs.
+    // Reading to completion — or aborting, which cancels the subscription —
+    // releases the connection, so the status is checked only afterwards.
+    final builder = BytesBuilder(copy: false);
+    await for (final chunk in streamed.stream) {
+      builder.add(chunk);
+      if (maxBytes != null && builder.length > maxBytes) {
+        throw NextcloudSyncException('GET $remotePath too large');
+      }
+    }
+    if (streamed.statusCode == 404) {
       throw NextcloudNotFoundException(remotePath);
     }
-    if (response.statusCode != 200) {
+    if (streamed.statusCode != 200) {
       throw NextcloudSyncException(
         'GET $remotePath failed',
-        statusCode: response.statusCode,
+        statusCode: streamed.statusCode,
       );
     }
-    return response.bodyBytes;
+    return builder.takeBytes();
   }
 
   /// Creates each missing parent collection of [remotePath], top-down. An

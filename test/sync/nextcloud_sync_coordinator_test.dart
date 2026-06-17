@@ -54,7 +54,7 @@ class _RecordingTarget implements NextcloudSyncTarget {
   Future<List<RemoteResource>> list(String remoteDir) async => const [];
 
   @override
-  Future<Uint8List> getFile(String remotePath) async =>
+  Future<Uint8List> getFile(String remotePath, {int? maxBytes}) async =>
       throw NextcloudNotFoundException(remotePath);
 }
 

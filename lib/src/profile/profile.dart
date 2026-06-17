@@ -10,9 +10,10 @@ const int kProfileFormatVersion = 1;
 /// dynamic BMI against the latest synced weight.
 ///
 /// Both fields are optional so a partially-filled profile is valid. Stored at
-/// `/Cairn/profile.json` and synced; cross-device pull-down lands with the
-/// Phase 8 bidirectional sync, so today it pushes up but a second device must
-/// re-enter it.
+/// `/Cairn/profile.json`, pushed on sync and pulled back down on connect
+/// (last-write-wins by `updated_date_time`), so a fresh install / second device
+/// recovers it. Continuous cross-device convergence lands with the Phase 8
+/// bidirectional sync.
 @immutable
 class Profile {
   /// Creates a profile.

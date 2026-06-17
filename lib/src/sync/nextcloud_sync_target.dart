@@ -94,5 +94,10 @@ abstract interface class NextcloudSyncTarget {
 
   /// Downloads the file at [remotePath] (WebDAV `GET`). Throws
   /// [NextcloudNotFoundException] if the server returns `404`.
-  Future<Uint8List> getFile(String remotePath);
+  ///
+  /// When [maxBytes] is set, the body is streamed and the download is aborted
+  /// (throwing [NextcloudSyncException]) as soon as it would exceed that many
+  /// bytes — so a hostile or misconfigured server can't force an unbounded
+  /// in-memory buffer before a caller's own size check runs.
+  Future<Uint8List> getFile(String remotePath, {int? maxBytes});
 }
