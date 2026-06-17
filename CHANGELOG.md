@@ -4,6 +4,14 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## 0.1.0 — 2026-06-17
+
+First release. Reads Apple Health / Android Health Connect, normalizes to Open
+mHealth / IEEE 1752.1 JSON-Lines files, and syncs them to the user's own
+Nextcloud; in-app dashboard with a sleep deep-dive, BMI and per-category
+screens; English + German; opportunistic background sync; F-Droid / sideload
+packaging and a dual-publish (GitHub + Forgejo) release pipeline.
+
 ### Added
 
 - **`docs/RELEASE.md` — per-channel release guide (Phase 6).** Step-by-step
