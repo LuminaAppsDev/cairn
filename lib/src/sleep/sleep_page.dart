@@ -1,3 +1,4 @@
+import 'package:cairn/src/onboarding/setup_guide_page.dart';
 import 'package:cairn/src/query/health_query_service.dart';
 import 'package:cairn/src/query/night_sleep.dart';
 import 'package:cairn/src/sleep/widgets/hypnogram_chart.dart';
@@ -104,6 +105,16 @@ class _SleepPageState extends State<SleepPage> {
       const Text(
         'Track a night with a wearable or your health app, then refresh.',
         textAlign: TextAlign.center,
+      ),
+      const SizedBox(height: 16),
+      Center(
+        child: TextButton.icon(
+          onPressed: () => Navigator.of(context).push<void>(
+            MaterialPageRoute<void>(builder: (_) => const SetupGuidePage()),
+          ),
+          icon: const Icon(Icons.help_outline),
+          label: const Text('How to set this up'),
+        ),
       ),
     ],
   );

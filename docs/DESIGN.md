@@ -337,9 +337,11 @@ because the on-disk format is the one genuinely expensive thing to change
 - **Slice 1 ✅:** navigation shell + overview Home + rich sleep-stage deep-dive
   (hypnogram/stages/trend) + dynamic BMI from a synced `profile.json` + Settings
   (connection, manual sync, profile editor). Reads are timezone-correct and
-  source-deduplicated.
+  source-deduplicated; a shared revision signal reloads every screen on new data.
+- **Slice 2 ✅ (partial):** OS-specific data-source **setup guide** (Android +
+  iOS, §8), reachable from Settings and the Sleep empty state.
 - **Remaining:** per-category screens (HR / steps / weight / activity charts)
-  and the **OS-specific setup guide** (Android + iOS) with the backup nudge.
+  and the backup nudge (§10.2).
 
 ### Phase 5 — Background sync ⬜
 

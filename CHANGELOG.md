@@ -59,6 +59,11 @@ All notable changes to this project are documented in this file.
   navigation shell (Home / Sleep / Settings) replaces the debug dashboard, with
   Nextcloud connection + manual sync + the profile editor in Settings (raw
   ingest/sync harness kept behind `kDebugMode`).
+- OS-specific data-source **setup guide** ("Getting your data in", DESIGN.md
+  §8): an Android vs iOS walkthrough of installing/using a tracking app, pairing
+  a wearable in its vendor app, linking it to Health Connect / Apple Health,
+  granting permissions, and letting Cairn read. Reachable from Settings and the
+  Sleep empty state; platform is chosen automatically.
 - Guided "Connect your Nextcloud" screen (host → Login Flow v2 in the system
   browser via `url_launcher` → poll), now in Settings.
 - `.githooks/pre-commit` blocks accidental commits of signing secrets

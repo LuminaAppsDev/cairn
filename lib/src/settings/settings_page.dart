@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:cairn/src/dashboard/connect_nextcloud_page.dart';
 import 'package:cairn/src/health/health_metric.dart';
+import 'package:cairn/src/onboarding/setup_guide_page.dart';
 import 'package:cairn/src/profile/profile.dart';
 import 'package:cairn/src/shell/cairn_services.dart';
 import 'package:cairn/src/storage/health_ingest_service.dart';
@@ -266,6 +267,24 @@ class _SettingsPageState extends State<SettingsPage> {
                     onTap: _pickDob,
                   ),
                 ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+          Text('Help', style: theme.textTheme.titleMedium),
+          const SizedBox(height: 8),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.help_outline),
+              title: const Text('Getting your data in'),
+              subtitle: const Text(
+                'Set up your health app, wearable and permissions',
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push<void>(
+                MaterialPageRoute<void>(
+                  builder: (_) => const SetupGuidePage(),
+                ),
               ),
             ),
           ),
