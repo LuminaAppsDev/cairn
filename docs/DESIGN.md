@@ -207,7 +207,7 @@ The user's **long-tail history lives only in their Nextcloud.** Recent data stil
 
 - **Apple:** privacy policy required; clearly surface HealthKit use in-UI; HealthKit data may not be used for advertising/data-mining (only health management); **Apple Health data may not be stored in iCloud** (the user's own Nextcloud is fine — it's Apple's cloud that's barred). Avoid any medical-device framing.
 - **Google Play:** complete the **Health apps declaration** + **Data safety** section; privacy policy on a public, non-geofenced URL; prominent disclosure + affirmative consent. **Policy tension:** Play prohibits using health-permission data with apps that *sync between incompatible devices/platforms*, and prohibits headless access — Cairn's cross-platform-funnel framing sits awkwardly with this.
-- **Distribution decision:** the strict, no-compromise version is cleanest shipped via **F-Droid / sideload** (and the iOS build for personal/community use), which also sidesteps most of the Play health-policy friction. A Play/App Store release is possible but requires careful scoping of the store listing and data-use declarations. Decide per channel.
+- **Distribution decision:** the strict, no-compromise version is cleanest shipped via **F-Droid / sideload** (and the iOS build for personal/community use), which also sidesteps most of the Play health-policy friction. A Play/App Store release is possible but requires careful scoping of the store listing and data-use declarations. Decide per channel. Step-by-step per-channel instructions: [`RELEASE.md`](RELEASE.md).
 - Cairn is **not** a regulated medical device and must avoid diagnostic/treatment claims to stay out of that review path.
 
 ---
@@ -367,7 +367,7 @@ because the on-disk format is the one genuinely expensive thing to change
   (scheduler + native config are wired but need a real build to observe);
   HealthKit push-style delivery (`HKObserverQuery`) remains a later option.
 
-### Phase 6 — Release hardening (ship v1) ⬜
+### Phase 6 — Release hardening (ship v1) 🚧
 
 - **Goal:** a shippable, policy-correct build.
 - **Scope:** privacy policy; HealthKit/Health-Connect declarations; permission
@@ -375,6 +375,11 @@ because the on-disk format is the one genuinely expensive thing to change
   Play/App Store listings scoped separately if pursued (§10.3).
 - **Exit:** v1 installable on the chosen channel(s) with no medical-device
   framing.
+- **Done:** [`docs/RELEASE.md`](RELEASE.md) — a step-by-step per-channel release
+  guide (F-Droid official + self-hosted, sideload, Google Play, Apple App Store,
+  Nextcloud App Store) plus the Nextcloud-major version-tracking routine.
+- **Remaining:** publish a privacy policy (`docs/PRIVACY.md` → public URL);
+  complete the actual store declarations/build for the chosen channel(s).
 
 ### Phase 7 — Nextcloud web app (v1.5) ⬜
 

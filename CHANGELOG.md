@@ -6,6 +6,15 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- **`docs/RELEASE.md` — per-channel release guide (Phase 6).** Step-by-step
+  distribution instructions for F-Droid (official repo + self-hosted, including
+  the Flutter build recipe), sideload/direct APK, Google Play (with the Health
+  apps declaration and the cross-platform-sync policy tension), the Apple App
+  Store (HealthKit review rules), and the Nextcloud App Store (signing +
+  publishing). Includes a dedicated routine for keeping the Nextcloud app
+  current across Nextcloud major releases. Cross-linked from DESIGN.md §10.3
+  and §15.
+
 - **Opportunistic background sync (Phase 5, §4.4).** A periodic task (every
   ~6 h, network-required, not on low battery) reads the health store and
   uploads to Nextcloud while the app is closed, via `workmanager` (Android
