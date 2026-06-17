@@ -29,6 +29,12 @@ and the Apple App Store are possible but need careful store-listing and
 data-use scoping. Decide per channel. Cairn is **not** a medical device — never
 use diagnostic/treatment framing in any listing.
 
+**Store name:** the listing title is **Cairn: Health Aggregator** (set in
+`fastlane/metadata/android/` and, for Apple, in App Store Connect), used
+consistently across F-Droid, Google Play and the App Store. The on-device
+launcher label stays the short **Cairn** (`android:label` / iOS
+`CFBundleDisplayName`).
+
 ---
 
 ## 1. Common pre-release checklist
@@ -102,6 +108,15 @@ Steps:
    Flutter SDK to a fixed path (`flutter config --android-sdk …`) so no absolute
    paths leak in, then add `Builds: …` with your signing fingerprint.
 
+**In this repo:** a ready-to-submit recipe lives at
+[`fdroid/io.github.theflipside.cairn.yml`](../fdroid/io.github.theflipside.cairn.yml)
+— copy it into your `fdroiddata` fork as
+`metadata/io.github.theflipside.cairn.yml` for the merge request. The listing
+text (and future screenshots) are auto-imported by F-Droid from
+[`fastlane/metadata/android/`](../fastlane/metadata/android/), so they live with
+the app, not in the recipe. The recipe pins Flutter to the version it reads out
+of `.forgejo/workflows/release.yml`, so CI and the F-Droid build stay in lockstep.
+
 Sources: [Submitting Quick Start](https://f-droid.org/en/docs/Submitting_to_F-Droid_Quick_Start_Guide/),
 [Build Metadata Reference](https://f-droid.org/en/docs/Build_Metadata_Reference/),
 [`build-flutter.yml` template](https://gitlab.com/fdroid/fdroiddata/-/blob/master/templates/build-flutter.yml),
@@ -145,6 +160,40 @@ enabling "install unknown apps").
    different key.
 
 This is also the build to feed a self-hosted F-Droid repo (§2b).
+
+### Automated APK release (CI)
+
+[`.forgejo/workflows/release.yml`](../.forgejo/workflows/release.yml) automates
+this. On a `vX.Y.Z` tag push it runs on the self-hosted, **bare-metal** `linux`
+runner, analyzes + tests, builds the **signed** release APK, and publishes it
+(with a SHA-256 checksum) to **two** places, both idempotent and attached to the
+tagged commit:
+
+- **GitHub** (the public, user-facing repo, `GH_REPO`) — releases are **not**
+  mirrored from Forgejo, so the workflow creates the release on GitHub directly
+  via its API. The tagged commit reaches GitHub via the Forgejo push-mirror, so
+  the release attaches correctly even if the tag ref hasn't finished mirroring.
+- **Forgejo** (`git.fiedler.live`, the repo it runs on) — created via the
+  Forgejo API using the run's own server/repo.
+
+F-Droid is unaffected — it builds its own copy from the same tag (§2a).
+
+Required Actions secrets:
+
+| Secret | Purpose |
+| --- | --- |
+| `GH_RELEASE_TOKEN` | GitHub token (contents: write on `GH_REPO`) — the GitHub release |
+| `RELEASE_TOKEN` | Forgejo token (write access to this repo) — the Forgejo release |
+| `KEYSTORE_BASE64` | base64 of the release keystore (`base64 -w0 release.jks`) |
+| `KEYSTORE_PASSWORD` / `KEY_ALIAS` / `KEY_PASSWORD` | keystore credentials |
+
+**Bare-metal runner notes:** the host must already have `git`, `curl`, `jq`,
+`base64` and `sha256sum` (there is no container to install them into). Because
+the workspace and disk persist between runs, the keystore + `key.properties` are
+removed in an `always()` cleanup step, and `actions/checkout` (`git clean
+-ffdx`) wipes any leftover artifacts at the start of the next run. Set `GH_REPO`
+at the top of the workflow to your GitHub `owner/repo`. The Flutter version is
+pinned in the workflow and is the single source the F-Droid recipe reads (§2a).
 
 ---
 

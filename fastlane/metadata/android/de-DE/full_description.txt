@@ -1,0 +1,27 @@
+Cairn liest deine Gesundheits- und Fitnessdaten aus dem Gesundheitsspeicher
+deines Telefons — Apple Health unter iOS, Health Connect unter Android — und
+speichert sie als einfache Dateien in einem offenen Format (Open mHealth /
+IEEE 1752.1 JSON) in deiner eigenen Nextcloud. Du bleibst alleiniger Eigentümer
+deiner Daten: Es gibt keinen zentralen Server und der Entwickler speichert
+nichts.
+
+Funktionen:
+
+* Liest Puls, Schritte, Gewicht, Schlaf und Workouts — ausschließlich lesend.
+  Cairn schreibt nie in deinen Gesundheitsspeicher.
+* Synchronisiert die Dateien per WebDAV in deine eigene Nextcloud, optional auch
+  im Hintergrund.
+* Dashboard mit detaillierter Schlafphasen-Ansicht und einem BMI aus deinem
+  letzten Gewicht.
+* Verfügbar auf Englisch und Deutsch.
+
+Datenschutz:
+
+* Keine Werbung, keine Analyse, keine Tracker, keine Drittanbieterdienste.
+* Deine Daten liegen nur auf deinem Gerät und in der Nextcloud, die du
+  kontrollierst — nie in einer Cloud des Entwicklers oder Dritter.
+* Nur HTTPS. Das Nextcloud-App-Passwort wird im sicheren Speicher des
+  Betriebssystems abgelegt und kann jederzeit widerrufen werden.
+
+Cairn ist ein Aggregator und Betrachter, kein Medizinprodukt. Es trifft keine
+diagnostischen oder therapeutischen Aussagen.

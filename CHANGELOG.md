@@ -14,6 +14,17 @@ All notable changes to this project are documented in this file.
   publishing). Includes a dedicated routine for keeping the Nextcloud app
   current across Nextcloud major releases. Cross-linked from DESIGN.md §10.3
   and §15.
+- **F-Droid packaging + APK release CI (Phase 6).** F-Droid listing metadata
+  under `fastlane/metadata/android/` (English + German; store title
+  "Cairn: Health Aggregator", launcher label stays "Cairn"), a ready-to-submit
+  fdroiddata build recipe at `fdroid/io.github.theflipside.cairn.yml` (Flutter
+  `srclib` build, pinned to the CI Flutter version), and a Forgejo Actions
+  workflow `.forgejo/workflows/release.yml` that, on a `vX.Y.Z` tag, runs on the
+  self-hosted bare-metal `linux` runner, analyzes/tests, builds + signs the
+  release APK, and publishes it (with a SHA-256 checksum) as both a **GitHub
+  Release** (`GH_RELEASE_TOKEN`) and a **Forgejo release** (`RELEASE_TOKEN`).
+  Actions are full-URL + SHA-pinned. RELEASE.md documents the required CI
+  secrets and that F-Droid builds its own copy server-side.
 - **`docs/PRIVACY.md` — drafted privacy policy (Phase 6).** Reflects Cairn's
   "the developer collects and stores nothing" model: health data is read-only,
   lives only on-device and in the user's own Nextcloud (never iCloud or any

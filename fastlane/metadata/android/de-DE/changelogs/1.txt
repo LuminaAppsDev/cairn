@@ -1,0 +1,4 @@
+Erste öffentliche Version. Liest Apple Health / Health Connect, speichert deine
+Historie als offene Open-mHealth-Dateien in deiner eigenen Nextcloud und bietet
+ein Dashboard mit Schlafphasen-Ansicht und BMI. Auf Englisch und Deutsch
+verfügbar.

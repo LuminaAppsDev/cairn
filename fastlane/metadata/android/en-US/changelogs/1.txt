@@ -1,0 +1,3 @@
+First public release. Reads Apple Health / Health Connect, saves your history as
+open Open mHealth files in your own Nextcloud, and includes a dashboard with a
+sleep-stage deep-dive and BMI. Available in English and German.

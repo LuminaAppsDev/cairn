@@ -377,11 +377,15 @@ because the on-disk format is the one genuinely expensive thing to change
   framing.
 - **Done:** [`docs/RELEASE.md`](RELEASE.md) — a step-by-step per-channel release
   guide (F-Droid official + self-hosted, sideload, Google Play, Apple App Store,
-  Nextcloud App Store) plus the Nextcloud-major version-tracking routine; and a
-  drafted privacy policy ([`docs/PRIVACY.md`](PRIVACY.md)).
+  Nextcloud App Store) plus the Nextcloud-major version-tracking routine; a
+  drafted privacy policy ([`docs/PRIVACY.md`](PRIVACY.md)); F-Droid packaging
+  (listing metadata under `fastlane/metadata/android/` + the fdroiddata recipe
+  `fdroid/io.github.theflipside.cairn.yml`); and a tag-triggered CI workflow
+  (`.forgejo/workflows/release.yml`) that builds + signs the APK and publishes a
+  GitHub Release.
 - **Remaining:** fill the `PRIVACY.md` placeholders and publish it to a public,
-  non-geofenced HTTPS URL; complete the actual store declarations/build for the
-  chosen channel(s).
+  non-geofenced HTTPS URL; open the F-Droid RFP + fdroiddata MR; complete the
+  store declarations/build for any other channel(s) pursued.
 
 ### Phase 7 — Nextcloud web app (v1.5) ⬜
 

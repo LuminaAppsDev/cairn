@@ -1,0 +1,56 @@
+# F-Droid build recipe for the OFFICIAL F-Droid repository.
+#
+# This file is NOT used by the app or by CI. It is the source of truth for the
+# entry you submit to https://gitlab.com/fdroid/fdroiddata as
+# `metadata/io.github.theflipside.cairn.yml` (after opening an RFP issue — see
+# docs/RELEASE.md §2a). F-Droid builds the app from source on its own
+# infrastructure and signs it with the F-Droid key.
+#
+# Listing text + screenshots are imported automatically from
+# `fastlane/metadata/android/` in the app repo — they are not duplicated here.
+
+Categories:
+  - Sports & Health
+License: MIT
+AuthorName: Max Fiedler
+# F-Droid needs a publicly clonable git repo with the release tags. The public,
+# user-facing repository is GitHub; confirm the owner/repo slug below.
+SourceCode: https://github.com/TheFlipside/cairn
+IssueTracker: https://github.com/TheFlipside/cairn/issues
+
+RepoType: git
+Repo: https://github.com/TheFlipside/cairn.git
+
+Builds:
+  - versionName: 0.1.0
+    versionCode: 1
+    commit: v0.1.0
+    output: build/app/outputs/flutter-apk/app-release.apk
+    srclibs:
+      - flutter@stable
+    rm:
+      - ios
+      - linux
+      - macos
+      - web
+      - windows
+    prebuild:
+      # Pin Flutter to the exact version CI builds with — single source of truth
+      # is the literal `flutter-version:` in .forgejo/workflows/release.yml.
+      - flutterVersion=$(sed -n -E "s/.*flutter-version:\s*'?([0-9.]+)'?.*/\1/p" .forgejo/workflows/release.yml | head -1)
+      - '[ -n "$flutterVersion" ]'
+      - git -C $$flutter$$ checkout -f $flutterVersion
+      - export PUB_CACHE=$(pwd)/.pub-cache
+      - $$flutter$$/bin/flutter config --no-analytics
+      - $$flutter$$/bin/flutter pub get --enforce-lockfile
+    scandelete:
+      - .pub-cache
+    build:
+      - export PUB_CACHE=$(pwd)/.pub-cache
+      - $$flutter$$/bin/flutter build apk --release
+
+# New tags matching the version are picked up automatically.
+AutoUpdateMode: Version
+UpdateCheckMode: Tags
+CurrentVersion: 0.1.0
+CurrentVersionCode: 1

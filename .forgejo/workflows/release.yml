@@ -1,0 +1,176 @@
+# Builds and publishes the signed sideload APK when a vX.Y.Z tag is pushed.
+#
+# Runs on the self-hosted, BARE-METAL Forgejo runner (label: linux) — not a
+# container. Consequences: the host must already provide git, curl, jq, base64
+# and sha256sum; the workspace persists between runs (actions/checkout cleans it
+# with git clean -ffdx); and the keystore + key.properties are wiped in an
+# always() cleanup because the disk is not discarded with the job.
+#
+# The release is published to TWO places, both idempotent (re-run safe) and
+# attached to the tagged commit:
+#   * GitHub (the public, user-facing repo, GH_REPO) — releases are NOT mirrored
+#     from Forgejo, so they are created via the GitHub API with GH_RELEASE_TOKEN.
+#   * the Forgejo repo this runs on (git.fiedler.live) — via the Forgejo API
+#     with RELEASE_TOKEN, using the run's own GITHUB_SERVER_URL / REPOSITORY.
+#
+# F-Droid builds its OWN copy from source server-side (see
+# fdroid/io.github.theflipside.cairn.yml), so this workflow is only the
+# direct-download / sideload APK.
+#
+# `uses:` are FULL URLs pinned to commit SHAs: a self-hosted Forgejo would
+# otherwise resolve a bare `actions/checkout` against itself, and the SHA pin
+# stops a moving tag from injecting code into a job holding the keystore/tokens.
+# The trailing `# vN` is the human-readable version.
+#
+# Required Actions secrets:
+#   GH_RELEASE_TOKEN   - GitHub token (contents: write on GH_REPO)
+#   RELEASE_TOKEN      - Forgejo token (write access to this repo)
+#   KEYSTORE_BASE64    - base64 of the release keystore (.jks)
+#   KEYSTORE_PASSWORD  - keystore storePassword
+#   KEY_ALIAS          - key alias
+#   KEY_PASSWORD       - key password
+name: Release APK
+
+on:
+  push:
+    tags:
+      - 'v[0-9]*.[0-9]*.[0-9]*'
+
+env:
+  # GitHub owner/repo that receives the public release.
+  GH_REPO: TheFlipside/cairn
+
+jobs:
+  release:
+    runs-on: linux
+    steps:
+      - name: Checkout
+        uses: https://github.com/actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Set up Java
+        uses: https://github.com/actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: https://github.com/subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          channel: stable
+          # Single source of truth for the Flutter version; the F-Droid recipe
+          # greps this literal out of the file. Keep it a plain quoted number.
+          flutter-version: '3.44.0'
+
+      - name: Dependencies
+        run: flutter pub get --enforce-lockfile
+
+      - name: Analyze and test
+        run: |
+          set -euo pipefail
+          dart analyze
+          flutter test
+
+      - name: Configure signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          keystore="$GITHUB_WORKSPACE/android/app/release-keystore.jks"
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$keystore"
+          {
+            echo "storeFile=$keystore"
+            echo "storePassword=$KEYSTORE_PASSWORD"
+            echo "keyAlias=$KEY_ALIAS"
+            echo "keyPassword=$KEY_PASSWORD"
+          } > android/key.properties
+
+      - name: Build release APK
+        run: flutter build apk --release
+
+      - name: Package release asset
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          # Never interpolate an unvalidated tag into JSON/URLs/shell: anchored,
+          # digits/dots with an optional -suffix only (rejects '#', '+', '@', …).
+          if ! printf '%s' "$tag" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$'; then
+            echo "Unexpected tag: $tag" >&2
+            exit 1
+          fi
+          asset="cairn-${tag}.apk"
+          cp build/app/outputs/flutter-apk/app-release.apk "$asset"
+          sha256sum "$asset" > "$asset.sha256"
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GH_RELEASE_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          asset="cairn-${tag}.apk"
+          api="https://api.github.com/repos/${GH_REPO}"
+          auth="Authorization: Bearer $GH_TOKEN"
+          accept="Accept: application/vnd.github+json"
+          apiver="X-GitHub-Api-Version: 2022-11-28"
+          existing=$(curl -sS "$api/releases/tags/$tag" -H "$auth" -H "$accept" -H "$apiver")
+          release_id=$(printf '%s' "$existing" | jq -r '.id // empty')
+          if [ -z "$release_id" ]; then
+            payload=$(jq -n --arg t "$tag" --arg sha "$GITHUB_SHA" \
+              '{tag_name:$t, target_commitish:$sha, name:$t, body:"Automated release. See CHANGELOG.md."}')
+            release_id=$(curl -fsS -X POST "$api/releases" \
+              -H "$auth" -H "$accept" -H "$apiver" -d "$payload" | jq -r '.id')
+          fi
+          [ -n "$release_id" ] && [ "$release_id" != "null" ]
+          # Re-run safe: drop any existing same-named assets before re-uploading
+          # (recovers a partially-failed run; lets a re-tag replace the binary).
+          curl -fsS "$api/releases/${release_id}/assets" -H "$auth" -H "$accept" -H "$apiver" \
+            | jq -r --arg a "$asset" '.[] | select(.name == $a or .name == ($a + ".sha256")) | .id' \
+            | while read -r aid; do
+                curl -fsS -X DELETE "$api/releases/assets/$aid" -H "$auth" -H "$accept" -H "$apiver"
+              done
+          up="https://uploads.github.com/repos/${GH_REPO}/releases/${release_id}/assets"
+          curl -fsS -X POST "$up?name=$asset" \
+            -H "$auth" -H 'Content-Type: application/vnd.android.package-archive' \
+            --data-binary "@$asset"
+          curl -fsS -X POST "$up?name=$asset.sha256" \
+            -H "$auth" -H 'Content-Type: text/plain' \
+            --data-binary "@$asset.sha256"
+
+      - name: Publish Forgejo release
+        env:
+          FORGEJO_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          asset="cairn-${tag}.apk"
+          # The run's own server + repo (git.fiedler.live / tux/cairn); the tag
+          # already exists here (it triggered this run).
+          api="${GITHUB_SERVER_URL}/api/v1/repos/${GITHUB_REPOSITORY}"
+          auth="Authorization: token $FORGEJO_TOKEN"
+          existing=$(curl -sS "$api/releases/tags/$tag" -H "$auth")
+          release_id=$(printf '%s' "$existing" | jq -r '.id // empty')
+          if [ -z "$release_id" ]; then
+            payload=$(jq -n --arg t "$tag" \
+              '{tag_name:$t, name:$t, body:"Automated release. See CHANGELOG.md."}')
+            release_id=$(curl -fsS -X POST "$api/releases" \
+              -H "$auth" -H 'Content-Type: application/json' -d "$payload" | jq -r '.id')
+          fi
+          [ -n "$release_id" ] && [ "$release_id" != "null" ]
+          up="$api/releases/${release_id}/assets"
+          # Re-run safe: drop any existing same-named assets before re-uploading.
+          curl -fsS "$up" -H "$auth" \
+            | jq -r --arg a "$asset" '.[] | select(.name == $a or .name == ($a + ".sha256")) | .id' \
+            | while read -r aid; do
+                curl -fsS -X DELETE "$up/$aid" -H "$auth"
+              done
+          curl -fsS -X POST "$up?name=$asset" -H "$auth" \
+            -F "attachment=@$asset;type=application/vnd.android.package-archive"
+          curl -fsS -X POST "$up?name=$asset.sha256" -H "$auth" \
+            -F "attachment=@$asset.sha256;type=text/plain"
+
+      - name: Clean up signing material
+        if: always()
+        run: rm -f android/key.properties android/app/release-keystore.jks
