@@ -18,6 +18,12 @@ AuthorName: Max Fiedler
 SourceCode: https://github.com/LuminaAppsDev/cairn
 IssueTracker: https://github.com/LuminaAppsDev/cairn/issues
 
+# The launcher label, auto-derived by F-Droid from the built APK. Committed so
+# `fdroid checkupdates --auto` (which F-Droid CI runs, then fails on any diff)
+# is a no-op. The listing's display title still comes from fastlane title.txt
+# ("Cairn: Health Aggregator").
+AutoName: Cairn
+
 RepoType: git
 Repo: https://github.com/LuminaAppsDev/cairn.git
 
