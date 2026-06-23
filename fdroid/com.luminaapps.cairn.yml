@@ -25,10 +25,11 @@ Builds:
   # Seed build: the first release that builds cleanly on F-Droid's server.
   # Earlier tags don't qualify — v0.1.0 used the old application id, v0.1.1
   # crashed on launch (R8), and v0.1.2's build.gradle.kts didn't survive
-  # F-Droid's signing-config scrub — so v0.1.3 is the seed.
+  # F-Droid's signing-config scrub — so v0.1.3 is the seed. F-Droid requires an
+  # immutable full commit hash here (not a tag); this is the v0.1.3 commit.
   - versionName: 0.1.3
     versionCode: 4
-    commit: v0.1.3
+    commit: 6aeaf87571d13154c33f027196580e4278861134
     output: build/app/outputs/flutter-apk/app-release.apk
     srclibs:
       - flutter@stable
@@ -52,8 +53,12 @@ Builds:
       - export PUB_CACHE=$(pwd)/.pub-cache
       - $$flutter$$/bin/flutter build apk --release
 
-# New tags matching the version are picked up automatically.
+# New tags matching the version are picked up automatically. The version lives
+# in pubspec.yaml (Flutter), not the Android manifest/gradle, so UpdateCheckData
+# tells the tag checker how to read versionCode (digits after '+') and
+# versionName (before '+') from it — without it, checkupdates finds no version.
 AutoUpdateMode: Version
 UpdateCheckMode: Tags
+UpdateCheckData: pubspec.yaml|version:\s.+\+(\d+)|.|version:\s(.+)\+
 CurrentVersion: 0.1.3
 CurrentVersionCode: 4
