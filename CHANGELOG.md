@@ -4,7 +4,38 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## 0.1.2 — 2026-06-23
+
+Patch release: fixes a crash on launch in release builds and adds store
+screenshots. The 0.1.1 binaries were withdrawn (see below).
+
+### Fixed
+
+- **Release builds crashed on launch** with `NoSuchMethodException:
+  androidx.work.impl.WorkDatabase_Impl.<init>`. Flutter enables R8 for release
+  builds, and R8 "full mode" stripped the no-arg constructor of WorkManager's
+  Room database, which Room instantiates by reflection. Added
+  `android/app/proguard-rules.pro` (auto-included by the Flutter Gradle plugin)
+  that keeps Room database constructors. Debug builds were unaffected, so it
+  surfaced only in the published APK.
+
+### Added
+
+- **Store screenshots** — six per locale (English + German) under
+  `fastlane/metadata/android/<locale>/images/phoneScreenshots/`, captured from
+  a release build.
+
+### Changed
+
+- Advanced the F-Droid recipe seed to the `v0.1.2` tag / versionCode 3 (the
+  first launchable release) and added the matching `changelogs/3.txt`.
+- Added a "smoke-test the signed release build on a device" item to the
+  RELEASE.md pre-release checklist, so a release-only crash can't ship again.
+
 ## 0.1.1 — 2026-06-23
+
+> **Withdrawn** — the release binaries crashed on launch under R8; superseded
+> by 0.1.2. The source changes below still stand.
 
 Moved the project under the **LuminaApps** identity and prepared the F-Droid
 listing graphics. No functional changes to health reading, the OMH format, or

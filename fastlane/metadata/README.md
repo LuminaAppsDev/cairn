@@ -30,9 +30,9 @@ for it (`assets/icon/`).
 | Asset | State |
 | --- | --- |
 | `title` / `short_description` / `full_description` (en + de) | ✅ committed |
-| `changelogs/2.txt` (the 0.1.1 build, versionCode 2) | ✅ committed |
+| `changelogs/3.txt` (the 0.1.2 build, versionCode 3) | ✅ committed |
 | `images/featureGraphic.png` (en + de) | ✅ generated — `python3 tool/generate_feature_graphic.py` |
-| `images/phoneScreenshots/*.png` | ⬜ **you capture from the running app** |
+| `images/phoneScreenshots/*.png` | ✅ committed — six per locale (en + de) |
 
 ## Screenshots — how to add them
 

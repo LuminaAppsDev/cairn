@@ -1,0 +1,4 @@
+Erste F-Droid-Version. Liest deine Gesundheitsdaten aus Health Connect,
+speichert deine Historie als Open-mHealth-Dateien in deiner eigenen Nextcloud
+und bietet ein Dashboard mit Schlafphasen-Ansicht und BMI. Auf Englisch und
+Deutsch verfügbar.

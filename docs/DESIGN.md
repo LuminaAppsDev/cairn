@@ -384,10 +384,9 @@ because the on-disk format is the one genuinely expensive thing to change
   recipe `fdroid/com.luminaapps.cairn.yml`); and a tag-triggered CI workflow
   (`.forgejo/workflows/release.yml`) that builds + signs the APK and publishes
   it to both GitHub and Forgejo. App identity is `com.luminaapps.cairn`.
-- **Remaining:** open the F-Droid RFP + fdroiddata MR (recipe ready; add real
-  phone screenshots under
-  `fastlane/metadata/android/<locale>/images/phoneScreenshots/`); complete the
-  store declarations/build for any other channel(s) pursued.
+- **Remaining:** open the F-Droid RFP + fdroiddata MR (recipe + listing assets,
+  incl. screenshots, are ready); complete the store declarations/build for any
+  other channel(s) pursued.
 
 ### Phase 7 — Nextcloud web app (v1.5) ⬜
 

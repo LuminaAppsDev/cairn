@@ -4,7 +4,7 @@ description: "Personal health-data aggregator: reads HealthKit/Health Connect, w
 publish_to: "none"
 
 # <version>+<build>. Bump the build number on every store/F-Droid upload.
-version: 0.1.1+2
+version: 0.1.2+3
 
 environment:
   sdk: ^3.12.0

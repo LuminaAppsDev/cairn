@@ -22,12 +22,12 @@ RepoType: git
 Repo: https://github.com/LuminaAppsDev/cairn.git
 
 Builds:
-  # Seed build. The first F-Droid build must carry the com.luminaapps.cairn
-  # application id, so it is anchored to v0.1.1 — the v0.1.0 tag/APK still has
-  # the old io.github.theflipside.cairn id and would not match this metadata id.
-  - versionName: 0.1.1
-    versionCode: 2
-    commit: v0.1.1
+  # Seed build: the first launchable release under the com.luminaapps.cairn id.
+  # v0.1.0 carried the old io.github.theflipside.cairn id, and v0.1.1 crashed on
+  # launch (R8 stripped a WorkManager class), so v0.1.2 is the first valid seed.
+  - versionName: 0.1.2
+    versionCode: 3
+    commit: v0.1.2
     output: build/app/outputs/flutter-apk/app-release.apk
     srclibs:
       - flutter@stable
@@ -55,5 +55,5 @@ Builds:
 # New tags matching the version are picked up automatically.
 AutoUpdateMode: Version
 UpdateCheckMode: Tags
-CurrentVersion: 0.1.1
-CurrentVersionCode: 2
+CurrentVersion: 0.1.2
+CurrentVersionCode: 3

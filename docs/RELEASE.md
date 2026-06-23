@@ -63,6 +63,11 @@ Do this once per release, before touching any channel:
       locally and **never** committed (gitignored + `.githooks/pre-commit`).
       Back up the keystore securely; losing it means you can never update the
       app under the same identity.
+- [ ] **Smoke-test the signed release build on a device** — `flutter run
+      --release` (or install the built APK) and confirm it launches and the core
+      screens load. CI builds + tests the APK but never launches it, so a
+      release-only failure (e.g. an R8 strip of a reflectively-loaded class)
+      won't surface in CI.
 
 ---
 
