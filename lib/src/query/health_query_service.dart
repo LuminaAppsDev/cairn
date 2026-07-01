@@ -225,29 +225,55 @@ final class OmhHealthQueryService implements HealthQueryService {
     return best.values.toList();
   }
 
-  /// Whether [a] was ingested strictly after [b]. An unknown ingest time never
-  /// supersedes — a missing header field degrades to "keep what we already
-  /// have", so an undated reading never displaces a dated one (or another
-  /// undated one: the first seen is kept).
-  static bool _ingestedAfter(ScalarReading a, ScalarReading b) {
-    final ai = a.ingestedAt;
-    if (ai == null) return false;
-    final bi = b.ingestedAt;
-    return bi == null || ai.isAfter(bi);
+  /// Whether [a] was ingested strictly after [b] (scalar last-write-wins).
+  static bool _ingestedAfter(ScalarReading a, ScalarReading b) =>
+      _laterIngest(a.ingestedAt, b.ingestedAt);
+
+  /// Whether ingest time [a] is strictly later than [b]. An unknown (null) time
+  /// never supersedes — a missing header field degrades to "keep what we
+  /// already have", so an undated reading never displaces a dated one (and two
+  /// undated ones keep the first seen).
+  static bool _laterIngest(DateTime? a, DateTime? b) {
+    if (a == null) return false;
+    return b == null || a.isAfter(b);
   }
 
-  /// Keeps the preferred source per `(start,end)` step interval before summing.
+  /// Collapses step readings to one per `(start,end)` window: the highest
+  /// source priority wins, and on a tie the latest-ingested reading wins.
+  ///
+  /// The tie-break matters for a source that re-reports a **cumulative total**
+  /// in a fixed window rather than per-interval deltas — Samsung Health, for
+  /// one, exposes the day's steps as a single whole-day record whose value
+  /// grows through the day, so each refresh appends a fresh snapshot with the
+  /// same window. Keeping the newest snapshot yields the current total; keeping
+  /// the first (the old behaviour) pins it to a stale value, and summing the
+  /// window's snapshots would wildly over-count (DESIGN.md §4.3). Genuine
+  /// per-interval deltas keep distinct windows and are still summed by callers.
   List<IntervalReading> _dedupIntervals(List<IntervalReading> readings) {
     const policy = SourcePriorityPolicy.defaults();
     final best = <String, IntervalReading>{};
     for (final r in readings) {
       final key = '${_seconds(r.start)}|${_seconds(r.end)}';
       final current = best[key];
-      if (current == null || _rank(policy, r) < _rank(policy, current)) {
+      if (current == null || _preferInterval(policy, r, current)) {
         best[key] = r;
       }
     }
     return best.values.toList();
+  }
+
+  /// Whether step interval [r] should win its window over [current]: a
+  /// higher-priority source, else — for the same source — the later-ingested
+  /// snapshot.
+  bool _preferInterval(
+    SourcePriorityPolicy policy,
+    IntervalReading r,
+    IntervalReading current,
+  ) {
+    final rankR = _rank(policy, r);
+    final rankCurrent = _rank(policy, current);
+    if (rankR != rankCurrent) return rankR < rankCurrent;
+    return _laterIngest(r.ingestedAt, current.ingestedAt);
   }
 
   int _rank(SourcePriorityPolicy policy, IntervalReading r) => policy.rank(

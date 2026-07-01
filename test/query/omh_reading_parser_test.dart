@@ -117,6 +117,25 @@ void main() {
     expect(reading?.end.toUtc(), DateTime.utc(2026, 6, 16, 4, 7));
   });
 
+  test('parseInterval reads ingestedAt from the header', () {
+    final map = _withBody('step-count', {
+      'step_count': {'value': 443, 'unit': 'steps'},
+      'effective_time_frame': {
+        'time_interval': {
+          'start_date_time': '2026-06-16T06:06:00+02:00',
+          'end_date_time': '2026-06-16T06:07:00+02:00',
+        },
+      },
+    });
+    (map['header']! as Map<String, Object?>)['creation_date_time'] =
+        '2026-06-16T09:25:31+02:00';
+    final reading = parseInterval(map);
+    expect(
+      reading?.ingestedAt?.toUtc(),
+      DateTime.utc(2026, 6, 16, 7, 25, 31),
+    );
+  });
+
   test('parseWorkout parses optional metrics', () {
     final reading = parseWorkout(
       _withBody('physical-activity', {

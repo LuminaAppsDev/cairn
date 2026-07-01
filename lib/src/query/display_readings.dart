@@ -66,6 +66,7 @@ class IntervalReading {
     required this.start,
     required this.end,
     this.source,
+    this.ingestedAt,
   });
 
   /// The measured value over the interval.
@@ -82,6 +83,13 @@ class IntervalReading {
 
   /// Provenance, if parseable.
   final ReadingSource? source;
+
+  /// When Cairn wrote this datapoint (the OMH header's `creation_date_time`, in
+  /// local time), or `null` if absent. The read path breaks same-window ties by
+  /// this, so a source that re-reports a cumulative total in a fixed window
+  /// (e.g. Samsung Health's whole-day step count) resolves to its newest
+  /// snapshot instead of a stale or summed value (DESIGN.md §4.3).
+  final DateTime? ingestedAt;
 }
 
 /// A workout / physical-activity reading (IEEE 1752.1 physical-activity).

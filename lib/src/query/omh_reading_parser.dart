@@ -47,6 +47,7 @@ IntervalReading? parseInterval(Map<String, Object?> map) {
     start: frame.start,
     end: frame.end,
     source: _provenance(map),
+    ingestedAt: _ingestedAt(map),
   );
 }
 

@@ -22,6 +22,17 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- **Today's step total was stuck at a stale value with Samsung Health** (and
+  any source that re-reports a cumulative daily total). Samsung Health exposes
+  the day's steps as one whole-day record whose value grows through the day, so
+  each refresh appends a fresh snapshot with the identical `(start,end)` window.
+  The read path collapsed same-window records but kept the *first* one — the
+  earliest, stalest snapshot (e.g. 14 while the watch showed 7050). It now
+  breaks same-window ties by the ingest timestamp (`creation_date_time`), so the
+  newest snapshot wins — the same last-ingested-wins rule already used for
+  scalar corrections. Genuine per-interval step deltas keep distinct windows and
+  are still summed (DESIGN.md §4.3).
+
 - **Corrected health entries now reflect in the dashboard.** When a reading is
   edited in the source health app (e.g. a mistyped manual weight is fixed), the
   corrected value is re-read on the next sync and appended (append-only forbids

@@ -104,6 +104,31 @@ void main() {
     );
   }
 
+  // Writes a step record whose OMH header `creation_date_time` (the ingest
+  // stamp the read path breaks same-window ties by) is pinned to [ingestedAt].
+  Future<void> putStepsIngestedAt(
+    DateTime start,
+    DateTime end,
+    double value,
+    HealthSource source,
+    DateTime ingestedAt,
+  ) async {
+    final stamped = DefaultOmhMapper(clock: () => ingestedAt);
+    final sample = ScalarSample(
+      metric: HealthMetric.steps,
+      start: start,
+      end: end,
+      value: value,
+      unit: 'steps',
+      source: source,
+    );
+    await store.append(
+      metric: HealthMetric.steps,
+      day: start,
+      dataPoints: [stamped.toDataPoint(sample)],
+    );
+  }
+
   SleepSegmentSample seg(
     DateTime start,
     DateTime end,
@@ -274,6 +299,32 @@ void main() {
     await putSteps(t0, t1, 90, src('fitband')); // wearable preferred
     await putSteps(t1, t2, 50, src('phone'));
     expect(await service.todayStepTotal(), 140);
+  });
+
+  test('cumulative daily total keeps the newest snapshot', () async {
+    final start = DateTime(2026, 6, 16);
+    final end = DateTime(2026, 6, 16, 23, 59, 59);
+    final samsung = src('com.sec.android.app.shealth');
+    // Samsung Health exposes the day's steps as one whole-day record whose
+    // value grows through the day; each refresh appends a fresh snapshot with
+    // the identical window. The total must be the newest snapshot (7050), not
+    // the stale first one (14) and not the sum of snapshots.
+    await putStepsIngestedAt(start, end, 14, samsung, DateTime(2026, 6, 16, 6));
+    await putStepsIngestedAt(
+      start,
+      end,
+      5034,
+      samsung,
+      DateTime(2026, 6, 16, 9),
+    );
+    await putStepsIngestedAt(
+      start,
+      end,
+      7050,
+      samsung,
+      DateTime(2026, 6, 16, 14),
+    );
+    expect(await service.todayStepTotal(), 7050);
   });
 
   test(
