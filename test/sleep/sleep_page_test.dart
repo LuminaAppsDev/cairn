@@ -6,6 +6,7 @@ import 'package:cairn/src/query/health_query_service.dart';
 import 'package:cairn/src/query/metric_series.dart';
 import 'package:cairn/src/query/night_sleep.dart';
 import 'package:cairn/src/sleep/sleep_page.dart';
+import 'package:cairn/src/sleep/sleep_visuals.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -118,6 +119,25 @@ void main() {
     // The trend is the last item in the ListView; scroll it into view.
     await tester.scrollUntilVisible(find.byType(BarChart), 200);
     expect(find.byType(BarChart), findsOneWidget); // trend
+  });
+
+  testWidgets('hypnogram draws one coloured bar per stage segment', (
+    tester,
+  ) async {
+    await tester.pumpWidget(app([_sampleNight()]));
+    await tester.pumpAndSettle();
+
+    final chart = tester.widget<LineChart>(find.byType(LineChart));
+    final bars = chart.data.lineBarsData;
+    // One bar per segment (deep, awake, light) — not a single stepped line —
+    // each drawn in its own stage colour so the phases stand apart.
+    expect(bars, hasLength(3));
+    expect(bars.any((b) => b.isStepLineChart), isFalse);
+    expect(bars.map((b) => b.color).toSet(), {
+      stageColor(SleepStage.deep),
+      stageColor(SleepStage.awake),
+      stageColor(SleepStage.light),
+    });
   });
 
   testWidgets('reloads when the data revision changes', (tester) async {

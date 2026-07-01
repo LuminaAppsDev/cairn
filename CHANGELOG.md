@@ -30,6 +30,13 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- **Redesigned the sleep-stage hypnogram.** The "Stages through the night"
+  chart was a single-colour stepped line whose vertical transitions through the
+  middle "Light" band made the night look noisy and left every phase the same
+  colour. It now draws one coloured bar per stage segment — colours matching the
+  "Where the night went" donut — so deep / light / REM / awake stand apart at a
+  glance.
+
 - **Pinned the iOS deployment target to 14.0 in source** so it no longer needs
   a manual Xcode bump on each checkout. Set `IPHONEOS_DEPLOYMENT_TARGET` (the
   project-level configs), `MinimumOSVersion` in `Flutter/AppFrameworkInfo.plist`,
