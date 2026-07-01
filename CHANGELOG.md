@@ -4,6 +4,16 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## 0.2.0 — 2026-07-01
+
+First feature release since the 0.1.x F-Droid-enabling patches. Highlights:
+browse and compare past nights in the Sleep screen (header arrows or tap the
+trend chart), a colour-coded hypnogram with tap tooltips, and a "last synced"
+time in Settings — plus fixes that make the data correct on real devices: iOS
+HealthKit now prompts and reads, edited/corrected readings update on the
+dashboard, and Samsung Health step totals are right (with on-ingest compaction
+keeping the files tidy).
+
 ### Added
 
 - **Browse past nights in the Sleep screen.** The deep-dive was fixed to last
