@@ -42,8 +42,9 @@ class RemoteFileState {
 /// progress and must not round-trip through Nextcloud (DESIGN.md §6).
 @immutable
 class SyncJournal {
-  /// Creates a journal from [files] (remote path → last-pushed state).
-  const SyncJournal(this.files);
+  /// Creates a journal from [files] (remote path → last-pushed state) and the
+  /// [syncedAt] instant this device last completed a push.
+  const SyncJournal(this.files, {this.syncedAt});
 
   /// An empty journal (nothing pushed yet).
   factory SyncJournal.empty() => const SyncJournal({});
@@ -59,19 +60,33 @@ class SyncJournal {
         }
       });
     }
-    return SyncJournal(files);
+    // Stored as UTC ISO-8601; hand back local time for display. A malformed or
+    // absent value degrades to null ("never synced").
+    final syncedRaw = json['synced_at'];
+    final syncedAt = syncedRaw is String
+        ? DateTime.tryParse(syncedRaw)?.toLocal()
+        : null;
+    return SyncJournal(files, syncedAt: syncedAt);
   }
 
   /// Remote path → last-pushed state.
   final Map<String, RemoteFileState> files;
 
+  /// When this device last completed a push, or `null` if it never has. Used
+  /// only for display (Settings); device-local, never synced (DESIGN.md §6).
+  final DateTime? syncedAt;
+
   /// Returns a copy with [path] recorded as [state].
   SyncJournal withEntry(String path, RemoteFileState state) =>
-      SyncJournal({...files, path: state});
+      SyncJournal({...files, path: state}, syncedAt: syncedAt);
+
+  /// Returns a copy stamped with the last-completed-push instant [at].
+  SyncJournal withSyncedAt(DateTime at) => SyncJournal(files, syncedAt: at);
 
   /// Serialises to the journal JSON object.
   Map<String, Object?> toJson() => {
     'files': {for (final e in files.entries) e.key: e.value.toJson()},
+    if (syncedAt != null) 'synced_at': syncedAt!.toUtc().toIso8601String(),
   };
 }
 

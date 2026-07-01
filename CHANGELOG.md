@@ -14,6 +14,12 @@ All notable changes to this project are documented in this file.
   You can also **tap a night's column in the trend chart** to jump straight to
   it; the selected night's bar is highlighted and the rest are dimmed.
 
+- **"Last synced" time in Settings.** The Nextcloud card now shows when this
+  device last completed a sync (or "Not synced yet"), persisted device-locally
+  in the sync journal so it survives restarts. The instant is stamped only on a
+  clean push — a failed upload never reports a false "synced" time — and a
+  no-op run where everything was already up to date still counts.
+
 ### Fixed
 
 - **Corrected health entries now reflect in the dashboard.** When a reading is

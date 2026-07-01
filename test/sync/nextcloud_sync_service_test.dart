@@ -84,11 +84,13 @@ void main() {
     file.writeAsStringSync(content);
   }
 
-  NextcloudSyncService service() => NextcloudSyncService(
-    target: target,
-    localRoot: cairnDir,
-    journalStore: journalStore,
-  );
+  NextcloudSyncService service({DateTime Function()? clock}) =>
+      NextcloudSyncService(
+        target: target,
+        localRoot: cairnDir,
+        journalStore: journalStore,
+        clock: clock,
+      );
 
   test('first push uploads every shard and the manifest', () async {
     writeFile('manifest.json', '{}');
@@ -188,5 +190,41 @@ void main() {
 
     final journal = await journalStore.read();
     expect(journal.files, isEmpty);
+  });
+
+  test('a successful push records the last-synced instant', () async {
+    writeFile('manifest.json', '{}');
+    final at = DateTime(2026, 7, 1, 9);
+    await service(clock: () => at).push();
+
+    final journal = await journalStore.read();
+    expect(journal.syncedAt!.toUtc(), at.toUtc());
+  });
+
+  test('a no-op push (nothing changed) still stamps last-synced', () async {
+    // Only a shard: pushed once, then size-skipped on the second run.
+    writeFile('steps/2026/2026-06-14.jsonl', '{"a":1}\n');
+    await service(clock: () => DateTime(2026, 6, 30)).push();
+
+    final at = DateTime(2026, 7, 1, 10);
+    final report = await service(clock: () => at).push();
+
+    expect(report.pushed, isEmpty);
+    expect(report.skipped, 1);
+    final journal = await journalStore.read();
+    expect(journal.syncedAt!.toUtc(), at.toUtc());
+  });
+
+  test('a failed upload does not stamp a last-synced time', () async {
+    writeFile('manifest.json', '{}');
+    target.failPut = true;
+
+    await expectLater(
+      service().push(), // clock irrelevant: a failed run never stamps
+      throwsA(isA<NextcloudSyncException>()),
+    );
+
+    final journal = await journalStore.read();
+    expect(journal.syncedAt, isNull);
   });
 }

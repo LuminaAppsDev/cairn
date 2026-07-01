@@ -60,7 +60,11 @@ final class NextcloudSyncService {
     required this.localRoot,
     required this.journalStore,
     this.remoteRoot = 'Cairn',
-  });
+    DateTime Function()? clock,
+  }) : _now = clock ?? DateTime.now;
+
+  /// Clock for the last-synced stamp; injectable for deterministic tests.
+  final DateTime Function() _now;
 
   /// The remote endpoint files are pushed to.
   final NextcloudSyncTarget target;
@@ -81,6 +85,7 @@ final class NextcloudSyncService {
     var journal = await journalStore.read();
     final pushed = <String>[];
     var skipped = 0;
+    var uploadedAll = false;
 
     try {
       for (final file in _localFiles()) {
@@ -100,10 +105,17 @@ final class NextcloudSyncService {
         );
         pushed.add(remotePath);
       }
+      // The loop finished without throwing: every file is up to date on the
+      // server, so record when. (A no-op run where all files were skipped
+      // still counts — the device is in sync as of now.)
+      uploadedAll = true;
     } finally {
       // Persist progress even if an upload threw, so the next run resumes
-      // instead of re-sending everything. A journal-write failure must not
-      // mask the upload error that brought us here, so swallow it.
+      // instead of re-sending everything. Only stamp the last-synced instant on
+      // a clean run, so a failed upload never reports a false "synced" time. A
+      // journal-write failure must not mask the upload error that brought us
+      // here, so swallow it.
+      if (uploadedAll) journal = journal.withSyncedAt(_now());
       try {
         await journalStore.write(journal);
       } on Object catch (_) {

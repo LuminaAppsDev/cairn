@@ -95,6 +95,12 @@ final class NextcloudSyncCoordinator {
   Future<bool> isConnected() async =>
       await tokenStore.readCredentials() != null;
 
+  /// When this device last completed a push, or `null` if it never has. Read
+  /// from the device-local journal so it survives restarts (for the Settings
+  /// "last synced" line); independent of whether credentials are still stored.
+  Future<DateTime?> lastSyncedAt() async =>
+      (await journalStore.read()).syncedAt;
+
   /// Clears the stored credentials (disconnect).
   Future<void> disconnect() => tokenStore.deleteCredentials();
 

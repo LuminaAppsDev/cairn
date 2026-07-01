@@ -265,6 +265,13 @@
   "@settingsActionDisconnect": { "description": "Button: forget the stored Nextcloud credentials." },
   "settingsActionSyncNow": "Sync now",
   "@settingsActionSyncNow": { "description": "Button: run a manual sync." },
+  "settingsLastSynced": "Last synced: {when}",
+  "@settingsLastSynced": {
+    "description": "Line in the Nextcloud card showing when the device last completed a sync.",
+    "placeholders": { "when": { "type": "String" } }
+  },
+  "settingsNeverSynced": "Not synced yet",
+  "@settingsNeverSynced": { "description": "Shown in place of the last-synced date when the device has never completed a sync." },
   "settingsProfile": "Profile",
   "@settingsProfile": { "description": "Section heading for the personal profile." },
   "settingsProfileDesc": "Used to compute your BMI from the latest synced weight. Stored in your Nextcloud.",

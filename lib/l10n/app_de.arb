@@ -112,6 +112,8 @@
   "settingsSyncedLocalOnly": "Lokal synchronisiert. Verbinde eine Nextcloud, um sie zu sichern.",
   "settingsActionDisconnect": "Trennen",
   "settingsActionSyncNow": "Jetzt synchronisieren",
+  "settingsLastSynced": "Zuletzt synchronisiert: {when}",
+  "settingsNeverSynced": "Noch nicht synchronisiert",
   "settingsProfile": "Profil",
   "settingsProfileDesc": "Wird genutzt, um deinen BMI aus dem zuletzt synchronisierten Gewicht zu berechnen. In deiner Nextcloud gespeichert.",
   "settingsHeightLabel": "Größe",

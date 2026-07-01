@@ -36,6 +36,7 @@ class _SettingsPageState extends State<SettingsPage> {
   String _syncStatus = '';
   Profile _profile = Profile.empty();
   bool _syncing = false;
+  DateTime? _lastSyncedAt; // when this device last completed a push, if ever
 
   @override
   void initState() {
@@ -51,6 +52,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Future<void> _load() async {
     final credentials = await widget.services.coordinator.currentCredentials();
+    final lastSynced = await widget.services.coordinator.lastSyncedAt();
     if (!mounted) return;
     final profile = widget.services.profile.value;
     setState(() {
@@ -58,6 +60,7 @@ class _SettingsPageState extends State<SettingsPage> {
       _account = credentials == null
           ? null
           : '${credentials.loginName}@${credentials.server.host}';
+      _lastSyncedAt = lastSynced;
       _profile = profile;
       _height.text = profile.heightCm == null
           ? ''
@@ -97,10 +100,12 @@ class _SettingsPageState extends State<SettingsPage> {
       _syncStatus = l10n.settingsSyncing;
     });
     final result = await widget.services.refresh();
+    final lastSynced = await widget.services.coordinator.lastSyncedAt();
     if (!mounted) return;
     setState(() {
       _syncing = false;
       _syncStatus = _statusFor(result, l10n);
+      _lastSyncedAt = lastSynced;
     });
   }
 
@@ -208,6 +213,15 @@ class _SettingsPageState extends State<SettingsPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(connectionText),
+                  const SizedBox(height: 4),
+                  Text(
+                    _lastSyncedAt == null
+                        ? l10n.settingsNeverSynced
+                        : l10n.settingsLastSynced(
+                            _formatSynced(context, _lastSyncedAt!),
+                          ),
+                    style: theme.textTheme.bodySmall,
+                  ),
                   if (_syncStatus.isNotEmpty) ...[
                     const SizedBox(height: 8),
                     Text(_syncStatus, style: theme.textTheme.bodySmall),
@@ -330,4 +344,15 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   static String _two(int v) => v.toString().padLeft(2, '0');
+
+  /// Localised `date, time` for the last-synced line, honouring the device's
+  /// 24h/12h setting.
+  static String _formatSynced(BuildContext context, DateTime at) {
+    final material = MaterialLocalizations.of(context);
+    final time = material.formatTimeOfDay(
+      TimeOfDay.fromDateTime(at),
+      alwaysUse24HourFormat: MediaQuery.of(context).alwaysUse24HourFormat,
+    );
+    return '${material.formatMediumDate(at)}, $time';
+  }
 }

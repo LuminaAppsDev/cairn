@@ -60,4 +60,33 @@ void main() {
     expect(journal.files.keys, ['good']);
     expect(journal.files['good']!.size, 5);
   });
+
+  test('write then read round-trips the last-synced instant', () async {
+    final at = DateTime.utc(2026, 7, 1, 12, 30);
+    await store.write(SyncJournal.empty().withSyncedAt(at));
+    final read = await store.read();
+    // Stored as UTC, handed back as local; compare the instant.
+    expect(read.syncedAt, isNotNull);
+    expect(read.syncedAt!.toUtc(), at);
+    expect(read.syncedAt!.isUtc, isFalse);
+  });
+
+  test('withEntry preserves an existing last-synced instant', () {
+    final at = DateTime.utc(2026, 7, 1, 8);
+    final journal = SyncJournal.empty()
+        .withSyncedAt(at)
+        .withEntry('x', const RemoteFileState(size: 1));
+    expect(journal.syncedAt!.toUtc(), at);
+  });
+
+  test('syncedAt is null when absent or malformed', () {
+    expect(
+      SyncJournal.fromJson(const {'files': <String, Object?>{}}).syncedAt,
+      isNull,
+    );
+    expect(
+      SyncJournal.fromJson(const {'synced_at': 'not-a-date'}).syncedAt,
+      isNull,
+    );
+  });
 }

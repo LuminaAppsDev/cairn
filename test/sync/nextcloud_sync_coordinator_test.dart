@@ -142,4 +142,15 @@ void main() {
     expect(tokenStore.stored, isNull);
     expect(await c.isConnected(), isFalse);
   });
+
+  test('lastSyncedAt reads the instant from the journal', () async {
+    final at = DateTime.utc(2026, 7, 1, 8);
+    await journalStore.write(SyncJournal.empty().withSyncedAt(at));
+
+    expect((await coordinator().lastSyncedAt())!.toUtc(), at);
+  });
+
+  test('lastSyncedAt is null when the device has never synced', () async {
+    expect(await coordinator().lastSyncedAt(), isNull);
+  });
 }
