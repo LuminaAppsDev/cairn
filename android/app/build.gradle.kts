@@ -1,3 +1,4 @@
+import com.android.build.gradle.internal.api.ApkVariantOutputImpl
 import java.util.Properties
 
 plugins {
@@ -59,6 +60,26 @@ android {
             if (keystorePropertiesFile.exists()) {
                 signingConfig = signingConfigs.getByName("release")
             }
+        }
+    }
+}
+
+// Per-ABI version codes for F-Droid's split APKs. F-Droid ships one APK per
+// ABI (smaller downloads) and needs each to carry a distinct versionCode; its
+// Flutter scheme is `base * 10 + abiIndex`, matched by the `VercodeOperation`
+// in the fdroiddata recipe (fdroid/com.luminaapps.cairn.yml). This is a no-op
+// for the universal (fat) APK our own CI builds — that output has no ABI
+// filter — so the sideload / GitHub / Forgejo releases keep the plain pubspec
+// versionCode. Layout mandated by the F-Droid maintainer (Flutter ABI-split).
+val abiCodes = mapOf("armeabi-v7a" to 1, "arm64-v8a" to 2, "x86_64" to 3)
+android.applicationVariants.configureEach {
+    val variant = this
+    variant.outputs.forEach { output ->
+        val abi = output.filters.find { it.filterType == "ABI" }?.identifier
+        val abiVersionCode = abiCodes[abi]
+        if (abiVersionCode != null) {
+            (output as ApkVariantOutputImpl).versionCodeOverride =
+                variant.versionCode * 10 + abiVersionCode
         }
     }
 }

@@ -4,6 +4,21 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## 0.2.1 — 2026-07-27
+
+Packaging release for F-Droid — ships one APK per ABI (smaller downloads).
+No app behaviour change.
+
+### Changed
+
+- **F-Droid ABI split.** The Android build now gives each per-ABI APK a
+  distinct versionCode (`base × 10 + abiIndex`, ordered armeabi-v7a < arm64-v8a
+  < x86_64), the scheme F-Droid's Flutter packaging expects (requested by the
+  F-Droid maintainer). It's a no-op for the universal APK our own CI publishes
+  to GitHub/Forgejo — that output has no ABI filter, so those releases keep the
+  plain pubspec versionCode. The fdroiddata recipe builds `--split-per-abi` and
+  mirrors the scheme via `VercodeOperation`.
+
 ## 0.2.0 — 2026-07-01
 
 First feature release since the 0.1.x F-Droid-enabling patches. Highlights:
