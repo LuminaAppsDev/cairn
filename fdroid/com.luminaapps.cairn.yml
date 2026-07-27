@@ -28,15 +28,22 @@ RepoType: git
 Repo: https://github.com/LuminaAppsDev/cairn.git
 
 Builds:
-  # Seed build: the first release that builds cleanly on F-Droid's server.
-  # Earlier tags don't qualify — v0.1.0 used the old application id, v0.1.1
-  # crashed on launch (R8), and v0.1.2's build.gradle.kts didn't survive
-  # F-Droid's signing-config scrub — so v0.1.3 is the seed. F-Droid requires an
-  # immutable full commit hash here (not a tag); this is the v0.1.3 commit.
-  - versionName: 0.1.3
-    versionCode: 4
-    commit: 6aeaf87571d13154c33f027196580e4278861134
-    output: build/app/outputs/flutter-apk/app-release.apk
+  # Seed build for the ABI-split scheme (one APK per ABI, requested by the
+  # F-Droid maintainer). v0.2.1 is the seed: it is the first tag whose
+  # android/app/build.gradle.kts sets the per-ABI versionCode override, so the
+  # three split APKs get distinct, ascending version codes. Earlier tags built a
+  # single fat APK (and v0.1.0–0.1.2 had their own blockers), so they can't seed
+  # a split build — all three ABIs would collide on one version code. F-Droid
+  # requires an immutable full commit hash; this is the v0.2.1 commit.
+  #
+  # `--split-per-abi` produces app-armeabi-v7a / -arm64-v8a / -x86_64-release.apk
+  # with version codes base*10 + {1,2,3} (61/62/63 for build 6). VercodeOperation
+  # (below) declares those three codes; each maps to the matching APK from the
+  # output glob.
+  - versionName: 0.2.1
+    versionCode: 61
+    commit: d1db3b2fea0d2d57588181db4410352a34122252
+    output: build/app/outputs/flutter-apk/app-*-release.apk
     srclibs:
       - flutter@stable
     # Drop the iOS platform dir from the Android build. Only android + ios
@@ -57,14 +64,20 @@ Builds:
       - .pub-cache
     build:
       - export PUB_CACHE=$(pwd)/.pub-cache
-      - $$flutter$$/bin/flutter build apk --release
+      - $$flutter$$/bin/flutter build apk --release --split-per-abi
 
-# New tags matching the version are picked up automatically. The version lives
-# in pubspec.yaml (Flutter), not the Android manifest/gradle, so UpdateCheckData
-# tells the tag checker how to read versionCode (digits after '+') and
-# versionName (before '+') from it — without it, checkupdates finds no version.
+# New tags are picked up automatically. The version lives in pubspec.yaml
+# (Flutter), not the Android manifest/gradle, so UpdateCheckData tells the tag
+# checker how to read the base versionCode (digits after '+') and versionName
+# (before '+'). VercodeOperation then derives the three per-ABI codes
+# (base*10 + 1/2/3), mirroring the build.gradle.kts scheme, so F-Droid tracks
+# and builds all three ABIs for every tag.
 AutoUpdateMode: Version
 UpdateCheckMode: Tags
+VercodeOperation:
+  - '%c * 10 + 1'
+  - '%c * 10 + 2'
+  - '%c * 10 + 3'
 UpdateCheckData: pubspec.yaml|version:\s.+\+(\d+)|.|version:\s(.+)\+
-CurrentVersion: 0.1.3
-CurrentVersionCode: 4
+CurrentVersion: 0.2.1
+CurrentVersionCode: 63
