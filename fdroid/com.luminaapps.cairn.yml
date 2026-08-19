@@ -18,7 +18,9 @@ AuthorName: Max Fiedler
 SourceCode: https://github.com/LuminaAppsDev/cairn
 IssueTracker: https://github.com/LuminaAppsDev/cairn/issues
 
-# The launcher label, auto-derived by F-Droid from the built APK. Committed so
+# The launcher label, read by F-Droid out of the source AndroidManifest.xml at
+# the tag — `checkupdates` calls `fetch_real_name()`, which parses the manifest;
+# no APK is built for this. Committed so
 # `fdroid checkupdates --auto` (which F-Droid CI runs, then fails on any diff)
 # is a no-op. The listing's display title still comes from fastlane title.txt
 # ("Cairn: Health Aggregator").
@@ -27,25 +29,29 @@ AutoName: Cairn
 RepoType: git
 Repo: https://github.com/LuminaAppsDev/cairn.git
 
-# Reproducible builds: F-Droid rebuilds each block and compares the result
-# byte-for-byte against the matching upstream APK below, then publishes ours
-# rather than an F-Droid-signed one. One app-level template covers all three
-# per-ABI blocks because the release assets are named by versionCode and %c
-# resolves to each block's own code (%v is the versionName). There is no ABI
-# placeholder, which is why the filenames encode the code rather than the ABI.
-# Verified before submission: the published cairn-v0.2.2-72.apk is byte-identical
-# to a rebuild of this commit inside F-Droid's own buildserver image.
-Binaries: https://github.com/LuminaAppsDev/cairn/releases/download/v%v/cairn-v%v-%c.apk
-
 Builds:
   # ABI split: one build block per ABI. F-Droid resolves each block's `output`
   # to exactly one APK, so a single block with a glob that matches all three
   # splits fails ("Multiple apks match"). Instead, each block builds just its
   # ABI via `--target-platform` (which still yields a split APK, so the
   # versionCodeOverride in android/app/build.gradle.kts applies) and names that
-  # ABI's file. Version codes are base*10 + {1,2,3} — armeabi-v7a=71,
-  # arm64-v8a=72, x86_64=73 for build 7 — matching the gradle `abiCodes` and the
-  # VercodeOperation below, ascending as F-Droid requires.
+  # ABI's file. Version codes are base*10 + {1,2,3} — armeabi-v7a=81,
+  # arm64-v8a=82, x86_64=83 for build 8 — matching the gradle `abiCodes` and the
+  # VercodeOperation below. The codes ascend with ABI capability because Android
+  # installs the highest versionCode a device can run, so a 64-bit device picks
+  # arm64-v8a over armeabi-v7a; the order the VercodeOperation entries appear in
+  # is *not* a tool requirement — `checkupdates` sorts them and takes the highest.
+  # The codes are declared here but no longer appear in the asset filenames; see
+  # `binary:` below.
+  #
+  # REPRODUCIBLE BUILDS — each block carries its own `binary:` rather than sharing
+  # one app-level `Binaries:` template. A single template can only substitute %v
+  # (versionName) and %c (versionCode) — there is no ABI placeholder — so sharing
+  # one would force the published assets to be named by version code, which tells
+  # a human nothing about which file their device needs. Per-block URLs let the
+  # releases stay named by ABI. F-Droid rebuilds each block, compares it
+  # byte-for-byte against the APK named in that block's own `binary:` field, and
+  # publishes ours rather than an F-Droid-signed one.
   #
   # REPRODUCIBLE BUILDS — why each block moves the checkout to /build/cairn.
   # Dart's AOT compiler bakes the absolute Flutter project root into libapp.so
@@ -59,17 +65,24 @@ Builds:
   # dir — hence the mv/pushd ... popd/mv-back round trip in each. PUB_CACHE is
   # pinned inside the moved tree so package paths match upstream too.
   #
-  # Seed = the v0.2.2 commit: the first tag that both publishes per-ABI APKs and
-  # carries the reproducibility fixes (pinned build path, build-id suppression),
-  # so it is the earliest tag whose output can be verified against `Binaries`
-  # below. Earlier tags published only a universal APK. F-Droid requires an
-  # immutable full commit hash. srclibs/rm/sudo/prebuild/scandelete are identical
+  # Seed = the v0.2.3 commit: the earliest tag whose published APKs can actually
+  # be verified against each block's own `binary:` field. v0.2.2 added the per-ABI
+  # assets and the build-path/build-id fixes, but its binaries still carried AGP's
+  # dependency-metadata signing block, which F-Droid's scanner rejects outright,
+  # so verification never took effect; v0.2.3 disables that block. Tags before
+  # v0.2.2 published only a universal APK. We pin the full commit hash rather
+  # than the tag by choice, not because F-Droid demands it — fdroidserver has no
+  # validator for this field and `lint` objects only to branch names, so a tag
+  # would be accepted. But tags are mutable, and a repointed one would silently
+  # change what gets rebuilt here; see the matching check in `prebuild:` below.
+  # srclibs/rm/sudo/prebuild/scandelete are identical
   # across the three blocks (F-Droid's `rewritemeta` expands YAML anchors back
   # out, so they are repeated verbatim).
-  - versionName: 0.2.2
-    versionCode: 71
-    commit: 3c1951b2906a8a65697e3edb4def5060bd32cbae
+  - versionName: 0.2.3
+    versionCode: 81
+    commit: 460e6bff83c495680420e8dab8030512fd2eacbc
     output: build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
+    binary: https://github.com/LuminaAppsDev/cairn/releases/download/v%v/cairn-v%v-armeabi-v7a.apk
     srclibs:
       - flutter@stable
     rm:
@@ -116,10 +129,11 @@ Builds:
       - $FLUTTER_BIN build apk --release --split-per-abi --target-platform=android-arm
       - popd >/dev/null
       - mv /build/cairn com.luminaapps.cairn
-  - versionName: 0.2.2
-    versionCode: 72
-    commit: 3c1951b2906a8a65697e3edb4def5060bd32cbae
+  - versionName: 0.2.3
+    versionCode: 82
+    commit: 460e6bff83c495680420e8dab8030512fd2eacbc
     output: build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+    binary: https://github.com/LuminaAppsDev/cairn/releases/download/v%v/cairn-v%v-arm64-v8a.apk
     srclibs:
       - flutter@stable
     rm:
@@ -166,10 +180,11 @@ Builds:
       - $FLUTTER_BIN build apk --release --split-per-abi --target-platform=android-arm64
       - popd >/dev/null
       - mv /build/cairn com.luminaapps.cairn
-  - versionName: 0.2.2
-    versionCode: 73
-    commit: 3c1951b2906a8a65697e3edb4def5060bd32cbae
+  - versionName: 0.2.3
+    versionCode: 83
+    commit: 460e6bff83c495680420e8dab8030512fd2eacbc
     output: build/app/outputs/flutter-apk/app-x86_64-release.apk
+    binary: https://github.com/LuminaAppsDev/cairn/releases/download/v%v/cairn-v%v-x86_64.apk
     srclibs:
       - flutter@stable
     rm:
@@ -221,8 +236,8 @@ Builds:
 # binary, as lower-case hex SHA-256 with no colons — the form fdroidserver
 # compares against. An upper-case value passes `fdroid lint` and then fails the
 # build, and `fdroid rewritemeta` would normalise it but strips every comment in
-# this file, so do not run it here. Confirmed identical across v0.1.0, v0.2.1 and
-# v0.2.2. Obtained with `apksigner verify --print-certs` (the documented
+# this file, so do not run it here. Confirmed identical across v0.1.0, v0.2.1,
+# v0.2.2 and v0.2.3. Obtained with `apksigner verify --print-certs` (the documented
 # `keytool -printcert -jarfile` one-liner prints nothing on a v2-only APK).
 AllowedAPKSigningKeys: b53624a0de7eef20330857f3cc0f261fce1e5eeb4c60ad42a9f9487a8daac9e0
 
@@ -231,7 +246,7 @@ AllowedAPKSigningKeys: b53624a0de7eef20330857f3cc0f261fce1e5eeb4c60ad42a9f9487a8
 # checker how to read the base versionCode (digits after '+') and versionName
 # (before '+'). VercodeOperation declares the per-ABI code scheme (base*10 +
 # 1/2/3), mirroring the gradle abiCodes, so checkupdates computes the right
-# CurrentVersionCode (the highest, 73) and can track future tags. The three
+# CurrentVersionCode (the highest, 83) and can track future tags. The three
 # per-ABI Builds blocks above are what actually build.
 AutoUpdateMode: Version
 UpdateCheckMode: Tags
@@ -240,5 +255,5 @@ VercodeOperation:
   - '%c * 10 + 2'
   - '%c * 10 + 3'
 UpdateCheckData: pubspec.yaml|version:\s.+\+(\d+)|.|version:\s(.+)\+
-CurrentVersion: 0.2.2
-CurrentVersionCode: 73
+CurrentVersion: 0.2.3
+CurrentVersionCode: 83
