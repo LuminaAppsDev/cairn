@@ -27,14 +27,24 @@ AutoName: Cairn
 RepoType: git
 Repo: https://github.com/LuminaAppsDev/cairn.git
 
+# Reproducible builds: F-Droid rebuilds each block and compares the result
+# byte-for-byte against the matching upstream APK below, then publishes ours
+# rather than an F-Droid-signed one. One app-level template covers all three
+# per-ABI blocks because the release assets are named by versionCode and %c
+# resolves to each block's own code (%v is the versionName). There is no ABI
+# placeholder, which is why the filenames encode the code rather than the ABI.
+# Verified before submission: the published cairn-v0.2.2-72.apk is byte-identical
+# to a rebuild of this commit inside F-Droid's own buildserver image.
+Binaries: https://github.com/LuminaAppsDev/cairn/releases/download/v%v/cairn-v%v-%c.apk
+
 Builds:
   # ABI split: one build block per ABI. F-Droid resolves each block's `output`
   # to exactly one APK, so a single block with a glob that matches all three
   # splits fails ("Multiple apks match"). Instead, each block builds just its
   # ABI via `--target-platform` (which still yields a split APK, so the
   # versionCodeOverride in android/app/build.gradle.kts applies) and names that
-  # ABI's file. Version codes are base*10 + {1,2,3} — armeabi-v7a=61,
-  # arm64-v8a=62, x86_64=63 for build 6 — matching the gradle `abiCodes` and the
+  # ABI's file. Version codes are base*10 + {1,2,3} — armeabi-v7a=71,
+  # arm64-v8a=72, x86_64=73 for build 7 — matching the gradle `abiCodes` and the
   # VercodeOperation below, ascending as F-Droid requires.
   #
   # REPRODUCIBLE BUILDS — why each block moves the checkout to /build/cairn.
@@ -49,15 +59,16 @@ Builds:
   # dir — hence the mv/pushd ... popd/mv-back round trip in each. PUB_CACHE is
   # pinned inside the moved tree so package paths match upstream too.
   #
-  # Seed = the v0.2.1 commit: the first tag whose build.gradle.kts sets the
-  # per-ABI override (earlier tags built a single fat APK and can't seed a split
-  # build — all three ABIs would collide on one code). F-Droid requires an
-  # immutable full commit hash; this is the v0.2.1 commit. srclibs/rm/sudo/
-  # prebuild/scandelete are identical across the three blocks (F-Droid's
-  # `rewritemeta` expands YAML anchors back out, so they are repeated verbatim).
-  - versionName: 0.2.1
-    versionCode: 61
-    commit: d1db3b2fea0d2d57588181db4410352a34122252
+  # Seed = the v0.2.2 commit: the first tag that both publishes per-ABI APKs and
+  # carries the reproducibility fixes (pinned build path, build-id suppression),
+  # so it is the earliest tag whose output can be verified against `Binaries`
+  # below. Earlier tags published only a universal APK. F-Droid requires an
+  # immutable full commit hash. srclibs/rm/sudo/prebuild/scandelete are identical
+  # across the three blocks (F-Droid's `rewritemeta` expands YAML anchors back
+  # out, so they are repeated verbatim).
+  - versionName: 0.2.2
+    versionCode: 71
+    commit: 3c1951b2906a8a65697e3edb4def5060bd32cbae
     output: build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
     srclibs:
       - flutter@stable
@@ -69,7 +80,14 @@ Builds:
     prebuild:
       - flutterVersion=$(sed -n -E "s/.*FLUTTER_VERSION:\s*'?([0-9.]+)'?.*/\1/p" .forgejo/workflows/release.yml | head -1)
       - '[ -n "$flutterVersion" ]'
+      - flutterCommit=$(sed -n -E "s/.*FLUTTER_COMMIT:\s*'?([0-9a-f]{40})'?.*/\1/p" .forgejo/workflows/release.yml | head -1)
+      - '[ -n "$flutterCommit" ]'
       - git -C $$flutter$$ checkout -f $flutterVersion
+      # Tags are mutable. Upstream CI records the commit the tag resolved to and
+      # fails closed on a mismatch; do the same here, so a repointed tag surfaces
+      # as an obvious toolchain error rather than an unexplained reproducibility
+      # failure. Both values live in the same file, so they cannot drift.
+      - '[ "$(git -C $$flutter$$ rev-parse HEAD)" = "$flutterCommit" ]'
       - export FLUTTER_BIN=$(cd $$flutter$$ && pwd)/bin/flutter
       - cd ..
       # Idempotent: if an earlier attempt in this buildserver session failed
@@ -98,9 +116,9 @@ Builds:
       - $FLUTTER_BIN build apk --release --split-per-abi --target-platform=android-arm
       - popd >/dev/null
       - mv /build/cairn com.luminaapps.cairn
-  - versionName: 0.2.1
-    versionCode: 62
-    commit: d1db3b2fea0d2d57588181db4410352a34122252
+  - versionName: 0.2.2
+    versionCode: 72
+    commit: 3c1951b2906a8a65697e3edb4def5060bd32cbae
     output: build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
     srclibs:
       - flutter@stable
@@ -112,7 +130,14 @@ Builds:
     prebuild:
       - flutterVersion=$(sed -n -E "s/.*FLUTTER_VERSION:\s*'?([0-9.]+)'?.*/\1/p" .forgejo/workflows/release.yml | head -1)
       - '[ -n "$flutterVersion" ]'
+      - flutterCommit=$(sed -n -E "s/.*FLUTTER_COMMIT:\s*'?([0-9a-f]{40})'?.*/\1/p" .forgejo/workflows/release.yml | head -1)
+      - '[ -n "$flutterCommit" ]'
       - git -C $$flutter$$ checkout -f $flutterVersion
+      # Tags are mutable. Upstream CI records the commit the tag resolved to and
+      # fails closed on a mismatch; do the same here, so a repointed tag surfaces
+      # as an obvious toolchain error rather than an unexplained reproducibility
+      # failure. Both values live in the same file, so they cannot drift.
+      - '[ "$(git -C $$flutter$$ rev-parse HEAD)" = "$flutterCommit" ]'
       - export FLUTTER_BIN=$(cd $$flutter$$ && pwd)/bin/flutter
       - cd ..
       # Idempotent: if an earlier attempt in this buildserver session failed
@@ -141,9 +166,9 @@ Builds:
       - $FLUTTER_BIN build apk --release --split-per-abi --target-platform=android-arm64
       - popd >/dev/null
       - mv /build/cairn com.luminaapps.cairn
-  - versionName: 0.2.1
-    versionCode: 63
-    commit: d1db3b2fea0d2d57588181db4410352a34122252
+  - versionName: 0.2.2
+    versionCode: 73
+    commit: 3c1951b2906a8a65697e3edb4def5060bd32cbae
     output: build/app/outputs/flutter-apk/app-x86_64-release.apk
     srclibs:
       - flutter@stable
@@ -155,7 +180,14 @@ Builds:
     prebuild:
       - flutterVersion=$(sed -n -E "s/.*FLUTTER_VERSION:\s*'?([0-9.]+)'?.*/\1/p" .forgejo/workflows/release.yml | head -1)
       - '[ -n "$flutterVersion" ]'
+      - flutterCommit=$(sed -n -E "s/.*FLUTTER_COMMIT:\s*'?([0-9a-f]{40})'?.*/\1/p" .forgejo/workflows/release.yml | head -1)
+      - '[ -n "$flutterCommit" ]'
       - git -C $$flutter$$ checkout -f $flutterVersion
+      # Tags are mutable. Upstream CI records the commit the tag resolved to and
+      # fails closed on a mismatch; do the same here, so a repointed tag surfaces
+      # as an obvious toolchain error rather than an unexplained reproducibility
+      # failure. Both values live in the same file, so they cannot drift.
+      - '[ "$(git -C $$flutter$$ rev-parse HEAD)" = "$flutterCommit" ]'
       - export FLUTTER_BIN=$(cd $$flutter$$ && pwd)/bin/flutter
       - cd ..
       # Idempotent: if an earlier attempt in this buildserver session failed
@@ -185,12 +217,21 @@ Builds:
       - popd >/dev/null
       - mv /build/cairn com.luminaapps.cairn
 
+# The signing certificate F-Droid must find on every downloaded reference
+# binary, as lower-case hex SHA-256 with no colons — the form fdroidserver
+# compares against. An upper-case value passes `fdroid lint` and then fails the
+# build, and `fdroid rewritemeta` would normalise it but strips every comment in
+# this file, so do not run it here. Confirmed identical across v0.1.0, v0.2.1 and
+# v0.2.2. Obtained with `apksigner verify --print-certs` (the documented
+# `keytool -printcert -jarfile` one-liner prints nothing on a v2-only APK).
+AllowedAPKSigningKeys: b53624a0de7eef20330857f3cc0f261fce1e5eeb4c60ad42a9f9487a8daac9e0
+
 # New tags are picked up automatically. The version lives in pubspec.yaml
 # (Flutter), not the Android manifest/gradle, so UpdateCheckData tells the tag
 # checker how to read the base versionCode (digits after '+') and versionName
 # (before '+'). VercodeOperation declares the per-ABI code scheme (base*10 +
 # 1/2/3), mirroring the gradle abiCodes, so checkupdates computes the right
-# CurrentVersionCode (the highest, 63) and can track future tags. The three
+# CurrentVersionCode (the highest, 73) and can track future tags. The three
 # per-ABI Builds blocks above are what actually build.
 AutoUpdateMode: Version
 UpdateCheckMode: Tags
@@ -199,5 +240,5 @@ VercodeOperation:
   - '%c * 10 + 2'
   - '%c * 10 + 3'
 UpdateCheckData: pubspec.yaml|version:\s.+\+(\d+)|.|version:\s(.+)\+
-CurrentVersion: 0.2.1
-CurrentVersionCode: 63
+CurrentVersion: 0.2.2
+CurrentVersionCode: 73

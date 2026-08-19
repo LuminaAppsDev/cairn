@@ -195,6 +195,31 @@ testing. `LDFLAGS` does **not** reach AGP's CMake invocation. Never run two
 buildserver containers against one shared SDK volume. And `fdroid rewritemeta`
 strips every comment from the recipe, so do not run it on the submitted file.
 
+**Key custody — read this before losing the keystore.** Enabling reproducible
+builds moves the signing key onto the critical path for *distribution*, not just
+for uploads. `AllowedAPKSigningKeys` pins exactly one certificate, and
+`AutoUpdateMode: Version` means every future tag is picked up and gated on it
+without another human-reviewed metadata change.
+
+- **Key lost.** F-Droid permanently stops shipping updates to existing installs
+  the moment a tag is cut with a different keystore: the rebuilt APK's signer no
+  longer matches the pin, so the build fails and nothing publishes. Android also
+  refuses an in-place upgrade across a signature change, so there is no fix on
+  the F-Droid side — only a new listing under a different application id, which
+  every user must install manually. Keep the offline backup current and verify
+  it restores.
+- **Key compromised.** An attacker holding the private key can produce an APK
+  that *passes* the pin. The only remaining protection is the byte-for-byte
+  rebuild from the pinned `commit:`, which holds only as long as they cannot also
+  land a matching commit. Treat a keystore compromise as requiring a new
+  application id, a user-facing advisory, and an fdroiddata metadata change —
+  not a key rotation.
+- **Deliberate rotation** has the same cost as loss. There is no supported
+  transition path; plan on it never happening.
+
+Because of that asymmetry, the keystore backup is a release-blocking
+prerequisite here, not general good practice.
+
 **Residual risk.** R8 and baseline-profile generation are documented as
 sensitive to CPU core count, which differs between the runner and F-Droid's
 builder. That cannot be reproduced locally; it only shows up on F-Droid's CI.
