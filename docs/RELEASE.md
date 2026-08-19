@@ -328,6 +328,153 @@ Sources: [Submitting Quick Start](https://f-droid.org/en/docs/Submitting_to_F-Dr
 [`build-flutter.yml` template](https://gitlab.com/fdroid/fdroiddata/-/blob/master/templates/build-flutter.yml),
 [Reproducible Builds](https://f-droid.org/en/docs/Reproducible_Builds/).
 
+### 2a-deps. Dependency verification
+
+[`android/gradle/verification-metadata.xml`](../android/gradle/verification-metadata.xml)
+pins a SHA-256 for every Maven artifact the Android build resolves — around 900
+components, covering the app's own dependencies *and* the buildscript classpath
+(AGP, the Kotlin plugin, Flutter's engine artifacts). Gradle refuses to build if
+an artifact's checksum does not match, or if it resolves an artifact the file
+does not list at all. Both F-Droid and this repo's CI enforce it, because the
+file lives in the repo — and so does every contributor's machine, the moment it
+touches Gradle. There is no way to enable it on one side only.
+
+The trust anchor underneath it is
+[`android/gradle/wrapper/gradle-wrapper.properties`](../android/gradle/wrapper/gradle-wrapper.properties),
+which pins `distributionSha256Sum` for the Gradle distribution. Without that,
+the distribution that *interprets* the verification metadata is itself fetched
+on nothing but TLS — a substituted distribution would not have to defeat
+checksum pinning, it could simply decline to honour it. Confirmed the pin
+enforces: with a deliberately wrong sum the wrapper refuses to run
+(*"Verification of Gradle distribution failed!"*). When bumping Gradle, take the
+new sum from `https://services.gradle.org/distributions/<dist>.sha256`.
+
+Note what is and is not tracked here. `gradlew`, `gradlew.bat` and
+`gradle-wrapper.jar` are gitignored by Flutter's template and have never been
+committed; the Flutter tool recreates them from its own cached
+`gradle_wrapper` artifact when they are missing. Committing them is **not** the
+fix it looks like: fdroidserver's scanner names those three files explicitly and
+deletes them from the source tree before building, so a committed copy is not
+what would run. What *is* tracked is `gradle-wrapper.properties` — so the
+distribution pin survives regeneration even though the binary enforcing it is
+supplied by the pinned Flutter SDK rather than by this repo. That leaves the
+wrapper binary inside Flutter's supply chain rather than ours, which is the same
+trust boundary the SDK itself sits on.
+
+This is what makes the dependency set tamper-evident, and it is why the repo
+does **not** set `repositoriesMode`. The obvious hardening —
+`RepositoriesMode.FAIL_ON_PROJECT_REPOS` in `settings.gradle.kts`, so that only
+settings-declared repositories are consulted — is not available to a Flutter
+app:
+
+- Every Flutter plugin's `android/build.gradle` declares
+  `rootProject.allprojects { repositories { … } }`, and **Flutter's own Gradle
+  plugin does the same** to add the engine repository. The strict mode therefore
+  fails while applying `dev.flutter.flutter-gradle-plugin`, before any of our
+  code runs.
+- `PREFER_SETTINGS` does apply, but it *ignores* project repositories rather
+  than failing on them — which silently removes Flutter's engine repository and
+  makes every `io.flutter:*` artifact unresolvable. Restoring it means
+  replicating `FlutterPlugin.kt`'s derivation (`FLUTTER_STORAGE_BASE_URL`, the
+  default host, and the realm read from `bin/cache/engine.realm`) in our own
+  settings file, i.e. coupling the build to Flutter internals.
+
+Checksum pinning covers the substitution risk without that coupling, and covers
+more ground: a repository added by a plugin cannot substitute a known artifact
+(the checksum would not match) nor introduce an unknown one (it is not in the
+file), and unlike `repositoriesMode` it also governs the buildscript classpath.
+
+The residual difference is that such a repository is still *contacted* —
+checksums reject its bytes, they do not stop the request. With only `google()`,
+`mavenCentral()` and `gradlePluginPortal()` declared and no authenticated
+repository anywhere in the tree, that leaks nothing beyond the dependency
+coordinates themselves. Revisit this trade-off if a private or credentialed
+repository is ever added, because then the request itself would carry
+something worth protecting.
+
+**Regenerate whenever the resolved dependency set changes** — a `pubspec.yaml`
+bump, `flutter pub upgrade`, a Flutter SDK bump, or an AGP/Kotlin/Gradle bump:
+
+```bash
+cd android
+./gradlew --write-verification-metadata sha256 --refresh-dependencies \
+    :app:assembleRelease
+```
+
+`--refresh-dependencies` matters: without it Gradle hashes whatever is already
+in the local cache, so an artifact that had already been substituted would be
+"verified" against itself.
+
+That single invocation covers the debug, profile and release variants and all
+three ABIs. Afterwards, confirm the paths CI, F-Droid and developers actually
+build still work — they resolve slightly different graphs:
+
+```bash
+flutter build apk --release --split-per-abi --target-platform=android-arm
+flutter build apk --release --split-per-abi --target-platform=android-arm64
+flutter build apk --release --split-per-abi --target-platform=android-x64
+flutter build apk --release        # the universal APK CI also publishes
+flutter build apk --debug          # what `flutter run` resolves
+flutter build apk --profile
+```
+
+**The file must stay host-agnostic.** `aapt2` is the one dependency published
+per operating system, and Gradle records only the classifier for the host that
+generated the file. Left as generated it is Linux-only, so a contributor on
+macOS or Windows hits a verification failure on their first `flutter run` — an
+error naming `aapt2` with no hint that the cause is their OS. The `osx` and
+`windows` entries are therefore added by hand from `dl.google.com`, marked with
+an `origin` that says so. They survive regeneration — a full
+`--refresh-dependencies` run is a byte-identical no-op. Only those three
+classifiers exist; `osx` is a universal binary covering both Apple Silicon and
+Intel.
+
+**After an AGP bump, checking that those entries are still present is not
+enough.** `aapt2`'s version string is derived from AGP, so a bump creates a
+*new* component containing only a freshly generated `linux` entry, while the old
+hand-added `osx`/`windows` entries remain — attached to the superseded version,
+and harmless-looking. Re-derive both hashes for the new version:
+
+```bash
+V=<new aapt2 version, e.g. 9.0.1-14304508>
+B=https://dl.google.com/dl/android/maven2/com/android/tools/build/aapt2/$V
+for c in linux osx windows; do
+  curl -sSL "$B/aapt2-$V-$c.jar" | sha256sum | sed "s/-/$c/"
+done
+```
+
+Cross-check the `linux` line against the entry Gradle generated: they must be
+identical. That is what makes the other two trustworthy — it demonstrates the
+manual download path returns the same bytes Gradle's own resolution did, rather
+than asking anyone to take a hand-pasted hash on faith.
+
+**What this does not cover.** Dependency verification governs Maven artifacts
+only. The Android SDK, build-tools and NDK come from `sdkmanager` over Google's
+own manifests and are not verified here — the NDK matters most, since its
+toolchain output is baked into every native `.so`. Dart packages are pinned
+separately, by `pubspec.lock` plus `--enforce-lockfile` in both CI and the
+F-Droid recipe. The Flutter SDK is pinned by `FLUTTER_COMMIT`, asserted in the
+recipe's `prebuild`. Read "dependency verification is on" as one layer, not as a
+verified toolchain.
+
+Note also what a checksum is and is not: this is trust-on-first-use. A hash
+asserts "identical to what was resolved when the file was written", not
+"published by someone we trust" — a dependency already compromised at generation
+time would be pinned as good. `verify-signatures` is off deliberately:
+maintaining a trusted-key ring across ~900 components with uneven signing
+coverage would cost more than it buys here.
+
+Review the diff before committing rather than accepting it blindly: the whole
+point is that a changed checksum is a signal, and regenerating turns every
+signal into a silent accept. A checksum that changes for an artifact whose
+version did **not** change deserves an explanation before it is committed.
+
+Failures are loud and specific (`Dependency verification failed for
+configuration …`, naming the artifact and repository) and Gradle writes an HTML
+report under `android/build/reports/dependency-verification/`. If a verification
+problem ever blocks a release, `./gradlew --dependency-verification=off` is the
+escape hatch for a local diagnosis — never for a published build.
+
 ### 2a-recipe. What each field in the recipe means
 
 [`fdroid/com.luminaapps.cairn.yml`](../fdroid/com.luminaapps.cairn.yml) is the
