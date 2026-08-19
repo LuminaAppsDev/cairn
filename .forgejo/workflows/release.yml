@@ -22,8 +22,11 @@
 #
 # The release publishes FOUR APKs, all idempotent (re-run safe) and attached to
 # the tagged commit:
-#   * cairn-<tag>.apk            - universal, for humans who just want a download
-#   * cairn-<tag>-<code>.apk x3  - one per ABI, what F-Droid verifies against
+#   * cairn-<tag>.apk           - universal, for humans who just want a download
+#   * cairn-<tag>-<abi>.apk x3  - one per ABI, what F-Droid verifies against.
+#     Named by ABI rather than versionCode so a human can tell which one they
+#     need; the recipe addresses them with a per-block `binary:` because a single
+#     app-level `Binaries:` template only substitutes %v and %c, never the ABI.
 # to TWO places:
 #   * GitHub (the public, user-facing repo, GH_REPO) — releases are NOT mirrored
 #     from Forgejo, so they are created via the GitHub API with GH_RELEASE_TOKEN.
@@ -225,9 +228,13 @@ jobs:
 
       - name: Package release assets
         # Collects everything the publish steps upload into dist/, so the naming
-        # scheme lives in exactly one place. The per-ABI filenames encode the
-        # versionCode because F-Droid's `Binaries:` URL template only supports
-        # %v (versionName) and %c (versionCode) — there is no %abi.
+        # scheme lives in exactly one place. Per-ABI assets are named by ABI, not
+        # by versionCode: the name is what a human reads when picking a download.
+        # The recipe reaches them through a per-block `binary:` URL, which is what
+        # makes ABI names possible — a single app-level `Binaries:` template can
+        # only substitute %v and %c. The versionCodes themselves still come from
+        # `abiCodes` in android/app/build.gradle.kts and are declared per block in
+        # the recipe; they are simply no longer part of the filename.
         run: |
           set -euo pipefail
           cd "$BUILD_DIR"
@@ -240,19 +247,9 @@ jobs:
           dist="$GITHUB_WORKSPACE/dist"
           rm -rf "$dist"
           mkdir -p "$dist"
-          base=$(sed -n -E 's/^version:[[:space:]]*[0-9.]+\+([0-9]+).*/\1/p' pubspec.yaml | head -1)
-          # Anchored and leading-zero-free: bash arithmetic below would read a
-          # value like 0123 as octal and silently emit the wrong version code.
-          if ! printf '%s' "$base" | grep -qE '^[1-9][0-9]*$'; then
-            echo "Unusable versionCode from pubspec.yaml: '$base'" >&2
-            exit 1
-          fi
           cp "$apks/app-release.apk" "$dist/cairn-${tag}.apk"
-          # Must mirror `abiCodes` in android/app/build.gradle.kts exactly.
-          for pair in armeabi-v7a:1 arm64-v8a:2 x86_64:3; do
-            abi="${pair%%:*}"
-            idx="${pair##*:}"
-            cp "$apks/app-${abi}-release.apk" "$dist/cairn-${tag}-$((base * 10 + idx)).apk"
+          for abi in armeabi-v7a arm64-v8a x86_64; do
+            cp "$apks/app-${abi}-release.apk" "$dist/cairn-${tag}-${abi}.apk"
           done
           cd "$dist"
           for f in *.apk; do

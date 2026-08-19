@@ -1,0 +1,5 @@
+Packaging fix. The v0.2.2 downloads carried a build-tool metadata block that
+F-Droid does not accept, so the reproducible build could not be verified; it is
+now switched off. Per-architecture downloads are also named by architecture
+(arm64-v8a, armeabi-v7a, x86_64) instead of by build number, so you can tell
+which file you need. No app behaviour change.

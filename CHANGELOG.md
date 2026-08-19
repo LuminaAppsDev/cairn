@@ -4,6 +4,37 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## 0.2.3 — 2026-08-19
+
+Packaging fix. The 0.2.2 binaries could not be verified by F-Droid — its scanner
+rejected them — so reproducible builds never actually took effect. No app
+behaviour change.
+
+### Fixed
+
+- **Disabled AGP's dependency-metadata signing block.** The Android Gradle
+  Plugin embeds a ~5 KB payload, encrypted for Google Play, into the APK signing
+  block by default. F-Droid cannot inspect it and rejects any APK carrying it
+  ("Found extra signing block 'Dependency metadata'"), which failed the
+  reference binary for all three ABIs. `android/app/build.gradle.kts` now sets
+  `dependenciesInfo { includeInApk = false; includeInBundle = false }`.
+
+  Worth recording why this was not caught before tagging 0.2.2: the block lives
+  in the APK *signing* block, between the zip entries and the central directory,
+  so an entry-by-entry comparison of two APKs reports them as identical while
+  both carry it. Local verification now inspects the signing-block ID list too.
+
+### Changed
+
+- **Per-ABI downloads are named by ABI, not by versionCode.**
+  `cairn-vX.Y.Z-arm64-v8a.apk` rather than `cairn-vX.Y.Z-82.apk`, so the
+  filename says which file a device needs. This is possible because the recipe
+  now gives each build block its own `binary:` URL instead of sharing one
+  app-level `Binaries:` template — a shared template can only substitute `%v`
+  and `%c`, never the ABI, which is what forced version-code names in 0.2.2.
+  The version codes are unchanged in meaning (`base × 10 + {1,2,3}`) and are
+  still declared per block in the recipe.
+
 ## 0.2.2 — 2026-08-19
 
 Packaging release enabling **reproducible builds** on F-Droid. F-Droid now

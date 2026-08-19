@@ -48,6 +48,17 @@ android {
         }
     }
 
+    // F-Droid rejects APKs carrying AGP's dependency-metadata block: it is a
+    // ~5 KB payload encrypted for Google Play, so a FOSS repo cannot inspect it
+    // ("Found extra signing block 'Dependency metadata'"). AGP embeds it in the
+    // APK signing block by default, which also puts it outside the zip entry
+    // list — so an entry-by-entry comparison will not reveal it. Turn it off for
+    // both APK and bundle outputs. See docs/RELEASE.md 2a-repro.
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
+    }
+
     buildTypes {
         release {
             // Default to debug signing so `flutter run --release` works without a

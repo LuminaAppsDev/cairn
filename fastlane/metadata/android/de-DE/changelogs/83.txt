@@ -1,0 +1,6 @@
+Paketierungs-Fix. Die Downloads von 0.2.2 enthielten einen Metadaten-Block der
+Build-Werkzeuge, den F-Droid nicht akzeptiert — der reproduzierbare Build ließ
+sich damit nicht prüfen. Er ist jetzt abgeschaltet. Die Downloads pro
+Architektur heißen außerdem nach der Architektur (arm64-v8a, armeabi-v7a,
+x86_64) statt nach der Build-Nummer, damit du die passende Datei erkennst.
+Keine Änderung am Verhalten der App.

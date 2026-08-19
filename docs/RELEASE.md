@@ -142,7 +142,8 @@ contains `file://<project root>/.dart_tool/flutter_build/dart_plugin_registrant.
 | `BUILD_DIR: /build/cairn` | [`.forgejo/workflows/release.yml`](../.forgejo/workflows/release.yml) | Stages the checkout there; every Flutter/Gradle step compiles from it |
 | `sudo: mkdir -p /build` + `mv`/`pushd` | [`fdroid/com.luminaapps.cairn.yml`](../fdroid/com.luminaapps.cairn.yml) | Moves F-Droid's checkout onto the same path, in **both** `prebuild` and `build` |
 | `-Wl,--build-id=none` | [`android/build.gradle.kts`](../android/build.gradle.kts) | Drops the GNU build-id from natively-compiled plugin libraries (see below) |
-| `Binaries:` + `AllowedAPKSigningKeys:` | the fdroiddata recipe | Tells F-Droid which APKs to verify against, and which signing key to expect |
+| `dependenciesInfo { includeInApk = false }` | [`android/app/build.gradle.kts`](../android/app/build.gradle.kts) | Stops AGP embedding a Play-encrypted payload F-Droid rejects (see below) |
+| per-block `binary:` + `AllowedAPKSigningKeys:` | the fdroiddata recipe | Tells F-Droid which APK each block verifies against, and which signing key to expect |
 
 **One-time host prep on the release runner.** Do this once, as root, before the
 first reproducible release. The release job itself **never calls sudo** — it
@@ -176,6 +177,19 @@ debug info but leaves the differing hash. Two byte-identical libraries end up
 differing by exactly those 20 bytes. The flag lives in `build.gradle.kts` rather
 than an environment variable so CI and F-Droid cannot drift apart.
 
+**Why `dependenciesInfo` is off.** AGP embeds a dependency-metadata payload —
+roughly 5 KB, encrypted for Google Play — into the APK *signing* block by
+default. A FOSS repo cannot inspect it, so F-Droid's scanner rejects any APK
+carrying it: *"Found extra signing block 'Dependency metadata'"*. This is checked
+against the **reference binary**, i.e. the APK published here, so it fails the
+whole verification regardless of how the rebuild went.
+
+It is easy to miss, because the block sits between the zip entries and the
+central directory: comparing two APKs entry by entry reports them as identical
+while both carry it. That is exactly how it survived into v0.2.2. Any local
+comparison must inspect the signing-block ID list as well — expect only a v2
+signature and padding.
+
 **Verifying locally before you tag.** `fdroid verify` is no help — it hardcodes
 the f-droid.org repo URL and only works for already-published apps. Instead,
 build in F-Droid's own image and compare:
@@ -192,8 +206,41 @@ Gotchas that will waste your afternoon: Gradle's build cache and AGP's CMake
 cache (inside `PUB_CACHE`, at `…/jni-1.0.0/android/.cxx`) both serve stale
 output and make a failed change look like a working one — clear both when
 testing. `LDFLAGS` does **not** reach AGP's CMake invocation. Never run two
-buildserver containers against one shared SDK volume. And `fdroid rewritemeta`
-strips every comment from the recipe, so do not run it on the submitted file.
+buildserver containers against one shared SDK volume.
+
+**`rewritemeta` is mandatory for the submitted copy.** fdroiddata's CI runs
+`fdroid rewritemeta` and fails the merge request on any diff, so the file in the
+merge request must already be in its canonical form — field order, line folding,
+blank lines between build blocks, trailing newline. The commented copy in this
+repo is documentation; generate the submission from it and let `rewritemeta`
+reformat, rather than hand-formatting either one:
+
+```bash
+cp fdroid/com.luminaapps.cairn.yml <fdroiddata>/metadata/
+cd <fdroiddata> && fdroid rewritemeta com.luminaapps.cairn && fdroid lint com.luminaapps.cairn
+```
+
+Depending on the fdroidserver version, `rewritemeta` may also strip the
+comments — which is fine for the submitted copy and is why the documented
+version lives here instead.
+
+**Order of operations when cutting a reproducible release.** The recipe pins an
+immutable `commit:`, which cannot be known until the release commit exists — so
+the recipe is always updated *after* the tag, never in the same commit. Doing it
+in one step produces a recipe that claims a version it is not pinned to, and
+F-Droid would then rebuild the previous source and fail the byte comparison (or,
+before reproducibility is enforced, publish the old packaging under the new
+version number).
+
+1. Commit the app, CI, changelog and docs changes — **leave the recipe alone**.
+2. Tag `vX.Y.Z` and let CI publish the four assets.
+3. In a follow-up commit, update the recipe: `commit:` in every build block to
+   the tagged SHA, `versionName`/`versionCode`, the `binary:` URLs,
+   `CurrentVersion`/`CurrentVersionCode`, and every comment that names a version
+   code. Stale comments contradicting the fields below them have been the most
+   frequently missed item here — grep the file for the old numbers rather than
+   editing the fields you remember.
+4. Copy the result into the fdroiddata fork and run `rewritemeta` + `lint`.
 
 **Key custody — read this before losing the keystore.** Enabling reproducible
 builds moves the signing key onto the critical path for *distribution*, not just
