@@ -164,8 +164,23 @@ jobs:
           set -euo pipefail
           flutter_home="$HOME/flutter-$FLUTTER_VERSION"
           if [ ! -x "$flutter_home/bin/flutter" ]; then
+            # Stage the clone and move it into place, rather than cloning
+            # straight to $flutter_home. A run killed mid-clone would otherwise
+            # leave that path half-populated, and `git clone` refuses to write
+            # into a non-empty directory — wedging every later run of BOTH
+            # workflows until someone deleted it by hand. ci.yml's
+            # cancel-in-progress makes exactly that reachable.
+            staging="$(mktemp -d "$HOME/.flutter-staging.XXXXXXXX")"
+            trap 'rm -rf "$staging"' EXIT
             git clone --depth 1 -b "$FLUTTER_VERSION" \
-              https://github.com/flutter/flutter.git "$flutter_home"
+              https://github.com/flutter/flutter.git "$staging/flutter"
+            # Atomic within one filesystem. If another job published first,
+            # mv fails; keep theirs rather than clobbering a tree in use.
+            mv -T "$staging/flutter" "$flutter_home" 2>/dev/null || true
+          fi
+          if [ ! -x "$flutter_home/bin/flutter" ]; then
+            echo "No usable Flutter SDK at $flutter_home after install." >&2
+            exit 1
           fi
           git config --global --add safe.directory "$flutter_home"
           # Fail closed if the tag has moved since FLUTTER_COMMIT was recorded.

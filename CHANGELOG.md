@@ -6,6 +6,57 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- **A CI workflow that fires on every branch push**
+  (`.forgejo/workflows/ci.yml`). Until now `release.yml` was the only
+  workflow and it fires solely on a `vX.Y.Z` tag, so the first automated
+  feedback on a commit arrived while it was being released — with the signing
+  keystore already decoded on disk. The new job runs the dependency-verification
+  gate, `dart format`, `dart analyze` and `flutter test`, touches no secret and
+  never writes `/build`, and uses a per-ref concurrency group rather than
+  reusing the release group name — Forgejo scopes those per repository, so
+  reusing it would queue every push behind every release. Tag pushes are
+  excluded twice over: by the `branches:` filter and by an explicit job-level
+  `if:`, because Forgejo's filter semantics have diverged from GitHub's before
+  and the cost of being wrong is this job racing a release.
+
+  Two things it does that the release job did not. `dart analyze` runs with
+  `--fatal-infos --fatal-warnings`: bare `dart analyze` exits 0 on info-severity
+  diagnostics and most `very_good_analysis` rules are info-severity, so
+  "CI treats lints as errors" was not actually enforced anywhere. And the
+  Flutter version is read out of `release.yml` rather than duplicated, using the
+  same two expressions the F-Droid recipe greps — so CI doubles as a canary for
+  that parser.
+
+- **`tool/check_dependency_verification.py`**, the half of dependency
+  verification Gradle cannot do for itself. Gradle proves the pinned hashes
+  match the bytes a repository served; it cannot prove verification is switched
+  on. A single `org.gradle.dependency.verification=off` line in a *tracked*
+  `gradle.properties` disables the entire mechanism while builds still print
+  BUILD SUCCESSFUL and `verification-metadata.xml` still looks pristine —
+  confirmed by building an APK from a deliberately corrupted pin. The script
+  rejects that property, plus a relaxed `<verify-metadata>`, blanket-trust
+  elements, artifacts with no checksum, duplicate entries Gradle would silently
+  merge, and coverage dropping below a floor. CI additionally forces
+  `-Dorg.gradle.dependency.verification=strict`, so the two controls cover each
+  other. Given a base revision it also flags a checksum that moved under an
+  unchanged coordinate — published artifacts are immutable, so that is never
+  routine — and a pin removed with no replacement version. The base comparison
+  is fail-closed: a named-but-unreadable base exits non-zero rather than
+  printing an all-clear.
+
+### Fixed
+
+- **The shared Flutter SDK install is now atomic** in both workflows. Each
+  cloned straight into `$HOME/flutter-$VERSION`, guarded only by a check that
+  `bin/flutter` was executable. A run killed mid-clone left that path
+  half-populated, and `git clone` refuses to write into a non-empty directory —
+  so every later run of *both* workflows would keep failing until someone
+  deleted it by hand. Harmless while only tag pushes built; the new CI job's
+  `cancel-in-progress` makes it reachable. Both now stage the clone and `mv` it
+  into place, keeping a rival job's tree if it published first.
+
+### Added
+
 - **Gradle dependency verification.** `android/gradle/verification-metadata.xml`
   pins a SHA-256 for every Maven artifact the Android build resolves — ~900
   components, covering the app's dependencies, Flutter's engine artifacts and

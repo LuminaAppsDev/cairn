@@ -1,0 +1,284 @@
+# Always-fires quality gate: every branch push, long before a tag exists.
+#
+# WHY THIS FILE EXISTS. release.yml is the only other workflow and it fires
+# solely on a vX.Y.Z tag, so until now the first automated feedback on a commit
+# arrived while it was being released — with the signing keystore already
+# decoded on disk. Two classes of breakage reached that point unseen:
+#
+#   * Stale or weakened dependency verification.
+#     android/gradle/verification-metadata.xml pins a SHA-256 for every Maven
+#     artifact the Android build resolves. If a pin stops matching what upstream
+#     serves, or the file is quietly relaxed, nothing noticed until the release
+#     build failed — or worse, until F-Droid's rebuild of a published tag did.
+#   * Ordinary broken code: formatting, analyzer findings, failing tests. The
+#     repo had no automated check for any of these outside a release.
+#
+# Both are cheap to catch here and expensive to catch there.
+#
+# RELATIONSHIP TO release.yml — this job must never disturb a release.
+#   * No `secrets.` reference appears anywhere in this file. There is no
+#     keystore, no key.properties, no publish token, and so no cleanup step.
+#   * It never touches $BUILD_DIR (/build/cairn). That path exists for
+#     reproducibility and release.yml deletes it on entry and in an always()
+#     cleanup; a second job writing there could destroy a release mid-build.
+#   * The concurrency group is per-ref and deliberately NOT `release`. Forgejo
+#     scopes concurrency groups per repository, not per workflow, so reusing
+#     that name would queue every push behind every release.
+#
+# WHAT IS DELIBERATELY NOT HERE. No APK build (minutes, plus the reproducibility
+# machinery that needs), no iOS work (no macOS runner), no caching action
+# (`actions/*` resolves against this self-hosted Forgejo, which has no such
+# repo — see release.yml's note on why Flutter is cloned by hand).
+name: CI
+
+# `branches: ['**']` rather than a bare `push:`. A bare push matches every ref
+# including tags, so pushing v1.2.3 would start this job alongside release.yml
+# and duplicate the whole toolchain install on a single-runner host. Naming the
+# branches arm should exclude tag refs -- but Forgejo has diverged from GitHub
+# here before, so the job also carries an explicit `if:` guard rather than
+# trusting this alone. Do not add `tags-ignore:` as well: mixing filter kinds
+# changes how they combine and lets tags back in.
+#
+# There is no `pull_request:` trigger on purpose. Commit statuses attach to the
+# SHA, so a push-triggered run already reports on any PR built from that branch,
+# and adding the event would double every run on a capacity-1 runner.
+on:
+  push:
+    branches:
+      - '**'
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Forcing strict mode is not belt-and-braces, it is load-bearing. A single
+  # `org.gradle.dependency.verification=off` line in any gradle.properties
+  # Gradle reads disables checksum verification entirely, while the build still
+  # prints BUILD SUCCESSFUL and verification-metadata.xml still looks pristine.
+  # Verified against this repo: with that line present a deliberately corrupted
+  # pin builds an APK and exits 0; with this system property set, the same tree
+  # correctly fails. The guard step below also rejects the property outright, so
+  # the two controls cover each other.
+  GRADLE_OPTS: -Dorg.gradle.dependency.verification=strict
+
+jobs:
+  check:
+    # `branches:` above should already exclude tag refs, but Forgejo's filter
+    # semantics have diverged from GitHub's here before, and the cost of being
+    # wrong is this job racing release.yml on one runner. Assert it directly
+    # rather than trusting the trigger: redundant if the filter behaves, and
+    # decisive if it does not.
+    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+    runs-on: linux
+    # Roughly 4x the worst observed cold run, which is dominated by one-time
+    # downloads (Flutter SDK clone, Gradle distribution, Maven cache).
+    timeout-minutes: 20
+    steps:
+      # Full history: the drift check compares the pin file against the revision
+      # this push started from. At the default depth of 1 that base is
+      # unreachable, and a supply-chain check that silently degrades to "nothing
+      # to compare" while still printing an all-clear is worse than no check.
+      # `uses:` are full URLs pinned to commit SHAs for the reasons release.yml
+      # documents: a bare `actions/checkout` resolves against this Forgejo.
+      - name: Checkout
+        uses: https://github.com/actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+
+      # First, because it needs no toolchain at all — python3 and git only.
+      # This is the half of dependency verification Gradle structurally cannot
+      # do for itself: Gradle proves the pinned hashes match the bytes a
+      # repository served, but cannot prove verification is switched on, nor
+      # that the pin file still says what a human agreed to.
+      - name: Verify dependency-verification policy
+        run: |
+          set -euo pipefail
+          # Prefer the ref this push started from, so a push of several commits
+          # is checked as a whole rather than only its tip. That ref is absent
+          # on a new branch (all-zeros) and unreachable on a force-push, so fall
+          # back to the parent commit, then to no comparison at all. Whenever a
+          # base IS chosen, the script exits non-zero if it cannot read it.
+          base=""
+          for candidate in "${{ github.event.before }}" "HEAD^"; do
+            if [ -n "$candidate" ] \
+              && git rev-parse --verify -q "${candidate}^{commit}" >/dev/null 2>&1; then
+              base="$candidate"
+              break
+            fi
+          done
+          if [ -n "$base" ]; then
+            python3 tool/check_dependency_verification.py --base "$base"
+          else
+            echo "No reachable base revision; running stateless checks only."
+            python3 tool/check_dependency_verification.py
+          fi
+
+      # Read the toolchain pin out of release.yml rather than repeating it here.
+      # Two copies of a version number is exactly the drift this workflow exists
+      # to catch, and the F-Droid recipe already greps these same two lines — so
+      # CI doubles as a canary for the recipe's parser.
+      - name: Resolve the pinned Flutter toolchain
+        run: |
+          set -euo pipefail
+          workflow=".forgejo/workflows/release.yml"
+          version=$(sed -n -E "s/.*FLUTTER_VERSION:\s*'?([0-9.]+)'?.*/\1/p" "$workflow" | head -1)
+          commit=$(sed -n -E "s/.*FLUTTER_COMMIT:\s*'?([0-9a-f]{40})'?.*/\1/p" "$workflow" | head -1)
+          if [ -z "$version" ] || [ -z "$commit" ]; then
+            echo "Could not read FLUTTER_VERSION/FLUTTER_COMMIT from $workflow." >&2
+            echo "The F-Droid recipe greps those same lines and will fail too." >&2
+            exit 1
+          fi
+          echo "FLUTTER_VERSION=$version" >> "$GITHUB_ENV"
+          echo "FLUTTER_COMMIT=$commit" >> "$GITHUB_ENV"
+
+      # Shares $HOME/flutter-$FLUTTER_VERSION and the default ~/.gradle with
+      # release.yml, which saves a 1-2 minute clone and a full Maven download on
+      # every push. Know the limit of that sharing: the commit check below
+      # validates which commit HEAD points at, not the working tree, and
+      # dependency pinning covers resolved Maven artifacts — not a Gradle init
+      # script dropped in ~/.gradle/init.d. Anything with shell access on this
+      # runner can reach state a later release build trusts. That is a property
+      # of one persistent runner, not of this file; see docs/RELEASE.md.
+      - name: Set up Flutter
+        run: |
+          set -euo pipefail
+          flutter_home="$HOME/flutter-$FLUTTER_VERSION"
+          if [ ! -x "$flutter_home/bin/flutter" ]; then
+            # Stage the clone and move it into place, rather than cloning
+            # straight to $flutter_home. A run killed mid-clone would otherwise
+            # leave that path half-populated, and `git clone` refuses to write
+            # into a non-empty directory — wedging every later run of BOTH
+            # workflows until someone deleted it by hand. ci.yml's
+            # cancel-in-progress makes exactly that reachable.
+            staging="$(mktemp -d "$HOME/.flutter-staging.XXXXXXXX")"
+            trap 'rm -rf "$staging"' EXIT
+            git clone --depth 1 -b "$FLUTTER_VERSION" \
+              https://github.com/flutter/flutter.git "$staging/flutter"
+            # Atomic within one filesystem. If another job published first,
+            # mv fails; keep theirs rather than clobbering a tree in use.
+            mv -T "$staging/flutter" "$flutter_home" 2>/dev/null || true
+          fi
+          if [ ! -x "$flutter_home/bin/flutter" ]; then
+            echo "No usable Flutter SDK at $flutter_home after install." >&2
+            exit 1
+          fi
+          git config --global --add safe.directory "$flutter_home"
+          actual=$(git -C "$flutter_home" rev-parse HEAD)
+          if [ "$actual" != "$FLUTTER_COMMIT" ]; then
+            echo "Flutter $FLUTTER_VERSION resolved to $actual, expected $FLUTTER_COMMIT" >&2
+            echo "The upstream tag moved, or the cached SDK is stale." >&2
+            exit 1
+          fi
+          echo "$flutter_home/bin" >> "$GITHUB_PATH"
+
+      - name: Dependencies
+        # --enforce-lockfile so CI resolves exactly what pubspec.lock records,
+        # which is what the F-Droid recipe's prebuild does too.
+        run: |
+          set -euo pipefail
+          flutter pub get --enforce-lockfile
+
+      - name: Set up Java
+        uses: https://github.com/actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # Ahead of the lint and test steps on purpose: a formatting slip should
+      # not delay the supply-chain gate, and setup-java is seconds when cached.
+      - name: Verify pinned dependency checksums
+        run: |
+          set -euo pipefail
+          # android/gradlew, the wrapper jar and android/local.properties are all
+          # gitignored by stock Flutter, so a clean checkout has no wrapper at
+          # all. --config-only materialises exactly those and stops before any
+          # compilation. --no-pub because the enforced resolution already ran
+          # above and an implicit pub get here would not carry --enforce-lockfile.
+          flutter build apk --config-only --release --no-pub
+
+          # Flutter's Gradle migration can rewrite gradle-wrapper.properties.
+          # Assert the distribution is still pinned afterwards: that file is what
+          # makes the Gradle distribution — the thing enforcing every checksum
+          # below — verified rather than merely fetched over TLS.
+          if ! git diff --exit-code -- android/gradle/wrapper/gradle-wrapper.properties
+          then
+            echo "--config-only rewrote gradle-wrapper.properties." >&2
+            echo "Re-pin distributionSha256Sum before trusting this build." >&2
+            exit 1
+          fi
+
+          # Written per run rather than committed: CI-only glue with no
+          # standalone use, kept next to the reasoning for it.
+          init_dir="$(mktemp -d)"
+          trap 'rm -rf "$init_dir"' EXIT
+          cat > "$init_dir/verify-deps.init.gradle" <<'GRADLE_INIT'
+          import org.gradle.api.artifacts.component.ModuleComponentIdentifier
+
+          // Flutter's tooling is an included build, so this script is applied to
+          // every build in the composite. Only the app build has :app — return
+          // rather than throw, or plugin resolution fails before :app exists.
+          gradle.projectsEvaluated {
+              def app = gradle.rootProject.findProject(':app')
+              if (app == null) { return }
+              app.tasks.register('verifyDependencyChecksums') {
+                  doLast {
+                      def total = 0
+                      ['releaseRuntimeClasspath', 'releaseCompileClasspath'].each { name ->
+                          def cfg = app.configurations.findByName(name)
+                          if (cfg == null) {
+                              throw new GradleException("no configuration ${name} on :app")
+                          }
+                          // Resolving artifact FILES is what triggers verification;
+                          // resolving metadata alone does not, which is why
+                          // `:app:dependencies` exits 0 on a corrupted pin. The
+                          // component filter keeps local plugin projects (:health,
+                          // :jni, ...) out: they have nothing to verify and their
+                          // multi-variant artifacts are ambiguous here.
+                          def files = cfg.incoming.artifactView {
+                              lenient = false
+                              componentFilter { it instanceof ModuleComponentIdentifier }
+                          }.files.files
+                          println "${name}: ${files.size()} artifact files verified"
+                          total += files.size()
+                      }
+                      // A filter that stopped matching would turn this gate into a
+                      // no-op still reporting BUILD SUCCESSFUL. Refuse that.
+                      if (total == 0) {
+                          throw new GradleException(
+                              'verified 0 artifacts: the gate resolved nothing, so it proved nothing')
+                      }
+                      println "verified ${total} pinned artifact files"
+                  }
+              }
+          }
+          GRADLE_INIT
+
+          # This covers the release classpaths — what the app actually links
+          # against — not the whole pin file, which also holds build-time and
+          # debug-variant entries. It is an early warning, not a substitute for
+          # the full verification a release build performs.
+          cd android
+          ./gradlew --no-daemon -I "$init_dir/verify-deps.init.gradle" \
+            :app:verifyDependencyChecksums
+
+      - name: Check formatting
+        # The gate CLAUDE.md calls binding before every commit, which nothing in
+        # automation enforced until now.
+        run: |
+          set -euo pipefail
+          dart format --output=none --set-exit-if-changed .
+
+      - name: Analyze
+        # --fatal-infos --fatal-warnings, unlike release.yml's bare
+        # `dart analyze`: bare analyze exits 0 on info-severity diagnostics, and
+        # most very_good_analysis rules are info-severity, so "CI treats lints as
+        # errors" was not actually enforced anywhere.
+        run: |
+          set -euo pipefail
+          dart analyze --fatal-infos --fatal-warnings
+
+      - name: Test
+        run: |
+          set -euo pipefail
+          flutter test --no-pub

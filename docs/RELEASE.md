@@ -392,6 +392,26 @@ coordinates themselves. Revisit this trade-off if a private or credentialed
 repository is ever added, because then the request itself would carry
 something worth protecting.
 
+`.forgejo/workflows/ci.yml` enforces all of this on every branch push:
+`tool/check_dependency_verification.py` for the policy half, and a Gradle
+resolution of the release classpaths for the checksum half, with
+`-Dorg.gradle.dependency.verification=strict` forced so a stray property cannot
+switch verification off. That is an early warning covering what the app links
+against, not a replacement for the full verification a release build performs.
+
+One limit of that arrangement is worth stating plainly. CI and the release job
+share one persistent runner, one `$HOME/flutter-$VERSION` SDK and the default
+`~/.gradle`. CI runs on every branch push and executes the workflow file *from
+the pushed branch*, so anything with push access can run code on the machine
+that later decodes the signing keystore. Dependency pinning does not close that:
+it covers resolved Maven artifacts, not a Gradle init script dropped in
+`~/.gradle/init.d`, nor the SDK's working tree (the setup step checks which
+commit `HEAD` points at, not that the tree is unmodified — and a used SDK is
+never clean, since Flutter rewrites its own `pubspec.lock`). For a
+single-maintainer repository that is an acceptable trade for the shared caches.
+It stops being acceptable the moment anyone else can push, and the fix then is
+an ephemeral or separate runner for CI, not a change to these files.
+
 **Regenerate whenever the resolved dependency set changes** — a `pubspec.yaml`
 bump, `flutter pub upgrade`, a Flutter SDK bump, or an AGP/Kotlin/Gradle bump:
 
