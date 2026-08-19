@@ -4,6 +4,50 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## 0.2.2 — 2026-08-19
+
+Packaging release enabling **reproducible builds** on F-Droid. F-Droid now
+rebuilds the app and verifies it byte-for-byte against the APKs published here,
+then distributes our signature rather than its own — so the F-Droid download and
+the direct download are interchangeable and users can switch between them
+without reinstalling. No app behaviour change.
+
+### Changed
+
+- **Release builds now compile at a pinned absolute path** (`/build/cairn`).
+  Dart's AOT compiler embeds the Flutter project root into `libapp.so`
+  (flutter/flutter#165111), so a release APK contains the literal build path.
+  F-Droid's rebuild has to compile at the same path or verification can never
+  succeed; CI stages the checkout there and the fdroiddata recipe moves its
+  checkout onto the same path. `PUB_CACHE` is pinned inside that tree too, so
+  package paths match and the release job no longer mutates the runner's shared
+  pub cache.
+
+- **The release publishes one APK per ABI alongside the universal APK.**
+  `cairn-vX.Y.Z-<versionCode>.apk` for armeabi-v7a, arm64-v8a and x86_64 (codes
+  `base × 10 + {1,2,3}`) are what F-Droid verifies against; the universal
+  `cairn-vX.Y.Z.apk` stays for direct download. Per-ABI filenames encode the
+  versionCode because F-Droid's `Binaries:` template supports only `%v` and
+  `%c` — there is no ABI placeholder.
+
+### Fixed
+
+- **Dropped the GNU build-id from natively-compiled plugin libraries.** The
+  Android NDK sits at a different absolute path on our runner than on F-Droid's
+  buildserver. That path lands in the debug info of `package:jni`'s
+  `libdartjni.so`; the linker hashes the unstripped object into a build-id note,
+  and stripping then discards the debug info but leaves the differing hash — so
+  two byte-identical libraries differed by exactly those 20 bytes and would have
+  failed verification. `android/build.gradle.kts` now passes
+  `-Wl,--build-id=none` to CMake for library subprojects. Verified: all three
+  per-ABI APKs are byte-identical to builds made in F-Droid's buildserver image.
+
+- **Signing material is written with `umask 077` and the staged build tree is
+  removed on job exit.** The release runner is bare metal and its disk is not
+  discarded between jobs, so the decoded keystore and `key.properties` are no
+  longer left world-readable, and the staging directory that holds them is wiped
+  even when the job fails.
+
 ## 0.2.1 — 2026-07-27
 
 Packaging release for F-Droid — ships one APK per ABI (smaller downloads).

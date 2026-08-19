@@ -108,10 +108,16 @@ Steps:
    `AutoUpdateMode`/`UpdateCheckMode: Tags`, and `CurrentVersion`/`CurrentVersionCode`.
 4. F-Droid CI builds it; iterate on the MR until it builds clean; on merge it's
    published and auto-tracks new tags.
-5. **(Optional) Reproducible builds** — to ship *your* signature (so sideload
-   and F-Droid APKs are interchangeable), make the build reproducible: pin the
-   Flutter SDK to a fixed path (`flutter config --android-sdk …`) so no absolute
-   paths leak in, then add `Builds: …` with your signing fingerprint.
+5. **Reproducible builds — enabled.** Cairn ships *its own* signature on
+   F-Droid: F-Droid rebuilds each tag and compares the result byte-for-byte
+   against the per-ABI APKs this repo publishes, then distributes our APK
+   instead of an F-Droid-signed one. Sideload and F-Droid installs are therefore
+   interchangeable. See §2a-repro below for what this requires — it is *not*
+   optional once enabled, because a verification failure means the build fails
+   and **nothing is published** for that version. Reproducible builds are not an
+   F-Droid entry requirement, but the choice is one-way: Android refuses
+   in-place upgrades across a signature change, so it cannot be turned on later
+   without every user reinstalling.
 
 **In this repo:** a ready-to-submit recipe lives at
 [`fdroid/com.luminaapps.cairn.yml`](../fdroid/com.luminaapps.cairn.yml)
@@ -123,6 +129,75 @@ the app, not in the recipe — **add your phone screenshots** under each locale'
 `images/phoneScreenshots/` (layout + specs in
 [`fastlane/metadata/README.md`](../fastlane/metadata/README.md)). The recipe pins Flutter to the version it reads out
 of `.forgejo/workflows/release.yml`, so CI and the F-Droid build stay in lockstep.
+
+### 2a-repro. What reproducible builds require
+
+Both sides — this repo's release CI and F-Droid's buildserver — must compile at
+the **same absolute path**, because Dart's AOT compiler embeds the Flutter
+project root into `libapp.so` (flutter/flutter#165111): a release APK literally
+contains `file://<project root>/.dart_tool/flutter_build/dart_plugin_registrant.dart`.
+
+| Piece | Where | What it does |
+| --- | --- | --- |
+| `BUILD_DIR: /build/cairn` | [`.forgejo/workflows/release.yml`](../.forgejo/workflows/release.yml) | Stages the checkout there; every Flutter/Gradle step compiles from it |
+| `sudo: mkdir -p /build` + `mv`/`pushd` | [`fdroid/com.luminaapps.cairn.yml`](../fdroid/com.luminaapps.cairn.yml) | Moves F-Droid's checkout onto the same path, in **both** `prebuild` and `build` |
+| `-Wl,--build-id=none` | [`android/build.gradle.kts`](../android/build.gradle.kts) | Drops the GNU build-id from natively-compiled plugin libraries (see below) |
+| `Binaries:` + `AllowedAPKSigningKeys:` | the fdroiddata recipe | Tells F-Droid which APKs to verify against, and which signing key to expect |
+
+**One-time host prep on the release runner.** Do this once, as root, before the
+first reproducible release. The release job itself **never calls sudo** — it
+only verifies `/build` and fails closed with these instructions if the check
+does not pass. That is deliberate: a passwordless sudo grant reachable from the
+job would also be reachable by every dependency the build resolves, which is a
+much larger exposure than the signing key it would be guarding.
+
+```bash
+sudo mkdir -p /build
+sudo chown "$(id -u -n <runner-user>):" /build
+sudo chmod 700 /build
+```
+
+The job checks that `/build` exists, is not a symlink, is owned by the runner
+uid, is mode `700`, and has at least 8 GiB free.
+
+**Residual risk worth a compensating control.** The decoded keystore and
+`key.properties` live inside `/build/cairn` for the duration of a release. The
+`if: always()` cleanup removes them on success, failure and cancellation — but
+not if the runner process or host is hard-killed, in which case they persist
+until the next release run wipes the staging tree. On a host whose disk is not
+discarded between jobs, consider backing `/build` with `tmpfs`, or adding a
+`systemd-tmpfiles` rule to reap it on boot and by age.
+
+**Why `--build-id=none`.** The Android NDK sits at `/opt/android-sdk/ndk/…` on
+F-Droid's buildserver and somewhere under the runner's home here. That path
+lands in the debug info of `package:jni`'s `libdartjni.so`; the linker hashes the
+*unstripped* object into a GNU build-id note, and stripping then discards the
+debug info but leaves the differing hash. Two byte-identical libraries end up
+differing by exactly those 20 bytes. The flag lives in `build.gradle.kts` rather
+than an environment variable so CI and F-Droid cannot drift apart.
+
+**Verifying locally before you tag.** `fdroid verify` is no help — it hardcodes
+the f-droid.org repo URL and only works for already-published apps. Instead,
+build in F-Droid's own image and compare:
+
+```bash
+podman pull registry.gitlab.com/fdroid/fdroidserver:buildserver
+# build the tag at /build/cairn inside the image, then diff the APK entries
+# against the one CI produces. Signature entries (META-INF/*.SF|RSA|EC,
+# MANIFEST.MF) are excluded: F-Droid rebuilds unsigned and copies our signature
+# across with apksigcopier, so only the zip *content* has to match.
+```
+
+Gotchas that will waste your afternoon: Gradle's build cache and AGP's CMake
+cache (inside `PUB_CACHE`, at `…/jni-1.0.0/android/.cxx`) both serve stale
+output and make a failed change look like a working one — clear both when
+testing. `LDFLAGS` does **not** reach AGP's CMake invocation. Never run two
+buildserver containers against one shared SDK volume. And `fdroid rewritemeta`
+strips every comment from the recipe, so do not run it on the submitted file.
+
+**Residual risk.** R8 and baseline-profile generation are documented as
+sensitive to CPU core count, which differs between the runner and F-Droid's
+builder. That cannot be reproduced locally; it only shows up on F-Droid's CI.
 
 Sources: [Submitting Quick Start](https://f-droid.org/en/docs/Submitting_to_F-Droid_Quick_Start_Guide/),
 [Build Metadata Reference](https://f-droid.org/en/docs/Build_Metadata_Reference/),

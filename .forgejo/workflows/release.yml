@@ -1,4 +1,4 @@
-# Builds and publishes the signed sideload APK when a vX.Y.Z tag is pushed.
+# Builds and publishes the signed sideload APKs when a vX.Y.Z tag is pushed.
 #
 # Runs on the self-hosted, BARE-METAL Forgejo runner (label: linux) — not a
 # container. Consequences: the host must already provide git, curl, jq, base64
@@ -6,16 +6,29 @@
 # with git clean -ffdx); and the keystore + key.properties are wiped in an
 # always() cleanup because the disk is not discarded with the job.
 #
-# The release is published to TWO places, both idempotent (re-run safe) and
-# attached to the tagged commit:
+# REPRODUCIBLE BUILDS — why every step runs from $BUILD_DIR, not the workspace.
+# Dart's AOT compiler embeds the absolute Flutter project root into libapp.so
+# (flutter/flutter#165111): a release APK literally contains the string
+# "file://<project root>/.dart_tool/flutter_build/dart_plugin_registrant.dart".
+# F-Droid rebuilds this app and compares the result byte-for-byte against the
+# APKs published here, so both sides must compile at the SAME absolute path or
+# verification can never succeed. We pin it to $BUILD_DIR on this side and the
+# fdroiddata recipe moves its checkout onto the same path — see
+# fdroid/com.luminaapps.cairn.yml and docs/RELEASE.md §2a.
+#
+# $BUILD_DIR is deliberately NOT under /tmp: the staged copy holds the decoded
+# keystore and key.properties, and /tmp on a shared host is both world-traversable
+# and a symlink-race target. /build is created 0700 and owned by the runner user.
+#
+# The release publishes FOUR APKs, all idempotent (re-run safe) and attached to
+# the tagged commit:
+#   * cairn-<tag>.apk            - universal, for humans who just want a download
+#   * cairn-<tag>-<code>.apk x3  - one per ABI, what F-Droid verifies against
+# to TWO places:
 #   * GitHub (the public, user-facing repo, GH_REPO) — releases are NOT mirrored
 #     from Forgejo, so they are created via the GitHub API with GH_RELEASE_TOKEN.
 #   * the Forgejo repo this runs on (git.fiedler.live) — via the Forgejo API
 #     with RELEASE_TOKEN, using the run's own GITHUB_SERVER_URL / REPOSITORY.
-#
-# F-Droid builds its OWN copy from source server-side (see
-# fdroid/com.luminaapps.cairn.yml), so this workflow is only the
-# direct-download / sideload APK.
 #
 # `uses:` are FULL URLs pinned to commit SHAs: a self-hosted Forgejo would
 # otherwise resolve a bare `actions/checkout` against itself, and the SHA pin
@@ -29,6 +42,14 @@
 #   KEYSTORE_PASSWORD  - keystore storePassword
 #   KEY_ALIAS          - key alias
 #   KEY_PASSWORD       - key password
+#
+# This job NEVER calls sudo. /build is provisioned once, out of band, as root;
+# the job only verifies it and fails closed if it is wrong. A passwordless sudo
+# grant reachable from here would be reachable by every dependency the build
+# resolves, which is a far larger exposure than the signing key it would guard.
+# One-time host prep — see docs/RELEASE.md 2a-repro:
+#   sudo mkdir -p /build && sudo chown "$(id -u -n <runner-user>):" /build
+#   sudo chmod 700 /build
 name: Release APK
 
 on:
@@ -36,12 +57,30 @@ on:
     tags:
       - 'v[0-9]*.[0-9]*.[0-9]*'
 
+# $BUILD_DIR is a fixed path (reproducibility requires it), so two overlapping
+# runs would share one staging tree — and one job's always() cleanup would delete
+# the other's keystore mid-build. Serialise instead of cancelling: cancelling
+# mid-upload would leave a release half-populated.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 env:
   # GitHub owner/repo that receives the public release.
   GH_REPO: LuminaAppsDev/cairn
   # Flutter SDK version — the single source of truth; the F-Droid recipe greps
-  # this literal out of the file. Keep it a plain quoted number.
+  # this literal out of the file. Keep it a plain quoted number on one line:
+  # the recipe's sed fails the build if this line's shape changes.
   FLUTTER_VERSION: '3.44.0'
+  # The exact upstream commit FLUTTER_VERSION must resolve to. Tags are mutable;
+  # this build decodes the keystore before invoking the toolchain, so a silently
+  # moved tag would run unreviewed code with the signing key readable on disk.
+  # Verified after clone; bump both lines together.
+  FLUTTER_COMMIT: '559ffa3f75e7402d65a8def9c28389a9b2e6fe42'
+  # Absolute path every Flutter/Gradle step compiles from. MUST stay identical
+  # to the path the fdroiddata recipe moves its checkout onto, or F-Droid's
+  # reproducible-build verification fails. See the header comment.
+  BUILD_DIR: /build/cairn
 
 jobs:
   release:
@@ -65,6 +104,45 @@ jobs:
       - name: Checkout
         uses: https://github.com/actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
+      - name: Stage source at the pinned build path
+        # Everything from `pub get` onward runs here, not in the workspace,
+        # because .dart_tool/ and the AOT snapshot both bake in absolute paths.
+        # /build is NOT created here: provisioning it would need sudo, and this
+        # job must not hold a privilege every resolved dependency could reach.
+        # It is verified instead, and the job fails closed with the prep command.
+        run: |
+          set -euo pipefail
+          parent="$(dirname "$BUILD_DIR")"
+          if [ ! -d "$parent" ]; then
+            echo "Missing $parent — one-time host prep required, as root:" >&2
+            echo "  sudo mkdir -p $parent" >&2
+            echo "  sudo chown \"\$(id -u -n):\" $parent && sudo chmod 700 $parent" >&2
+            echo "See docs/RELEASE.md 2a-repro." >&2
+            exit 1
+          fi
+          # A symlinked parent would redirect the keystore write below into an
+          # attacker-chosen directory; mkdir -p accepts a symlink-to-dir silently.
+          if [ -L "$parent" ] || [ -L "$BUILD_DIR" ]; then
+            echo "Refusing to build: $parent or $BUILD_DIR is a symlink" >&2
+            exit 1
+          fi
+          if [ "$(stat -c '%u' "$parent")" != "$(id -u)" ]; then
+            echo "$parent must be owned by uid $(id -u), found $(stat -c '%u' "$parent")" >&2
+            exit 1
+          fi
+          if [ "$(stat -c '%a' "$parent")" != "700" ]; then
+            echo "$parent must be mode 700, found $(stat -c '%a' "$parent")" >&2
+            exit 1
+          fi
+          avail=$(df -Pk "$parent" | awk 'NR==2 {print $4}')
+          if [ "$avail" -lt 8388608 ]; then
+            echo "Need >=8 GiB free at $parent, have $((avail / 1048576)) GiB" >&2
+            exit 1
+          fi
+          rm -rf "$BUILD_DIR"
+          mkdir -p "$BUILD_DIR"
+          cp -a "$GITHUB_WORKSPACE"/. "$BUILD_DIR"/
+
       - name: Set up Java
         uses: https://github.com/actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
         with:
@@ -87,14 +165,30 @@ jobs:
               https://github.com/flutter/flutter.git "$flutter_home"
           fi
           git config --global --add safe.directory "$flutter_home"
+          # Fail closed if the tag has moved since FLUTTER_COMMIT was recorded.
+          actual=$(git -C "$flutter_home" rev-parse HEAD)
+          if [ "$actual" != "$FLUTTER_COMMIT" ]; then
+            echo "Flutter $FLUTTER_VERSION resolved to $actual, expected $FLUTTER_COMMIT" >&2
+            echo "The upstream tag moved, or the cached SDK is stale. Re-check before releasing." >&2
+            exit 1
+          fi
           echo "$flutter_home/bin" >> "$GITHUB_PATH"
 
       - name: Dependencies
-        run: flutter pub get --enforce-lockfile
+        # PUB_CACHE is pinned inside $BUILD_DIR so the resolved package paths
+        # match the F-Droid recipe (which does the same) and so this job stops
+        # mutating the runner's shared ~/.pub-cache.
+        run: |
+          set -euo pipefail
+          cd "$BUILD_DIR"
+          export PUB_CACHE="$BUILD_DIR/.pub-cache"
+          flutter pub get --enforce-lockfile
 
       - name: Analyze and test
         run: |
           set -euo pipefail
+          cd "$BUILD_DIR"
+          export PUB_CACHE="$BUILD_DIR/.pub-cache"
           dart analyze
           flutter test
 
@@ -106,25 +200,65 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          keystore="$GITHUB_WORKSPACE/android/app/release-keystore.jks"
-          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$keystore"
-          {
+          cd "$BUILD_DIR"
+          keystore="$BUILD_DIR/android/app/release-keystore.jks"
+          (umask 077 && printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$keystore")
+          (umask 077 && {
             echo "storeFile=$keystore"
             echo "storePassword=$KEYSTORE_PASSWORD"
             echo "keyAlias=$KEY_ALIAS"
             echo "keyPassword=$KEY_PASSWORD"
-          } > android/key.properties
+          } > android/key.properties)
 
-      - name: Build release APK
-        run: flutter build apk --release
-
-      - name: Package release asset
+      - name: Build release APKs
+        # Splits first, then the universal APK. Both land in the same output dir
+        # under distinct names, so neither clobbers the other. The per-ABI APKs
+        # carry the versionCodeOverride from android/app/build.gradle.kts
+        # (base * 10 + abiIndex); the universal build has no ABI filter, so it
+        # keeps the plain pubspec versionCode.
         run: |
           set -euo pipefail
+          cd "$BUILD_DIR"
+          export PUB_CACHE="$BUILD_DIR/.pub-cache"
+          flutter build apk --release --split-per-abi
+          flutter build apk --release
+
+      - name: Package release assets
+        # Collects everything the publish steps upload into dist/, so the naming
+        # scheme lives in exactly one place. The per-ABI filenames encode the
+        # versionCode because F-Droid's `Binaries:` URL template only supports
+        # %v (versionName) and %c (versionCode) — there is no %abi.
+        run: |
+          set -euo pipefail
+          cd "$BUILD_DIR"
           tag="${GITHUB_REF_NAME}"  # validated in the "Validate release tag" step
-          asset="cairn-${tag}.apk"
-          cp build/app/outputs/flutter-apk/app-release.apk "$asset"
-          sha256sum "$asset" > "$asset.sha256"
+          apks="build/app/outputs/flutter-apk"
+          if [ -z "${GITHUB_WORKSPACE:-}" ]; then
+            echo "GITHUB_WORKSPACE is unset; refusing to build a dist path from it" >&2
+            exit 1
+          fi
+          dist="$GITHUB_WORKSPACE/dist"
+          rm -rf "$dist"
+          mkdir -p "$dist"
+          base=$(sed -n -E 's/^version:[[:space:]]*[0-9.]+\+([0-9]+).*/\1/p' pubspec.yaml | head -1)
+          # Anchored and leading-zero-free: bash arithmetic below would read a
+          # value like 0123 as octal and silently emit the wrong version code.
+          if ! printf '%s' "$base" | grep -qE '^[1-9][0-9]*$'; then
+            echo "Unusable versionCode from pubspec.yaml: '$base'" >&2
+            exit 1
+          fi
+          cp "$apks/app-release.apk" "$dist/cairn-${tag}.apk"
+          # Must mirror `abiCodes` in android/app/build.gradle.kts exactly.
+          for pair in armeabi-v7a:1 arm64-v8a:2 x86_64:3; do
+            abi="${pair%%:*}"
+            idx="${pair##*:}"
+            cp "$apks/app-${abi}-release.apk" "$dist/cairn-${tag}-$((base * 10 + idx)).apk"
+          done
+          cd "$dist"
+          for f in *.apk; do
+            sha256sum "$f" > "$f.sha256"
+          done
+          ls -la
 
       - name: Publish GitHub release
         env:
@@ -132,34 +266,53 @@ jobs:
         run: |
           set -euo pipefail
           tag="${GITHUB_REF_NAME}"
-          asset="cairn-${tag}.apk"
+          cd "$GITHUB_WORKSPACE/dist"
           api="https://api.github.com/repos/${GH_REPO}"
-          auth="Authorization: Bearer $GH_TOKEN"
           accept="Accept: application/vnd.github+json"
           apiver="X-GitHub-Api-Version: 2022-11-28"
-          existing=$(curl -sS "$api/releases/tags/$tag" -H "$auth" -H "$accept" -H "$apiver")
+          # The token goes in a 0600 config file rather than an -H argument:
+          # a process's argv is readable by any local user through /proc, and
+          # this runner is a shared bare-metal host.
+          # mktemp creates the file 0600 before the token is written to it.
+          # curl's config format is quoted, so a token containing " or \ would
+          # be mis-parsed — provider-issued tokens are hex/base64url, so this
+          # holds, but it is an assumption worth knowing if that ever changes.
+          cfg="$(mktemp)"
+          trap 'rm -f "$cfg"' EXIT
+          printf 'header = "Authorization: Bearer %s"\n' "$GH_TOKEN" > "$cfg"
+          curlopts=(--config "$cfg" --connect-timeout 30 --max-time 900)
+          existing=$(curl -sS "${curlopts[@]}" "$api/releases/tags/$tag" -H "$accept" -H "$apiver")
           release_id=$(printf '%s' "$existing" | jq -r '.id // empty')
           if [ -z "$release_id" ]; then
             payload=$(jq -n --arg t "$tag" --arg sha "$GITHUB_SHA" \
               '{tag_name:$t, target_commitish:$sha, name:$t, body:"Automated release. See CHANGELOG.md."}')
-            release_id=$(curl -fsS -X POST "$api/releases" \
-              -H "$auth" -H "$accept" -H "$apiver" -d "$payload" | jq -r '.id')
+            release_id=$(curl -fsS "${curlopts[@]}" -X POST "$api/releases" \
+              -H "$accept" -H "$apiver" -d "$payload" | jq -r '.id')
           fi
           [ -n "$release_id" ] && [ "$release_id" != "null" ]
           # Re-run safe: drop any existing same-named assets before re-uploading
-          # (recovers a partially-failed run; lets a re-tag replace the binary).
-          curl -fsS "$api/releases/${release_id}/assets" -H "$auth" -H "$accept" -H "$apiver" \
-            | jq -r --arg a "$asset" '.[] | select(.name == $a or .name == ($a + ".sha256")) | .id' \
-            | while read -r aid; do
-                curl -fsS -X DELETE "$api/releases/assets/$aid" -H "$auth" -H "$accept" -H "$apiver"
-              done
+          # (recovers a partially-failed run; lets a re-tag replace the binaries).
+          assets=$(curl -fsS "${curlopts[@]}" "$api/releases/${release_id}/assets" -H "$accept" -H "$apiver")
+          # A `while read` loop, not a single capture: a run that raced before the
+          # `concurrency:` guard existed can leave duplicate same-named assets,
+          # and collapsing several ids into one URL would hard-fail the step
+          # instead of cleaning them up.
+          for f in *; do
+            printf '%s' "$assets" \
+              | jq -r --arg a "$f" '.[] | select(.name == $a) | .id' \
+              | while read -r aid; do
+                  curl -fsS "${curlopts[@]}" -X DELETE "$api/releases/assets/$aid" -H "$accept" -H "$apiver"
+                done
+          done
           up="https://uploads.github.com/repos/${GH_REPO}/releases/${release_id}/assets"
-          curl -fsS -X POST "$up?name=$asset" \
-            -H "$auth" -H 'Content-Type: application/vnd.android.package-archive' \
-            --data-binary "@$asset"
-          curl -fsS -X POST "$up?name=$asset.sha256" \
-            -H "$auth" -H 'Content-Type: text/plain' \
-            --data-binary "@$asset.sha256"
+          for f in *; do
+            case "$f" in
+              *.apk) ct='application/vnd.android.package-archive' ;;
+              *)     ct='text/plain' ;;
+            esac
+            curl -fsS "${curlopts[@]}" -X POST "$up?name=$f" \
+              -H "Content-Type: $ct" --data-binary "@$f"
+          done
 
       - name: Publish Forgejo release
         env:
@@ -167,32 +320,72 @@ jobs:
         run: |
           set -euo pipefail
           tag="${GITHUB_REF_NAME}"
-          asset="cairn-${tag}.apk"
+          cd "$GITHUB_WORKSPACE/dist"
           # The run's own server + repo (git.fiedler.live / tux/cairn); the tag
           # already exists here (it triggered this run).
           api="${GITHUB_SERVER_URL}/api/v1/repos/${GITHUB_REPOSITORY}"
-          auth="Authorization: token $FORGEJO_TOKEN"
-          existing=$(curl -sS "$api/releases/tags/$tag" -H "$auth")
+          cfg="$(mktemp)"
+          trap 'rm -f "$cfg"' EXIT
+          printf 'header = "Authorization: token %s"\n' "$FORGEJO_TOKEN" > "$cfg"
+          curlopts=(--config "$cfg" --connect-timeout 30 --max-time 900)
+          existing=$(curl -sS "${curlopts[@]}" "$api/releases/tags/$tag")
           release_id=$(printf '%s' "$existing" | jq -r '.id // empty')
           if [ -z "$release_id" ]; then
             payload=$(jq -n --arg t "$tag" \
               '{tag_name:$t, name:$t, body:"Automated release. See CHANGELOG.md."}')
-            release_id=$(curl -fsS -X POST "$api/releases" \
-              -H "$auth" -H 'Content-Type: application/json' -d "$payload" | jq -r '.id')
+            release_id=$(curl -fsS "${curlopts[@]}" -X POST "$api/releases" \
+              -H 'Content-Type: application/json' -d "$payload" | jq -r '.id')
           fi
           [ -n "$release_id" ] && [ "$release_id" != "null" ]
           up="$api/releases/${release_id}/assets"
           # Re-run safe: drop any existing same-named assets before re-uploading.
-          curl -fsS "$up" -H "$auth" \
-            | jq -r --arg a "$asset" '.[] | select(.name == $a or .name == ($a + ".sha256")) | .id' \
-            | while read -r aid; do
-                curl -fsS -X DELETE "$up/$aid" -H "$auth"
-              done
-          curl -fsS -X POST "$up?name=$asset" -H "$auth" \
-            -F "attachment=@$asset;type=application/vnd.android.package-archive"
-          curl -fsS -X POST "$up?name=$asset.sha256" -H "$auth" \
-            -F "attachment=@$asset.sha256;type=text/plain"
+          assets=$(curl -fsS "${curlopts[@]}" "$up")
+          # See the GitHub step: a loop, so duplicate same-named assets are all
+          # removed rather than collapsing into one malformed request.
+          for f in *; do
+            printf '%s' "$assets" \
+              | jq -r --arg a "$f" '.[] | select(.name == $a) | .id' \
+              | while read -r aid; do
+                  curl -fsS "${curlopts[@]}" -X DELETE "$up/$aid"
+                done
+          done
+          for f in *; do
+            case "$f" in
+              *.apk) ct='application/vnd.android.package-archive' ;;
+              *)     ct='text/plain' ;;
+            esac
+            curl -fsS "${curlopts[@]}" -X POST "$up?name=$f" \
+              -F "attachment=@$f;type=$ct"
+          done
 
       - name: Clean up signing material
         if: always()
-        run: rm -f android/key.properties android/app/release-keystore.jks
+        # The staged tree holds the decoded keystore and key.properties, and this
+        # host's disk is not discarded with the job — so the whole staging dir
+        # goes, not just the two files. Guarded so an unset BUILD_DIR can never
+        # turn this into `rm -rf /`.
+        # No `set -e`: one failing removal must not skip the others. But the
+        # step's exit status is then whatever the LAST command returned, which
+        # would report success even if the keystore removal failed and left
+        # plaintext signing material on this shared host. Accumulate instead and
+        # exit non-zero so a failure is visible.
+        run: |
+          set -uo pipefail
+          status=0
+          if [ -n "${BUILD_DIR:-}" ] && [ "$BUILD_DIR" != "/" ]; then
+            # Named-file removal first so the secrets are gone even if the
+            # recursive delete below fails partway (busy file, permissions).
+            # These are the paths "Configure signing" actually writes to —
+            # relative paths here would resolve against the workspace and be
+            # a silent no-op.
+            rm -f "$BUILD_DIR/android/key.properties" \
+                  "$BUILD_DIR/android/app/release-keystore.jks" || status=1
+            rm -rf "$BUILD_DIR" || status=1
+          fi
+          if [ -n "${GITHUB_WORKSPACE:-}" ]; then
+            rm -rf "$GITHUB_WORKSPACE/dist" || status=1
+          fi
+          if [ "$status" -ne 0 ]; then
+            echo "Cleanup failed to remove signing material — inspect $BUILD_DIR" >&2
+          fi
+          exit "$status"

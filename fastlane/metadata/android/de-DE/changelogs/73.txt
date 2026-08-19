@@ -1,0 +1,5 @@
+Paketierungs-Release. Die F-Droid-Builds von Cairn sind jetzt reproduzierbar:
+F-Droid baut die App nach, vergleicht sie Byte für Byte mit der von uns
+veröffentlichten APK und liefert dann unsere Signatur statt der eigenen aus.
+Dadurch sind der F-Droid-Download und der Direkt-Download austauschbar — du
+kannst ohne Neuinstallation wechseln. Keine Änderung am Verhalten der App.
