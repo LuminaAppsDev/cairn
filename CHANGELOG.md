@@ -4,6 +4,33 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+### Fixed
+
+- **The release job no longer mistakes an API outage for "no release exists".**
+  Both publish steps looked up the release by tag with `curl -sS` and then
+  decided from `jq`: no `.id` in the response meant "create it". A 404 body and
+  a 502/503 body both lack an `.id`, so a transient upstream error took the
+  create branch — publishing a second release for a tag that already had one, or
+  failing later in a way that pointed at the wrong cause. The lookup now reads
+  the HTTP status explicitly and branches on it: 200 uses the id (and treats a
+  200 without one as an error), 404 creates, anything else fails the job with
+  the status and response body. The GET is retried a few times first, which is
+  safe precisely because it is a GET — no retry was added to the POSTs. A
+  transport failure (DNS, connection refused) now reports the same way instead
+  of falling out of curl's own message, and a 200 carrying malformed JSON is
+  reported rather than dying inside `jq`.
+
+- **Error bodies are capped and scrubbed before reaching the job log.** The new
+  failure paths print the API's response to help diagnose an outage. Some
+  proxies and debug-mode servers echo the request's own headers back in the
+  body, so that response can contain the `Authorization` header — it is now
+  truncated and passed through a redacting `sed` first.
+
+- **Temp-file traps are installed before the next file is created.** Both
+  publish steps create two `mktemp` files; with a single `trap` registered after
+  both, a failing second `mktemp` aborts the step under `set -e` before the trap
+  exists, orphaning the first file.
+
 ### Changed
 
 - **The F-Droid recipe is now comment-free and kept in canonical

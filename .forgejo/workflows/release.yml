@@ -274,22 +274,65 @@ jobs:
           # curl's config format is quoted, so a token containing " or \ would
           # be mis-parsed — provider-issued tokens are hex/base64url, so this
           # holds, but it is an assumption worth knowing if that ever changes.
+          #
+          # Each trap is installed before the next resource is created: under
+          # `set -e` a failing second mktemp aborts the step, and a single trap
+          # registered after both would never run to remove the first file.
           cfg="$(mktemp)"
           trap 'rm -f "$cfg"' EXIT
+          body="$(mktemp)"
+          trap 'rm -f "$cfg" "$body"' EXIT
+          # Print an API error body without turning the job log into a leak.
+          # Some proxies and debug-mode servers echo the request's own headers
+          # back in the response, so an Authorization header can surface here;
+          # and an HTML error page would otherwise flood the log.
+          dump_body() {
+            head -c 2000 "$body" | sed -E \
+              -e 's#([Bb]earer|[Tt]oken)[[:space:]]+[A-Za-z0-9._~+/=-]{8,}#\1 [REDACTED]#g' \
+              -e 's#("?[Aa]uthorization"?[[:space:]]*[:=][[:space:]]*"?)[^",}]*#\1[REDACTED]#g'
+            echo
+          }
           printf 'header = "Authorization: Bearer %s"\n' "$GH_TOKEN" > "$cfg"
           curlopts=(--config "$cfg" --connect-timeout 30 --max-time 900)
-          existing=$(curl -sS "${curlopts[@]}" "$api/releases/tags/$tag" -H "$accept" -H "$apiver")
-          release_id=$(printf '%s' "$existing" | jq -r '.id // empty')
-          if [ -z "$release_id" ]; then
-            payload=$(jq -n --arg t "$tag" --arg sha "$GITHUB_SHA" \
-              '{tag_name:$t, target_commitish:$sha, name:$t, body:"Automated release. See CHANGELOG.md."}')
-            release_id=$(curl -fsS "${curlopts[@]}" -X POST "$api/releases" \
-              -H "$accept" -H "$apiver" -d "$payload" | jq -r '.id')
-          fi
+          # The lookup has to tell "no such release" apart from "the API is
+          # unwell": neither body carries an `.id`, so deciding from jq alone
+          # would read a transient 5xx as "no release exists" and take the
+          # create branch. Branch on the status instead. -sS (not -fsS) so the
+          # status is readable rather than curl aborting the step; --retry rides
+          # out a brief blip and is safe here only because the lookup is a GET.
+          # Anything that is neither 200 nor 404 fails the job.
+          http=$(curl -sS "${curlopts[@]}" --retry 3 --retry-delay 2 \
+            -o "$body" -w '%{http_code}' \
+            "$api/releases/tags/$tag" -H "$accept" -H "$apiver") || {
+            echo "release lookup for $tag failed: curl transport error" >&2
+            exit 1
+          }
+          case "$http" in
+            200)
+              release_id=$(jq -r '.id // empty' < "$body" 2>/dev/null || true)
+              if [ -z "$release_id" ]; then
+                echo "release lookup for $tag: HTTP 200, but no release id" >&2
+                dump_body >&2
+                exit 1
+              fi
+              ;;
+            404)
+              payload=$(jq -n --arg t "$tag" --arg sha "$GITHUB_SHA" \
+                '{tag_name:$t, target_commitish:$sha, name:$t, body:"Automated release. See CHANGELOG.md."}')
+              release_id=$(curl -fsS "${curlopts[@]}" -X POST "$api/releases" \
+                -H "$accept" -H "$apiver" -d "$payload" | jq -r '.id')
+              ;;
+            *)
+              echo "release lookup for $tag failed: HTTP $http" >&2
+              dump_body >&2
+              exit 1
+              ;;
+          esac
           [ -n "$release_id" ] && [ "$release_id" != "null" ]
           # Re-run safe: drop any existing same-named assets before re-uploading
           # (recovers a partially-failed run; lets a re-tag replace the binaries).
-          assets=$(curl -fsS "${curlopts[@]}" "$api/releases/${release_id}/assets" -H "$accept" -H "$apiver")
+          assets=$(curl -fsS "${curlopts[@]}" --retry 3 --retry-delay 2 \
+            "$api/releases/${release_id}/assets" -H "$accept" -H "$apiver")
           # A `while read` loop, not a single capture: a run that raced before the
           # `concurrency:` guard existed can leave duplicate same-named assets,
           # and collapsing several ids into one URL would hard-fail the step
@@ -321,22 +364,57 @@ jobs:
           # The run's own server + repo (git.fiedler.live / tux/cairn); the tag
           # already exists here (it triggered this run).
           api="${GITHUB_SERVER_URL}/api/v1/repos/${GITHUB_REPOSITORY}"
+          # Each trap is installed before the next resource is created: under
+          # `set -e` a failing second mktemp aborts the step, and a single trap
+          # registered after both would never run to remove the first file.
           cfg="$(mktemp)"
           trap 'rm -f "$cfg"' EXIT
+          body="$(mktemp)"
+          trap 'rm -f "$cfg" "$body"' EXIT
+          # Print an API error body without turning the job log into a leak.
+          # Some proxies and debug-mode servers echo the request's own headers
+          # back in the response, so an Authorization header can surface here;
+          # and an HTML error page would otherwise flood the log.
+          dump_body() {
+            head -c 2000 "$body" | sed -E \
+              -e 's#([Bb]earer|[Tt]oken)[[:space:]]+[A-Za-z0-9._~+/=-]{8,}#\1 [REDACTED]#g' \
+              -e 's#("?[Aa]uthorization"?[[:space:]]*[:=][[:space:]]*"?)[^",}]*#\1[REDACTED]#g'
+            echo
+          }
           printf 'header = "Authorization: token %s"\n' "$FORGEJO_TOKEN" > "$cfg"
           curlopts=(--config "$cfg" --connect-timeout 30 --max-time 900)
-          existing=$(curl -sS "${curlopts[@]}" "$api/releases/tags/$tag")
-          release_id=$(printf '%s' "$existing" | jq -r '.id // empty')
-          if [ -z "$release_id" ]; then
-            payload=$(jq -n --arg t "$tag" \
-              '{tag_name:$t, name:$t, body:"Automated release. See CHANGELOG.md."}')
-            release_id=$(curl -fsS "${curlopts[@]}" -X POST "$api/releases" \
-              -H 'Content-Type: application/json' -d "$payload" | jq -r '.id')
-          fi
+          # See the GitHub step: branch on the HTTP status, not on whether jq
+          # found an id, so a transient 5xx cannot pass for "no release yet".
+          http=$(curl -sS "${curlopts[@]}" --retry 3 --retry-delay 2 \
+            -o "$body" -w '%{http_code}' "$api/releases/tags/$tag") || {
+            echo "release lookup for $tag failed: curl transport error" >&2
+            exit 1
+          }
+          case "$http" in
+            200)
+              release_id=$(jq -r '.id // empty' < "$body" 2>/dev/null || true)
+              if [ -z "$release_id" ]; then
+                echo "release lookup for $tag: HTTP 200, but no release id" >&2
+                dump_body >&2
+                exit 1
+              fi
+              ;;
+            404)
+              payload=$(jq -n --arg t "$tag" \
+                '{tag_name:$t, name:$t, body:"Automated release. See CHANGELOG.md."}')
+              release_id=$(curl -fsS "${curlopts[@]}" -X POST "$api/releases" \
+                -H 'Content-Type: application/json' -d "$payload" | jq -r '.id')
+              ;;
+            *)
+              echo "release lookup for $tag failed: HTTP $http" >&2
+              dump_body >&2
+              exit 1
+              ;;
+          esac
           [ -n "$release_id" ] && [ "$release_id" != "null" ]
           up="$api/releases/${release_id}/assets"
           # Re-run safe: drop any existing same-named assets before re-uploading.
-          assets=$(curl -fsS "${curlopts[@]}" "$up")
+          assets=$(curl -fsS "${curlopts[@]}" --retry 3 --retry-delay 2 "$up")
           # See the GitHub step: a loop, so duplicate same-named assets are all
           # removed rather than collapsing into one malformed request.
           for f in *; do
