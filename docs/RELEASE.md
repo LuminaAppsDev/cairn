@@ -177,6 +177,23 @@ debug info but leaves the differing hash. Two byte-identical libraries end up
 differing by exactly those 20 bytes. The flag lives in `build.gradle.kts` rather
 than an environment variable so CI and F-Droid cannot drift apart.
 
+What it costs: the build-id is the identifier crash-symbolication tools use to
+match a stripped `.so` back to its symbols. Cairn ships no native crash
+reporter, so nothing consumes it today — but if one is ever added, archive the
+unstripped `.so` per release tag and ABI, because the build-id mapping is gone.
+
+The flag is injected through `com.android.build.api.dsl.LibraryExtension`, not
+the legacy `com.android.build.gradle` class of the same name: AGP 9 deprecates
+that one ("will be removed in AGP 10.0") and does not register it as the public
+extension when `android.newDsl=true`, which is AGP 9's own default. Verified in
+an isolated project that the legacy lookup fails outright under `newDsl=true`
+(`Extension of type 'LibraryExtension' does not exist`) while the modern one
+resolves under both settings. Scope limit worth knowing: the full native
+rebuild could only be verified with `newDsl=false`, because Flutter's own Gradle
+plugin fails to apply under `newDsl=true` — which is also why the template pins
+it off. Both DSL views wrap one backing object, so the risk is low, but revisit
+this when Flutter supports the new DSL.
+
 **Why `dependenciesInfo` is off.** AGP embeds a dependency-metadata payload —
 roughly 5 KB, encrypted for Google Play — into the APK *signing* block by
 default. A FOSS repo cannot inspect it, so F-Droid's scanner rejects any APK

@@ -38,7 +38,16 @@ subprojects {
         // the plugin is applied and therefore runs before ours. Configuring
         // later is silently ignored — verified by rebuilding and finding the
         // build-id note back in place.
-        extensions.configure(com.android.build.gradle.LibraryExtension::class.java) {
+        //
+        // The type is the new DSL interface (com.android.build.api.dsl), not
+        // the legacy com.android.build.gradle equivalent. AGP 9 marks that one
+        // deprecated — "will be removed in AGP 10.0" — and stops registering it
+        // as the public extension whenever android.newDsl=true, which is AGP 9's
+        // own default. Only the Flutter template's android.newDsl=false in
+        // gradle.properties keeps a legacy lookup resolving here today. The
+        // extension object implements both types, so this resolves under either
+        // setting.
+        extensions.configure(com.android.build.api.dsl.LibraryExtension::class.java) {
             defaultConfig.externalNativeBuild.cmake.arguments("$prefix$flag")
         }
 
@@ -56,7 +65,7 @@ subprojects {
         // set at that level would still win unseen — no dependency does that
         // today, but the check is not exhaustive.
         afterEvaluate {
-            extensions.configure(com.android.build.gradle.LibraryExtension::class.java) {
+            extensions.configure(com.android.build.api.dsl.LibraryExtension::class.java) {
                 val effective = defaultConfig.externalNativeBuild.cmake.arguments
                     .lastOrNull { it.startsWith(prefix) }
                 if (effective == null || !effective.contains(flag)) {

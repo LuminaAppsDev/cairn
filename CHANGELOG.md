@@ -33,6 +33,19 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- **The build-id suppression uses AGP's current DSL type.** `android/build.gradle.kts`
+  looked the Android library extension up as `com.android.build.gradle.LibraryExtension`.
+  AGP 9 deprecates that class — *"will be removed in AGP 10.0"* — and stops
+  registering it as the public extension whenever `android.newDsl=true`, which
+  is AGP 9's own default; the only reason the lookup still resolved is that
+  Flutter's template pins `android.newDsl=false`. Verified in an isolated
+  project that under `newDsl=true` the old lookup fails outright
+  (`Extension of type 'LibraryExtension' does not exist`) while
+  `com.android.build.api.dsl.LibraryExtension` resolves under both settings.
+  A clean native rebuild confirms `-Wl,--build-id=none` still reaches CMake and
+  `libdartjni.so` still carries no build-id note, so reproducibility is
+  unaffected.
+
 - **The F-Droid recipe is now comment-free and kept in canonical
   `rewritemeta` form**, with everything it used to explain moved into
   `docs/RELEASE.md` §2a-recipe. fdroiddata's CI runs `fdroid rewritemeta` and
