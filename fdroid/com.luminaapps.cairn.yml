@@ -1,113 +1,42 @@
-# F-Droid build recipe for the OFFICIAL F-Droid repository.
-#
-# This file is NOT used by the app or by CI. It is the source of truth for the
-# entry you submit to https://gitlab.com/fdroid/fdroiddata as
-# `metadata/com.luminaapps.cairn.yml` (after opening an RFP issue — see
-# docs/RELEASE.md §2a). F-Droid builds the app from source on its own
-# infrastructure and signs it with the F-Droid key.
-#
-# Listing text + screenshots are imported automatically from
-# `fastlane/metadata/android/` in the app repo — they are not duplicated here.
-
 Categories:
   - Sports & Health
 License: MIT
 AuthorName: Max Fiedler
-# F-Droid needs a publicly clonable git repo with the release tags. The public,
-# user-facing repository is GitHub.
 SourceCode: https://github.com/LuminaAppsDev/cairn
 IssueTracker: https://github.com/LuminaAppsDev/cairn/issues
 
-# The launcher label, read by F-Droid out of the source AndroidManifest.xml at
-# the tag — `checkupdates` calls `fetch_real_name()`, which parses the manifest;
-# no APK is built for this. Committed so
-# `fdroid checkupdates --auto` (which F-Droid CI runs, then fails on any diff)
-# is a no-op. The listing's display title still comes from fastlane title.txt
-# ("Cairn: Health Aggregator").
 AutoName: Cairn
 
 RepoType: git
 Repo: https://github.com/LuminaAppsDev/cairn.git
 
 Builds:
-  # ABI split: one build block per ABI. F-Droid resolves each block's `output`
-  # to exactly one APK, so a single block with a glob that matches all three
-  # splits fails ("Multiple apks match"). Instead, each block builds just its
-  # ABI via `--target-platform` (which still yields a split APK, so the
-  # versionCodeOverride in android/app/build.gradle.kts applies) and names that
-  # ABI's file. Version codes are base*10 + {1,2,3} — armeabi-v7a=81,
-  # arm64-v8a=82, x86_64=83 for build 8 — matching the gradle `abiCodes` and the
-  # VercodeOperation below. The codes ascend with ABI capability because Android
-  # installs the highest versionCode a device can run, so a 64-bit device picks
-  # arm64-v8a over armeabi-v7a; the order the VercodeOperation entries appear in
-  # is *not* a tool requirement — `checkupdates` sorts them and takes the highest.
-  # The codes are declared here but no longer appear in the asset filenames; see
-  # `binary:` below.
-  #
-  # REPRODUCIBLE BUILDS — each block carries its own `binary:` rather than sharing
-  # one app-level `Binaries:` template. A single template can only substitute %v
-  # (versionName) and %c (versionCode) — there is no ABI placeholder — so sharing
-  # one would force the published assets to be named by version code, which tells
-  # a human nothing about which file their device needs. Per-block URLs let the
-  # releases stay named by ABI. F-Droid rebuilds each block, compares it
-  # byte-for-byte against the APK named in that block's own `binary:` field, and
-  # publishes ours rather than an F-Droid-signed one.
-  #
-  # REPRODUCIBLE BUILDS — why each block moves the checkout to /build/cairn.
-  # Dart's AOT compiler bakes the absolute Flutter project root into libapp.so
-  # (flutter/flutter#165111), so a release APK contains the literal string
-  # "file://<project root>/.dart_tool/flutter_build/dart_plugin_registrant.dart".
-  # Upstream CI compiles at /build/cairn (BUILD_DIR in
-  # .forgejo/workflows/release.yml) and these blocks move the checkout onto the
-  # same path, so the two builds agree byte-for-byte. The move happens in BOTH
-  # prebuild and build because `pub get` also writes absolute paths into
-  # .dart_tool/, and each is a separate shell whose cwd F-Droid sets to the app
-  # dir — hence the mv/pushd ... popd/mv-back round trip in each. PUB_CACHE is
-  # pinned inside the moved tree so package paths match upstream too.
-  #
-  # Seed = the v0.2.3 commit: the earliest tag whose published APKs can actually
-  # be verified against each block's own `binary:` field. v0.2.2 added the per-ABI
-  # assets and the build-path/build-id fixes, but its binaries still carried AGP's
-  # dependency-metadata signing block, which F-Droid's scanner rejects outright,
-  # so verification never took effect; v0.2.3 disables that block. Tags before
-  # v0.2.2 published only a universal APK. We pin the full commit hash rather
-  # than the tag by choice, not because F-Droid demands it — fdroidserver has no
-  # validator for this field and `lint` objects only to branch names, so a tag
-  # would be accepted. But tags are mutable, and a repointed one would silently
-  # change what gets rebuilt here; see the matching check in `prebuild:` below.
-  # srclibs/rm/sudo/prebuild/scandelete are identical
-  # across the three blocks (F-Droid's `rewritemeta` expands YAML anchors back
-  # out, so they are repeated verbatim).
   - versionName: 0.2.3
     versionCode: 81
     commit: 460e6bff83c495680420e8dab8030512fd2eacbc
+    sudo:
+      - mkdir -p /build
+      - chown -R vagrant /build
     output: build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
-    binary: https://github.com/LuminaAppsDev/cairn/releases/download/v%v/cairn-v%v-armeabi-v7a.apk
+    binary: 
+      https://github.com/LuminaAppsDev/cairn/releases/download/v%v/cairn-v%v-armeabi-v7a.apk
     srclibs:
       - flutter@stable
     rm:
       - ios
-    sudo:
-      - mkdir -p /build
-      - chown -R vagrant /build
     prebuild:
-      - flutterVersion=$(sed -n -E "s/.*FLUTTER_VERSION:\s*'?([0-9.]+)'?.*/\1/p" .forgejo/workflows/release.yml | head -1)
+      - flutterVersion=$(sed -n -E "s/.*FLUTTER_VERSION:\s*'?([0-9.]+)'?.*/\1/p" .forgejo/workflows/release.yml
+        | head -1)
       - '[ -n "$flutterVersion" ]'
-      - flutterCommit=$(sed -n -E "s/.*FLUTTER_COMMIT:\s*'?([0-9a-f]{40})'?.*/\1/p" .forgejo/workflows/release.yml | head -1)
+      - flutterCommit=$(sed -n -E "s/.*FLUTTER_COMMIT:\s*'?([0-9a-f]{40})'?.*/\1/p"
+        .forgejo/workflows/release.yml | head -1)
       - '[ -n "$flutterCommit" ]'
       - git -C $$flutter$$ checkout -f $flutterVersion
-      # Tags are mutable. Upstream CI records the commit the tag resolved to and
-      # fails closed on a mismatch; do the same here, so a repointed tag surfaces
-      # as an obvious toolchain error rather than an unexplained reproducibility
-      # failure. Both values live in the same file, so they cannot drift.
       - '[ "$(git -C $$flutter$$ rev-parse HEAD)" = "$flutterCommit" ]'
       - export FLUTTER_BIN=$(cd $$flutter$$ && pwd)/bin/flutter
       - cd ..
-      # Idempotent: if an earlier attempt in this buildserver session failed
-      # between the two moves, the checkout is stranded at /build/cairn. Moving
-      # again would nest it (mv src existing-dir) and silently build the wrong
-      # tree, masking the original error.
-      - '[ -d com.luminaapps.cairn ] && rm -rf /build/cairn && mv com.luminaapps.cairn /build/cairn || [ -d /build/cairn ]'
+      - '[ -d com.luminaapps.cairn ] && rm -rf /build/cairn && mv com.luminaapps.cairn
+        /build/cairn || [ -d /build/cairn ]'
       - pushd /build/cairn >/dev/null
       - export PUB_CACHE=$(pwd)/.pub-cache
       - $FLUTTER_BIN config --no-analytics
@@ -119,46 +48,40 @@ Builds:
     build:
       - export FLUTTER_BIN=$(cd $$flutter$$ && pwd)/bin/flutter
       - cd ..
-      # Idempotent: if an earlier attempt in this buildserver session failed
-      # between the two moves, the checkout is stranded at /build/cairn. Moving
-      # again would nest it (mv src existing-dir) and silently build the wrong
-      # tree, masking the original error.
-      - '[ -d com.luminaapps.cairn ] && rm -rf /build/cairn && mv com.luminaapps.cairn /build/cairn || [ -d /build/cairn ]'
+      - '[ -d com.luminaapps.cairn ] && rm -rf /build/cairn && mv com.luminaapps.cairn
+        /build/cairn || [ -d /build/cairn ]'
       - pushd /build/cairn >/dev/null
       - export PUB_CACHE=$(pwd)/.pub-cache
       - $FLUTTER_BIN build apk --release --split-per-abi --target-platform=android-arm
       - popd >/dev/null
       - mv /build/cairn com.luminaapps.cairn
+
   - versionName: 0.2.3
     versionCode: 82
     commit: 460e6bff83c495680420e8dab8030512fd2eacbc
+    sudo:
+      - mkdir -p /build
+      - chown -R vagrant /build
     output: build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
-    binary: https://github.com/LuminaAppsDev/cairn/releases/download/v%v/cairn-v%v-arm64-v8a.apk
+    binary: 
+      https://github.com/LuminaAppsDev/cairn/releases/download/v%v/cairn-v%v-arm64-v8a.apk
     srclibs:
       - flutter@stable
     rm:
       - ios
-    sudo:
-      - mkdir -p /build
-      - chown -R vagrant /build
     prebuild:
-      - flutterVersion=$(sed -n -E "s/.*FLUTTER_VERSION:\s*'?([0-9.]+)'?.*/\1/p" .forgejo/workflows/release.yml | head -1)
+      - flutterVersion=$(sed -n -E "s/.*FLUTTER_VERSION:\s*'?([0-9.]+)'?.*/\1/p" .forgejo/workflows/release.yml
+        | head -1)
       - '[ -n "$flutterVersion" ]'
-      - flutterCommit=$(sed -n -E "s/.*FLUTTER_COMMIT:\s*'?([0-9a-f]{40})'?.*/\1/p" .forgejo/workflows/release.yml | head -1)
+      - flutterCommit=$(sed -n -E "s/.*FLUTTER_COMMIT:\s*'?([0-9a-f]{40})'?.*/\1/p"
+        .forgejo/workflows/release.yml | head -1)
       - '[ -n "$flutterCommit" ]'
       - git -C $$flutter$$ checkout -f $flutterVersion
-      # Tags are mutable. Upstream CI records the commit the tag resolved to and
-      # fails closed on a mismatch; do the same here, so a repointed tag surfaces
-      # as an obvious toolchain error rather than an unexplained reproducibility
-      # failure. Both values live in the same file, so they cannot drift.
       - '[ "$(git -C $$flutter$$ rev-parse HEAD)" = "$flutterCommit" ]'
       - export FLUTTER_BIN=$(cd $$flutter$$ && pwd)/bin/flutter
       - cd ..
-      # Idempotent: if an earlier attempt in this buildserver session failed
-      # between the two moves, the checkout is stranded at /build/cairn. Moving
-      # again would nest it (mv src existing-dir) and silently build the wrong
-      # tree, masking the original error.
-      - '[ -d com.luminaapps.cairn ] && rm -rf /build/cairn && mv com.luminaapps.cairn /build/cairn || [ -d /build/cairn ]'
+      - '[ -d com.luminaapps.cairn ] && rm -rf /build/cairn && mv com.luminaapps.cairn
+        /build/cairn || [ -d /build/cairn ]'
       - pushd /build/cairn >/dev/null
       - export PUB_CACHE=$(pwd)/.pub-cache
       - $FLUTTER_BIN config --no-analytics
@@ -170,46 +93,40 @@ Builds:
     build:
       - export FLUTTER_BIN=$(cd $$flutter$$ && pwd)/bin/flutter
       - cd ..
-      # Idempotent: if an earlier attempt in this buildserver session failed
-      # between the two moves, the checkout is stranded at /build/cairn. Moving
-      # again would nest it (mv src existing-dir) and silently build the wrong
-      # tree, masking the original error.
-      - '[ -d com.luminaapps.cairn ] && rm -rf /build/cairn && mv com.luminaapps.cairn /build/cairn || [ -d /build/cairn ]'
+      - '[ -d com.luminaapps.cairn ] && rm -rf /build/cairn && mv com.luminaapps.cairn
+        /build/cairn || [ -d /build/cairn ]'
       - pushd /build/cairn >/dev/null
       - export PUB_CACHE=$(pwd)/.pub-cache
       - $FLUTTER_BIN build apk --release --split-per-abi --target-platform=android-arm64
       - popd >/dev/null
       - mv /build/cairn com.luminaapps.cairn
+
   - versionName: 0.2.3
     versionCode: 83
     commit: 460e6bff83c495680420e8dab8030512fd2eacbc
+    sudo:
+      - mkdir -p /build
+      - chown -R vagrant /build
     output: build/app/outputs/flutter-apk/app-x86_64-release.apk
-    binary: https://github.com/LuminaAppsDev/cairn/releases/download/v%v/cairn-v%v-x86_64.apk
+    binary: 
+      https://github.com/LuminaAppsDev/cairn/releases/download/v%v/cairn-v%v-x86_64.apk
     srclibs:
       - flutter@stable
     rm:
       - ios
-    sudo:
-      - mkdir -p /build
-      - chown -R vagrant /build
     prebuild:
-      - flutterVersion=$(sed -n -E "s/.*FLUTTER_VERSION:\s*'?([0-9.]+)'?.*/\1/p" .forgejo/workflows/release.yml | head -1)
+      - flutterVersion=$(sed -n -E "s/.*FLUTTER_VERSION:\s*'?([0-9.]+)'?.*/\1/p" .forgejo/workflows/release.yml
+        | head -1)
       - '[ -n "$flutterVersion" ]'
-      - flutterCommit=$(sed -n -E "s/.*FLUTTER_COMMIT:\s*'?([0-9a-f]{40})'?.*/\1/p" .forgejo/workflows/release.yml | head -1)
+      - flutterCommit=$(sed -n -E "s/.*FLUTTER_COMMIT:\s*'?([0-9a-f]{40})'?.*/\1/p"
+        .forgejo/workflows/release.yml | head -1)
       - '[ -n "$flutterCommit" ]'
       - git -C $$flutter$$ checkout -f $flutterVersion
-      # Tags are mutable. Upstream CI records the commit the tag resolved to and
-      # fails closed on a mismatch; do the same here, so a repointed tag surfaces
-      # as an obvious toolchain error rather than an unexplained reproducibility
-      # failure. Both values live in the same file, so they cannot drift.
       - '[ "$(git -C $$flutter$$ rev-parse HEAD)" = "$flutterCommit" ]'
       - export FLUTTER_BIN=$(cd $$flutter$$ && pwd)/bin/flutter
       - cd ..
-      # Idempotent: if an earlier attempt in this buildserver session failed
-      # between the two moves, the checkout is stranded at /build/cairn. Moving
-      # again would nest it (mv src existing-dir) and silently build the wrong
-      # tree, masking the original error.
-      - '[ -d com.luminaapps.cairn ] && rm -rf /build/cairn && mv com.luminaapps.cairn /build/cairn || [ -d /build/cairn ]'
+      - '[ -d com.luminaapps.cairn ] && rm -rf /build/cairn && mv com.luminaapps.cairn
+        /build/cairn || [ -d /build/cairn ]'
       - pushd /build/cairn >/dev/null
       - export PUB_CACHE=$(pwd)/.pub-cache
       - $FLUTTER_BIN config --no-analytics
@@ -221,33 +138,16 @@ Builds:
     build:
       - export FLUTTER_BIN=$(cd $$flutter$$ && pwd)/bin/flutter
       - cd ..
-      # Idempotent: if an earlier attempt in this buildserver session failed
-      # between the two moves, the checkout is stranded at /build/cairn. Moving
-      # again would nest it (mv src existing-dir) and silently build the wrong
-      # tree, masking the original error.
-      - '[ -d com.luminaapps.cairn ] && rm -rf /build/cairn && mv com.luminaapps.cairn /build/cairn || [ -d /build/cairn ]'
+      - '[ -d com.luminaapps.cairn ] && rm -rf /build/cairn && mv com.luminaapps.cairn
+        /build/cairn || [ -d /build/cairn ]'
       - pushd /build/cairn >/dev/null
       - export PUB_CACHE=$(pwd)/.pub-cache
       - $FLUTTER_BIN build apk --release --split-per-abi --target-platform=android-x64
       - popd >/dev/null
       - mv /build/cairn com.luminaapps.cairn
 
-# The signing certificate F-Droid must find on every downloaded reference
-# binary, as lower-case hex SHA-256 with no colons — the form fdroidserver
-# compares against. An upper-case value passes `fdroid lint` and then fails the
-# build, and `fdroid rewritemeta` would normalise it but strips every comment in
-# this file, so do not run it here. Confirmed identical across v0.1.0, v0.2.1,
-# v0.2.2 and v0.2.3. Obtained with `apksigner verify --print-certs` (the documented
-# `keytool -printcert -jarfile` one-liner prints nothing on a v2-only APK).
 AllowedAPKSigningKeys: b53624a0de7eef20330857f3cc0f261fce1e5eeb4c60ad42a9f9487a8daac9e0
 
-# New tags are picked up automatically. The version lives in pubspec.yaml
-# (Flutter), not the Android manifest/gradle, so UpdateCheckData tells the tag
-# checker how to read the base versionCode (digits after '+') and versionName
-# (before '+'). VercodeOperation declares the per-ABI code scheme (base*10 +
-# 1/2/3), mirroring the gradle abiCodes, so checkupdates computes the right
-# CurrentVersionCode (the highest, 83) and can track future tags. The three
-# per-ABI Builds blocks above are what actually build.
 AutoUpdateMode: Version
 UpdateCheckMode: Tags
 VercodeOperation:

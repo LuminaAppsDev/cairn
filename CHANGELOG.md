@@ -4,6 +4,24 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+### Changed
+
+- **The F-Droid recipe is now comment-free and kept in canonical
+  `rewritemeta` form**, with everything it used to explain moved into
+  `docs/RELEASE.md` §2a-recipe. fdroiddata's CI runs `fdroid rewritemeta` and
+  fails the merge request on any diff, and that tool strips comments — so a
+  documented copy could never survive the round trip. The repo copy and the
+  submitted copy are now the same file, with no regeneration step to forget.
+
+- **Documented how to regenerate that canonical form against CI's toolchain.**
+  The formatting depends on the *ruamel.yaml* version, not on fdroidserver:
+  ruamel 0.18.10 (Debian trixie, which fdroiddata's CI runs) folds a long plain
+  scalar onto the following line, while 0.17.x does not fold it at any width. A
+  file canonicalised locally against 0.17.x therefore fails CI with a
+  whitespace-only diff that gives no hint of the cause. `docs/RELEASE.md`
+  §2a-repro now pins the reproduction procedure, including that CI fetches
+  fdroidserver from git master rather than using the Debian package.
+
 ## 0.2.3 — 2026-08-19
 
 Packaging fix. The 0.2.2 binaries could not be verified by F-Droid — its scanner

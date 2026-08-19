@@ -208,21 +208,55 @@ output and make a failed change look like a working one — clear both when
 testing. `LDFLAGS` does **not** reach AGP's CMake invocation. Never run two
 buildserver containers against one shared SDK volume.
 
-**`rewritemeta` is mandatory for the submitted copy.** fdroiddata's CI runs
-`fdroid rewritemeta` and fails the merge request on any diff, so the file in the
-merge request must already be in its canonical form — field order, line folding,
-blank lines between build blocks, trailing newline. The commented copy in this
-repo is documentation; generate the submission from it and let `rewritemeta`
-reformat, rather than hand-formatting either one:
+**The recipe is kept in canonical `rewritemeta` form, and carries no comments.**
+fdroiddata's CI runs `fdroid rewritemeta` and fails the merge request on any
+diff, so the submitted file must already match byte for byte what that tool
+emits — field order, line folding, blank lines between build blocks, trailing
+newline. `rewritemeta` also strips every comment, so a documented copy cannot
+survive the round trip. That is why the explanation lives in this document and
+[`fdroid/com.luminaapps.cairn.yml`](../fdroid/com.luminaapps.cairn.yml) is pure
+data: the file in this repo and the file in the merge request are then the same
+file, with no regeneration step to forget. See §2a-recipe for what each field
+means.
 
-```bash
-cp fdroid/com.luminaapps.cairn.yml <fdroiddata>/metadata/
-cd <fdroiddata> && fdroid rewritemeta com.luminaapps.cairn && fdroid lint com.luminaapps.cairn
+**Regenerating it requires matching CI's toolchain, not just running the local
+`fdroid`.** The canonical form depends on the *ruamel.yaml* version doing the
+emitting, not on fdroidserver. Debian trixie — which fdroiddata's CI runs — ships
+ruamel 0.18.10, whose emitter folds a plain scalar longer than the line width
+onto the following line:
+
+```yaml
+    binary: 
+      https://github.com/LuminaAppsDev/cairn/releases/download/v%v/cairn-v%v-x86_64.apk
 ```
 
-Depending on the fdroidserver version, `rewritemeta` may also strip the
-comments — which is fine for the submitted copy and is why the documented
-version lives here instead.
+ruamel 0.17.x does not fold it at any width. A file canonicalised against 0.17.x
+therefore fails CI with a confusing whitespace-only diff, even though both
+fdroidserver 2.4.5 and current master agree on everything else. CI also fetches
+fdroidserver from git master rather than using the Debian package. To reproduce
+both:
+
+```bash
+# mktemp, not a fixed /tmp path: on a shared host a predictable name can be
+# pre-created as a symlink before the tarball is extracted into it.
+work=$(mktemp -d)
+
+# fdroidserver master, as CI does
+mkdir -p "$work/fdroidserver"
+curl -fsS https://gitlab.com/fdroid/fdroidserver/-/archive/master/fdroidserver-master.tar.gz \
+  | tar -xz --directory="$work/fdroidserver" --strip-components=1
+# ruamel matching Debian trixie
+python3 -m venv --system-site-packages "$work/venv"
+"$work/venv/bin/pip" install 'ruamel.yaml==0.18.10'
+
+cp fdroid/com.luminaapps.cairn.yml <fdroiddata>/metadata/
+cd <fdroiddata> || exit
+PYTHONPATH="$work/fdroidserver" "$work/venv/bin/python" \
+  "$work/fdroidserver/fdroid" rewritemeta com.luminaapps.cairn
+```
+
+Run it twice and confirm the second run changes nothing; then copy the result
+back over the repo copy so the two never diverge.
 
 **Order of operations when cutting a reproducible release.** The recipe pins an
 immutable `commit:`, which cannot be known until the release commit exists — so
@@ -235,12 +269,13 @@ version number).
 1. Commit the app, CI, changelog and docs changes — **leave the recipe alone**.
 2. Tag `vX.Y.Z` and let CI publish the four assets.
 3. In a follow-up commit, update the recipe: `commit:` in every build block to
-   the tagged SHA, `versionName`/`versionCode`, the `binary:` URLs,
-   `CurrentVersion`/`CurrentVersionCode`, and every comment that names a version
-   code. Stale comments contradicting the fields below them have been the most
-   frequently missed item here — grep the file for the old numbers rather than
-   editing the fields you remember.
-4. Copy the result into the fdroiddata fork and run `rewritemeta` + `lint`.
+   the tagged SHA, `versionName`/`versionCode`, the `binary:` URLs, and
+   `CurrentVersion`/`CurrentVersionCode`. The recipe carries no comments, so
+   there is nothing there to go stale — but §2a-recipe below *does* quote version
+   codes in prose, so grep this document for the old numbers too.
+4. Regenerate the canonical form with the toolchain above, confirm a second run
+   changes nothing, and copy the result back over the repo copy so the two never
+   diverge.
 
 **Key custody — read this before losing the keystore.** Enabling reproducible
 builds moves the signing key onto the critical path for *distribution*, not just
@@ -275,6 +310,99 @@ Sources: [Submitting Quick Start](https://f-droid.org/en/docs/Submitting_to_F-Dr
 [Build Metadata Reference](https://f-droid.org/en/docs/Build_Metadata_Reference/),
 [`build-flutter.yml` template](https://gitlab.com/fdroid/fdroiddata/-/blob/master/templates/build-flutter.yml),
 [Reproducible Builds](https://f-droid.org/en/docs/Reproducible_Builds/).
+
+### 2a-recipe. What each field in the recipe means
+
+[`fdroid/com.luminaapps.cairn.yml`](../fdroid/com.luminaapps.cairn.yml) is the
+source of truth for the entry submitted to
+[fdroiddata](https://gitlab.com/fdroid/fdroiddata) as
+`metadata/com.luminaapps.cairn.yml`, after opening an RFP issue (§2a). It is not
+used by the app or by our own CI. Because it must stay in canonical form it
+carries no comments, so this section is its documentation.
+
+**Listing text is not in the recipe.** Title, descriptions, changelogs and
+screenshots are imported by F-Droid from
+[`fastlane/metadata/android/`](../fastlane/metadata/android/) in this repo.
+Changelogs are per *versionCode*, so an ABI-split release needs one file per
+split code per locale — six files for three ABIs across en-US and de-DE.
+
+**`Repo` / `SourceCode` point at GitHub, not the Forgejo origin.** F-Droid needs
+a publicly clonable git repo carrying the release tags; the public, user-facing
+mirror is GitHub.
+
+**`AutoName: Cairn`** is the launcher label. F-Droid reads it out of the *source*
+`AndroidManifest.xml` at the tag — `checkupdates` calls `fetch_real_name()`,
+which parses the manifest; no APK is built for this check. It is committed so
+that `fdroid checkupdates --auto`, which fdroiddata's CI runs before diffing, is
+a no-op. The listing's display title is separate and comes from fastlane's
+`title.txt` ("Cairn: Health Aggregator").
+
+**Three `Builds` blocks, one per ABI.** F-Droid resolves each block's `output` to
+exactly one APK, so a single block with a glob matching all three splits fails
+with *"Multiple apks match"*. Each block instead builds only its own ABI via
+`--target-platform`. That still produces a split APK, so the `versionCodeOverride`
+in [`android/app/build.gradle.kts`](../android/app/build.gradle.kts) applies.
+
+**Version codes are `base × 10 + {1,2,3}`** — armeabi-v7a = 1, arm64-v8a = 2,
+x86_64 = 3, so build 8 gives 81/82/83. They must match the gradle `abiCodes` map
+and the `VercodeOperation` list. The codes ascend with ABI capability because
+Android installs the highest versionCode a device can run, so a 64-bit device
+picks arm64-v8a over armeabi-v7a. The *order* the `VercodeOperation` entries
+appear in is not a tool requirement — `checkupdates` sorts the results and takes
+the highest.
+
+**The three blocks repeat `srclibs`/`rm`/`sudo`/`prebuild`/`scandelete`
+verbatim, deliberately.** Do not try to factor them out with YAML anchors:
+`rewritemeta` expands anchors back into full repeated blocks, so the
+de-duplication would silently vanish in the submitted copy and reappear as a CI
+formatting diff.
+
+**Each block carries its own `binary:`, rather than one app-level `Binaries:`.**
+A shared template can only substitute `%v` (versionName) and `%c` (versionCode);
+there is no ABI placeholder. Sharing one would force the published assets to be
+named by version code, which tells a human nothing about which file their device
+needs. Per-block URLs let the releases stay named by ABI — the version codes
+are declared in the recipe but appear nowhere in the published filenames, which
+carry `%v` (the version name) and the ABI instead.
+
+**`commit:` pins a full hash by choice, not by requirement.** fdroidserver has no
+validator for the field, and `lint` objects only to branch names, so a tag would
+be accepted, and a large minority of fdroiddata recipes do use tags. We pin the
+hash because tags are mutable and a repointed one would silently change what gets rebuilt. The
+`prebuild:` steps apply the same reasoning to the Flutter SDK: they read
+`FLUTTER_COMMIT` out of the release workflow and fail closed if the checked-out
+SDK does not match, so a moved upstream tag surfaces as an obvious toolchain
+error instead of an unexplained reproducibility failure.
+
+**Why the seed is the v0.2.3 commit.** It is the earliest tag whose published
+APKs can actually be verified. v0.2.2 introduced the per-ABI assets and the
+build-path and build-id fixes, but its binaries still carried AGP's
+dependency-metadata signing block, which F-Droid's scanner rejects outright, so
+verification never took effect. Tags before v0.2.2 published only a universal
+APK.
+
+**The `mv`/`pushd` round trip is guarded for idempotency.** If an attempt fails
+between the two moves, the checkout is stranded at `/build/cairn`; moving again
+would nest it (`mv src existing-dir`) and silently build the wrong tree, masking
+the original error. The guard matters for repeated local runs in one buildserver
+container — F-Droid's own builds get a fresh VM each time.
+
+**`AllowedAPKSigningKeys`** is the certificate F-Droid must find on every
+downloaded reference binary, as lower-case hex SHA-256 with no colons — the form
+fdroidserver compares against. An upper-case value passes `fdroid lint` and then
+fails the build. Obtain it with `apksigner verify --print-certs`; the documented
+`keytool -printcert -jarfile` one-liner prints `Not a signed jar file` rather
+than a fingerprint on a v2-only APK, which is easy to skim past.
+The current fingerprint has been confirmed identical across the v0.1.0, v0.2.1,
+v0.2.2 and v0.2.3 release APKs — if it ever differs, the keystore has changed and
+§2a-repro's key-custody notes apply.
+
+**`UpdateCheckData` and `VercodeOperation` let new tags be picked up
+automatically.** The version lives in `pubspec.yaml`, not the Android manifest or
+gradle, so `UpdateCheckData` tells the tag checker how to read the base
+versionCode (digits after `+`) and versionName (before it). `VercodeOperation`
+declares the per-ABI scheme so `checkupdates` computes the right
+`CurrentVersionCode` — the highest of the three.
 
 ### 2b. Self-hosted F-Droid repo
 
