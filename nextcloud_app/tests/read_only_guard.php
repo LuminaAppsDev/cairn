@@ -21,6 +21,10 @@ declare(strict_types=1);
  *   3. OCP\Files\* is imported only by the two classes allowed to touch storage,
  *      so no Node, File or Folder handle can escape into code that might write
  *      through it.
+ *   4. lib/Reading/ imports no OCP at all. That directory holds the read
+ *      semantics every Cairn frontend must apply identically (DESIGN.md §4.3),
+ *      and it stays testable without a server — and comparable against the
+ *      mobile reader — only for as long as nothing drags Nextcloud into it.
  *
  * Deliberately dependency-free: plain PHP, no Composer, no PHPUnit, no server.
  * It runs anywhere `php` does, which means it can run before the dev environment
@@ -100,6 +104,13 @@ foreach ($files as $file) {
 			&& !in_array($relative, STORAGE_FILES, true)) {
 			$findings[] = "{$where}: imports OCP\\Files — only "
 				. implode(' and ', STORAGE_FILES) . ' may.';
+		}
+
+		if (str_starts_with($relative, 'Reading/')
+			&& preg_match('/^use\s+OCP\\\\/', $trimmed) === 1) {
+			$findings[] = "{$where}: lib/Reading/ must not import OCP — "
+				. 'the read semantics stay server-free so they can be tested, '
+				. 'and compared against the mobile reader, without Nextcloud.';
 		}
 	}
 }

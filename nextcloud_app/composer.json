@@ -1,23 +1,37 @@
 {
-	"name": "luminaappsdev/cairn-nextcloud",
-	"description": "Read-only Nextcloud frontend for Cairn health files",
-	"type": "project",
-	"license": "AGPL-3.0-or-later",
-	"authors": [
-		{
-			"name": "Max Fiedler",
-			"email": "max.fiedler1988@pm.me"
-		}
-	],
-	"require": {
-		"php": ">=8.2"
-	},
-	"autoload": {
-		"psr-4": {
-			"OCA\\Cairn\\": "lib/"
-		}
-	},
-	"config": {
-		"sort-packages": true
-	}
+    "name": "luminaappsdev/cairn-nextcloud",
+    "description": "Read-only Nextcloud frontend for Cairn health files",
+    "type": "project",
+    "license": "AGPL-3.0-or-later",
+    "authors": [
+        {
+            "name": "Max Fiedler",
+            "email": "max.fiedler1988@pm.me"
+        }
+    ],
+    "require": {
+        "php": ">=8.2"
+    },
+    "autoload": {
+        "psr-4": {
+            "OCA\\Cairn\\": "lib/"
+        }
+    },
+    "config": {
+        "sort-packages": true,
+        "platform": {
+            "php": "8.3.0"
+        }
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^12.5"
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "OCA\\Cairn\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "phpunit"
+    }
 }

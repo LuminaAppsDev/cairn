@@ -6,6 +6,47 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- **The read-path semantics ported to PHP, as a server-free layer with 123
+  tests.** `lib/Reading/` holds the rules from `DESIGN.md` §4.3 that every Cairn
+  frontend must apply identically — strict JSON typing, timestamp handling,
+  last-ingested-wins, source-priority dedup and sleep-episode aggregation — and
+  imports no Nextcloud API at all. That is enforced by the read-only guard, not
+  just intended: the rules stay testable without a server, which is also what
+  will let them be compared against the mobile reader directly.
+
+  The tests are written against the cases where a plausible port silently
+  disagrees with the phone rather than against the happy path. Cumulative
+  whole-day step snapshots resolve to the newest, never their sum. Source
+  priority beats a later ingest, and ingest time breaks a tie only at equal
+  priority — reversed, a phone's later sync would displace the wearable's better
+  number. Provenance is all-or-nothing, so a `source_name` with no `modality`
+  yields *no* source. Sleep-stage segments deduplicate on their window with the
+  stage deliberately excluded from the key, so two sources disagreeing about the
+  same minutes collapse to one segment instead of inventing an awakening. Total
+  sleep is the union of asleep intervals, not their sum, because sources emit a
+  whole-night `session` overlapping its own sub-stages.
+
+  Three PHP-specific traps are closed and pinned by tests, because PHP's
+  defaults are the opposite of the mobile reader's: lines decode to `stdClass`
+  rather than associative arrays, since `json_decode(..., true)` makes `{}` and
+  `[]` indistinguishable; numbers are checked with `is_int() || is_float()`
+  rather than `is_numeric()`, which accepts the string `"62"`; and
+  `is_main_sleep` is compared with `===`, because PHP evaluates `"true" == true`
+  as true and would flip a night's main-sleep flag.
+
+  Timestamp parsing is gated by a strict ISO-8601 pattern before PHP's date
+  constructor sees it. Unguarded, that constructor is a natural-language parser
+  — `now`, `+1 day`, a bare `62` all produce valid dates — so an unvalidated
+  field would invent readings the phone never shows. Elapsed time is measured in
+  integer milliseconds from timestamps; a night spanning the October fall-back
+  is nine hours, not the eight the wall clock suggests.
+
+  One inherited quirk is reproduced deliberately and documented: main sleep is
+  decided per calendar date keyed on the episode's *onset*, so a morning nap
+  after a night that began before midnight is flagged main for its own date.
+  That is what the phone does with the same files, and "fixing" it here would
+  make the two frontends disagree.
+
 - **`nextcloud_app/dev refresh`, and the reason a dev instance needed it.**
   Nextcloud serves app assets with `Cache-Control: max-age=15778463, immutable`,
   which tells the browser never to revalidate them, and the only thing that

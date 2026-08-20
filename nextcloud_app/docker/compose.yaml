@@ -49,5 +49,21 @@ services:
       # writes here, so nothing legitimate can notice.
       - ../:/var/www/html/custom_apps/cairn:ro
 
+  # Composer, only when asked for. Behind the `tools` profile so `up` never
+  # starts it, and mounted read-write on purpose: this is the one place vendor/
+  # gets written, and it is NOT the server. The Nextcloud container keeps its
+  # read-only view of the same directory, so the app it runs still cannot alter
+  # itself. Runs as the invoking user so nothing lands root-owned in your tree.
+  composer:
+    image: composer:2.9@sha256:b09bccd91a78fe8a9ab4b33d707b862e8fe54fec17782e32683ad2a69c46867d
+    profiles: ["tools"]
+    working_dir: /app
+    user: "${CAIRN_UID:-1000}:${CAIRN_GID:-1000}"
+    environment:
+      COMPOSER_HOME: /tmp/.composer
+      COMPOSER_CACHE_DIR: /tmp/.composer/cache
+    volumes:
+      - ../:/app
+
 volumes:
   nextcloud_html:

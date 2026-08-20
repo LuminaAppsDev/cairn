@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 namespace OCA\Cairn\Service;
 
+use OCA\Cairn\Reading\Model\HealthMetric;
+
 /**
  * Turns a decoded `manifest.json` into a {@see Manifest}.
  *

@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 namespace OCA\Cairn\Service;
 
+use OCA\Cairn\Reading\Model\HealthMetric;
+
 /**
  * What one metric's folder looks like on disk.
  *

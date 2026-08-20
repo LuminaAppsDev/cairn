@@ -390,6 +390,27 @@ cmd_refresh() {
 	say "PHP and template changes never needed this — they are read on every request."
 }
 
+cmd_deps() {
+	require_docker
+	step "Installing PHP dev dependencies"
+	say "Composer runs in its own container; nothing needs to be on your machine."
+	CAIRN_UID="$(id -u)" CAIRN_GID="$(id -g)" \
+		compose run --rm composer install --no-interaction --no-progress
+}
+
+cmd_test() {
+	container_running || die "the dev instance is not running." "Tests run on the container's PHP, which is the one the app ships against: nextcloud_app/dev up"
+	if [[ ! -f "${APP_ROOT}/vendor/bin/phpunit" ]]; then
+		die "PHPUnit is not installed." "Run 'nextcloud_app/dev deps' first."
+	fi
+	step "Unit tests"
+	# --cache-directory into /tmp because the app is mounted read-only in this
+	# container, which is the point.
+	compose exec -T nextcloud php /var/www/html/custom_apps/cairn/vendor/bin/phpunit \
+		--configuration /var/www/html/custom_apps/cairn/phpunit.xml \
+		--cache-directory /tmp/.phpunit "$@"
+}
+
 cmd_check() {
 	container_running || die "the dev instance is not running." "Checks run inside the container: nextcloud_app/dev up"
 	step "Read-only guard"
@@ -431,6 +452,9 @@ Cairn Nextcloud app — development environment
                          CAIRN_SEED_DIR, dev-data/local/, then a generated tree.
   ./dev refresh          Bump asset URLs after editing CSS, JS or an icon.
                          PHP and templates never need this.
+  ./dev deps             Install PHP dev dependencies (PHPUnit), via Composer
+                         in its own container. Needed once.
+  ./dev test [ARGS...]   Run the unit tests on the container's PHP.
   ./dev check            Run the read-only guard and validate appinfo/info.xml.
   ./dev status           Is it running, and is the app enabled?
   ./dev occ ARGS...      Run an occ command, e.g. ./dev occ app:list
@@ -467,6 +491,8 @@ main() {
 		seed) cmd_seed "$@" ;;
 		check) cmd_check ;;
 		refresh) cmd_refresh ;;
+		deps) cmd_deps ;;
+		test) cmd_test "$@" ;;
 		status) cmd_status ;;
 		reset) cmd_reset ;;
 		occ) occ "$@" ;;
