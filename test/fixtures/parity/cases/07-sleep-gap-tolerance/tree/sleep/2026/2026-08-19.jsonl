@@ -1,0 +1,1 @@
+{"header":{"id":"00000000-0000-4000-8000-000000000001","schema_id":{"namespace":"cairn","name":"sleep-stage","version":"1.0"},"acquisition_provenance":{"source_name":"com.sec.android.app.shealth","modality":"sensed"}},"body":{"sleep_stage":"light","effective_time_frame":{"time_interval":{"start_date_time":"2026-08-19T23:20:00+02:00","end_date_time":"2026-08-20T01:00:00+02:00"}}}}

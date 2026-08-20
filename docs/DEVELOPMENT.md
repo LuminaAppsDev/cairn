@@ -250,9 +250,46 @@ Runs, inside the container:
   licence is AGPL-3.0-or-later and that no write surface is declared.
 
 Both are plain PHP with no Composer and no PHPUnit, so they run anywhere `php`
-does. They fold into the PHPUnit suite when the read-path port brings one.
+does.
 
-### 4.5 Version-tracking against Nextcloud majors
+The unit suite needs Composer once:
+
+```bash
+nextcloud_app/dev deps     # PHPUnit, via Composer in its own container
+nextcloud_app/dev test     # runs on the server's own PHP, not your host's
+```
+
+### 4.5 Cross-frontend parity (important)
+
+`DESIGN.md` §4.3 makes the read semantics a property of the **file format**: the
+Flutter app and the Nextcloud app must give the same answers for the same bytes,
+or the files stop being a single source of truth. Two independent
+implementations of a dozen subtle rules do not stay in agreement because
+everyone meant well — they stay in agreement because something fails when they
+drift.
+
+[`test/fixtures/parity/`](../test/fixtures/parity/) holds the shared cases: a
+miniature `/Cairn/` folder, the questions to ask of it, and the answers both
+readers must give. Both suites run all of them, both fail if they find no cases,
+and both fail on a query name they do not implement — so adding a query to a
+fixture forces the other frontend to implement it.
+
+```bash
+TZ=Europe/Berlin flutter test test/parity   # the Flutter half
+nextcloud_app/dev test --filter ParityTest  # the Nextcloud half
+```
+
+The `TZ` matters: the fixtures are authored in `Europe/Berlin` because it has
+daylight saving, and Dart reads its timezone from the environment rather than
+taking it as a parameter. CI pins it. The suite checks the resulting offsets and
+fails with that command in the message rather than producing quietly wrong
+answers.
+
+**If you change a read rule in either frontend, change it in both, and add a
+case.** A change that makes one reader disagree with the other is a change to
+the format.
+
+### 4.6 Version-tracking against Nextcloud majors
 
 `info.xml`'s `max-version` must move with each Nextcloud major or the app is
 disabled on server upgrade (DESIGN.md §7). Bump it only after checking the app

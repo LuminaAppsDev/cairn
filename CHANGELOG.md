@@ -6,6 +6,65 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- **A cross-frontend parity suite, so the two readers cannot drift apart
+  silently.** `docs/DESIGN.md` §4.3 makes the read semantics a property of the
+  file format rather than of any one reader: the phone and the web app must give
+  the same answers for the same bytes, or the files stop being a single source
+  of truth. Two independent implementations of a dozen subtle rules do not stay
+  in agreement because everyone meant well.
+
+  `test/fixtures/parity/` holds eight cases — a miniature `/Cairn/` folder, the
+  questions to ask of it, and the answers both readers must give. `flutter test`
+  runs them through the Dart reader and `nextcloud_app/dev test` runs the same
+  files through the PHP one. **Both agreed on all eight on the first run**,
+  which is the evidence the port was actually faithful rather than merely
+  plausible. The cases are the divergence-prone rules: cumulative step snapshots
+  resolving to the newest, source priority beating a later ingest, a superseded
+  weight correction, all-or-nothing provenance, sleep segments deduplicating
+  with the stage excluded from the key, the 60-minute episode gap either side of
+  the boundary, and a shard full of malformed lines.
+
+  The suite is built to fail rather than to pass. Both runners fail if they find
+  no cases, because one that silently finds nothing reports all-clear while
+  proving nothing; both fail on a query name they do not implement, so adding a
+  query to a fixture forces the other frontend to implement it too. Verified by
+  changing one golden to the naive sum a wrong reader would produce and watching
+  both suites reject it, each quoting the case's own explanation of what a wrong
+  reader does.
+
+  Goldens are hand-written rather than generated from either reader. Generating
+  them would record what the code currently does; the point is to record what it
+  is supposed to do.
+
+- **`TZ: Europe/Berlin` in `ci.yml`.** The parity fixtures are authored in a
+  zone with daylight saving, because that is where the interesting failures
+  live, and Dart reads its timezone from the environment rather than taking it
+  as a parameter. This makes CI more deterministic, not less: the other 193
+  tests were verified to pass identically under CEST, Europe/Berlin and
+  Pacific/Kiritimati, so the only tests it affects are the ones that need it.
+  Under a deliberately wrong zone exactly five tests fail, all of them parity
+  cases. The suite also asserts the resulting UTC offsets on a winter and a
+  summer date, which catches the subtler failure of two hosts carrying different
+  `tzdata` — a name comparison would not.
+
+- **`.forgejo/workflows/nextcloud-ci.yml`**, the quality gate for the subtree:
+  the read-only guard, the `info.xml` schema check, and the unit and parity
+  suites. Separate from `ci.yml` because it is a different toolchain with a
+  different blast radius, and because Forgejo scopes concurrency groups per
+  repository rather than per workflow, so it needs its own group name or it
+  would cancel unrelated runs.
+
+  It verifies the PHP toolchain rather than installing one: `setup-php`
+  provisions through `sudo`/apt, and `docs/RELEASE.md` is explicit that this
+  host must not expose a passwordless sudo grant reachable from CI. The step
+  fails closed with the one-time host prep in its message.
+
+  Its `paths:` filter is an optimisation, never a correctness dependency. A
+  change to `lib/src/query/*.dart` that breaks parity does not touch
+  `nextcloud_app/` and so would not start this workflow — but the shared goldens
+  mean the always-on Flutter job catches it, which is the whole point of the
+  fixtures being shared.
+
 - **The seven dashboard queries, and the first real numbers off the files.**
   `HealthQueryService` owns what a caller should not have to know: how far back
   each question reads, and which resolution rule applies to what it finds. The

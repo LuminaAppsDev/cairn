@@ -1,2 +1,8 @@
 # Claude
 .claude/** linguist-vendored
+
+# Health-data shards are byte-exact fixtures. The parity cases deliberately
+# include an unparseable line — a torn append, the kind an interrupted sync
+# leaves behind — and line-ending normalisation on checkout would quietly
+# repair the very thing under test.
+*.jsonl -text

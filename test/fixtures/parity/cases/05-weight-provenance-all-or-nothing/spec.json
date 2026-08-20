@@ -1,0 +1,13 @@
+{
+  "description": "One line carries a source_name but no modality; the other carries no provenance block at all. Provenance is all-or-nothing, so BOTH have no source and share the unattributed bucket \u2014 the later-ingested 88.9 wins. A reader that accepts a name without a modality keeps two readings.",
+  "now": "2026-08-20T12:00:00",
+  "timezone": "Europe/Berlin",
+  "queries": [
+    {
+      "id": "series",
+      "name": "scalarSeries",
+      "metric": "weight",
+      "days": 3
+    }
+  ]
+}

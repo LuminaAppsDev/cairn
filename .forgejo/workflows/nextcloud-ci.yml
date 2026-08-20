@@ -1,0 +1,108 @@
+# Quality gate for the Nextcloud web app subtree (nextcloud_app/).
+#
+# WHY A SEPARATE WORKFLOW. ci.yml is the Flutter gate: a different toolchain, a
+# different blast radius, and it must keep running on every push regardless of
+# what happens here. Forgejo also scopes concurrency groups per *repository*
+# rather than per workflow, so a second workflow needs its own group name or it
+# would queue behind — and cancel — unrelated runs.
+#
+# WHAT THIS PROTECTS. lib/Reading/ is a second implementation of the read
+# semantics in docs/DESIGN.md §4.3. Two implementations of a dozen subtle rules
+# do not stay in agreement by good intentions, so the parity suite in
+# test/fixtures/parity/ pins them to shared goldens and both readers run it.
+#
+# NOTE ON COVERAGE. The Dart half of that suite runs in ci.yml, which has no
+# path filter and therefore fires on every push. That is deliberate: a change to
+# lib/src/query/*.dart that breaks parity does not touch nextcloud_app/ and so
+# would not start this workflow — but the shared goldens make the always-on
+# Flutter job catch it. The `paths:` filter below is an optimisation only; if
+# Forgejo's filter semantics misbehave the job merely runs more often, which is
+# harmless. Nothing here relies on it for correctness.
+name: Nextcloud app CI
+
+on:
+  push:
+    branches:
+      - '**'
+    paths:
+      - 'nextcloud_app/**'
+      - 'test/fixtures/parity/**'
+      - '.forgejo/workflows/nextcloud-ci.yml'
+
+concurrency:
+  # Never `ci-…` and never `release`: see the note above on per-repository
+  # scoping.
+  group: nextcloud-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The parity fixtures are authored in this zone; see ci.yml's note.
+  TZ: Europe/Berlin
+
+jobs:
+  app:
+    # `branches:` should already exclude tags, but ci.yml documents why that is
+    # not trusted on its own here. Same reasoning, same guard.
+    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+    runs-on: linux
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: nextcloud_app
+    steps:
+      - name: Checkout
+        uses: https://github.com/actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      # Verified, not installed. shivammathur/setup-php provisions PHP through
+      # sudo/apt, and docs/RELEASE.md is explicit that this host must not expose
+      # a passwordless sudo grant reachable from CI. So the toolchain is host
+      # prep, done once out of band, and this job fails closed if it is absent
+      # or too old rather than quietly skipping the checks.
+      - name: Verify the PHP toolchain
+        run: |
+          set -euo pipefail
+          for tool in php composer; do
+            if ! command -v "$tool" >/dev/null 2>&1; then
+              echo "$tool is not on PATH on this runner." >&2
+              echo "One-time host prep: install php-cli (with dom, simplexml, mbstring, json) and composer." >&2
+              exit 1
+            fi
+          done
+          # The floor the test suite needs. The app itself supports 8.2 per
+          # appinfo/info.xml; only PHPUnit 12 requires 8.3.
+          php -r 'exit(PHP_VERSION_ID >= 80300 ? 0 : 1);' || {
+            echo "PHP $(php -r 'echo PHP_VERSION;') is below the 8.3 the test suite needs." >&2
+            echo "Upgrade the runner's php-cli." >&2
+            exit 1
+          }
+          for ext in dom simplexml mbstring; do
+            php -r "exit(extension_loaded('$ext') ? 0 : 1);" || {
+              echo "PHP extension '$ext' is missing; PHPUnit and the info.xml check need it." >&2
+              exit 1
+            }
+          done
+
+      - name: Dependencies
+        run: |
+          set -euo pipefail
+          composer install --no-interaction --no-progress --prefer-dist
+
+      # Cheap, dependency-free, and the two that guard the app's actual
+      # contract. Run before the suite so a broken promise fails fast.
+      - name: Read-only guard
+        run: |
+          set -euo pipefail
+          php tests/read_only_guard.php
+
+      - name: Validate appinfo/info.xml
+        run: |
+          set -euo pipefail
+          php tests/validate_info_xml.php
+
+      - name: Unit and parity tests
+        run: |
+          set -euo pipefail
+          # The fixtures live at the repository root because they belong to the
+          # file format rather than to either reader.
+          CAIRN_PARITY_FIXTURES="${GITHUB_WORKSPACE}/test/fixtures/parity" \
+            vendor/bin/phpunit --cache-directory "$(mktemp -d)"

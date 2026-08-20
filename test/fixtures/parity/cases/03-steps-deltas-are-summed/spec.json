@@ -1,0 +1,16 @@
+{
+  "description": "A whole-day cumulative total coexists with the platform's own short per-interval deltas. Their windows differ, so all of them count: collapsing by value or by source instead of by window loses the deltas.",
+  "now": "2026-08-20T12:00:00",
+  "timezone": "Europe/Berlin",
+  "queries": [
+    {
+      "id": "today",
+      "name": "todayStepTotal"
+    },
+    {
+      "id": "week",
+      "name": "dailySteps",
+      "days": 3
+    }
+  ]
+}

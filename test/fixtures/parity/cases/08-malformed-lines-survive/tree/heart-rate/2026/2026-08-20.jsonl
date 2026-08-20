@@ -1,0 +1,8 @@
+{"header":{"id":"00000000-0000-4000-8000-000000000001","creation_date_time":"2026-08-20T11:00:00+02:00","schema_id":{"namespace":"omh","name":"heart-rate","version":"1.0"},"acquisition_provenance":{"source_name":"com.sec.android.app.shealth","modality":"sensed"}},"body":{"heart_rate":{"value":60.0,"unit":"beats/min"},"effective_time_frame":{"date_time":"2026-08-20T10:00:00+02:00"}}}
+["not","an","object"]
+
+   
+{"header":{"id":"00000000-0000-4000-8000-000000000002","creation_date_time":"2026-08-20T11:00:00+02:00","schema_id":{"namespace":"omh","name":"heart-rate","version":"1.0"},"acquisition_provenance":{"source_name":"com.sec.android.app.shealth","modality":"sensed"}},"body":{"heart_rate":{"value":"62","unit":"beats/min"},"effective_time_frame":{"date_time":"2026-08-20T10:05:00+02:00"}}}
+{"header":{"id":"00000000-0000-4000-8000-000000000003","creation_date_time":"2026-08-20T11:00:00+02:00","schema_id":{"namespace":"omh","name":"heart-rate","version":"1.0"},"acquisition_provenance":{"source_name":"com.sec.android.app.shealth","modality":"sensed"}},"body":{"heart_rate":{"value":63.0},"effective_time_frame":{"date_time":"2026-08-20T10:10:00+02:00"}}}
+{"header":{"id":"00000000-0000-4000-8000-000000000004","creation_date_time":"2026-08-20T11:00:00+02:00","schema_id":{"namespace":"omh","name":"heart-rate","version":"1.0"},"acquisition_provenance":{"source_name":"com.sec.android.app.shealth","modality":"sensed"}},"body":{"heart_rate":{"value":80.0,"unit":"beats/min"},"effective_time_frame":{"date_time":"2026-08-20T10:15:00+02:00"}}}
+{"header":{"id":"9f0c1f2e-0000-4000-8000-0000000

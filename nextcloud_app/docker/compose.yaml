@@ -48,6 +48,12 @@ services:
       # code already makes (see tests/read_only_guard.php). Nothing in the app
       # writes here, so nothing legitimate can notice.
       - ../:/var/www/html/custom_apps/cairn:ro
+      # The cross-frontend parity fixtures. They live at the repository root
+      # rather than in this subtree because they belong to the file format, not
+      # to either reader — the Flutter suite runs the very same files. Mounted
+      # at a fixed path the PHP suite looks for; read-only, like everything else
+      # this container sees of the working tree.
+      - ../../test/fixtures/parity:/parity:ro
 
   # Composer, only when asked for. Behind the `tools` profile so `up` never
   # starts it, and mounted read-write on purpose: this is the one place vendor/

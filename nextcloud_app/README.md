@@ -114,18 +114,21 @@ lib/
 templates/   main.php — server-rendered landing page
 css/         cairn.css — themed via Nextcloud custom properties
 tests/       read_only_guard.php, validate_info_xml.php — zero-dependency checks
+             Unit/ — the read-path suite, incl. the shared parity cases
 docker/      compose.yaml, .env.example — the dev instance
 dev          the entrypoint for all of the above
 ```
 
 ## Status
 
-Early. The current page proves the app can find, list and decode the mobile
-app's shards, and survives a damaged line. The read-path semantics
-(`docs/DESIGN.md` §4.3) — last-ingested-wins, source-priority dedup, sleep
-episode aggregation — are **not yet ported**; they land next, together with a
-shared golden-fixture harness that holds the Dart and PHP readers to the same
-answers. The Vue dashboard follows that.
+Early, but the engine is real. `lib/Reading/` implements the read semantics of
+`docs/DESIGN.md` §4.3 — last-ingested-wins, source-priority dedup, sleep-episode
+aggregation — with no Nextcloud imports at all, and the current page shows
+figures computed from your actual shards.
+
+Those rules are held to the same answers as the Flutter app by the shared
+fixtures in [`test/fixtures/parity/`](../test/fixtures/parity/), which both
+suites run. The JSON API and the Vue dashboard come next.
 
 ## Version tracking
 

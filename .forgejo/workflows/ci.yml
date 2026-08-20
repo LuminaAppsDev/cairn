@@ -62,6 +62,18 @@ env:
   # the two controls cover each other.
   GRADLE_OPTS: -Dorg.gradle.dependency.verification=strict
 
+  # Pins the timezone for `flutter test`. The cross-frontend parity fixtures
+  # (test/fixtures/parity/) are authored in Europe/Berlin, and Dart reads its
+  # zone from the environment rather than taking it as a parameter — so without
+  # this the parity suite would compare answers bucketed into the wrong days.
+  #
+  # This makes CI more deterministic, not less: verified that the other 193
+  # tests pass identically under CEST, Europe/Berlin and Pacific/Kiritimati, so
+  # the only tests this affects are the ones that need it. The parity suite
+  # asserts the resulting offsets itself and fails with the fix in its message,
+  # which also catches the subtler case of a runner carrying different tzdata.
+  TZ: Europe/Berlin
+
 jobs:
   check:
     # `branches:` above should already exclude tag refs, but Forgejo's filter

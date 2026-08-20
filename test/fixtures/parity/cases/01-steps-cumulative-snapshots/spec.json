@@ -1,0 +1,11 @@
+{
+  "description": "Samsung Health re-reports the day's steps as one whole-day record whose value climbs. A reader that sums the snapshots reports 26350; one that keeps the first reports 3100. Only the newest is the current total.",
+  "now": "2026-08-20T12:00:00",
+  "timezone": "Europe/Berlin",
+  "queries": [
+    {
+      "id": "today",
+      "name": "todayStepTotal"
+    }
+  ]
+}

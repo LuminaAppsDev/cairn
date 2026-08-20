@@ -1,0 +1,12 @@
+{
+  "description": "A torn trailing line from an interrupted append, a JSON array, blank lines, a value delivered as a string, and a unit-value missing its unit. Every one is skipped and the day still renders. A reader that throws on any of them loses the whole day.",
+  "now": "2026-08-20T12:00:00",
+  "timezone": "Europe/Berlin",
+  "queries": [
+    {
+      "id": "hr",
+      "name": "dailyHeartRate",
+      "days": 1
+    }
+  ]
+}

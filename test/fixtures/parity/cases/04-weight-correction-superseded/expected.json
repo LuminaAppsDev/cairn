@@ -1,0 +1,14 @@
+{
+  "latest": {
+    "value": 88.4,
+    "unit": "kg",
+    "at": "2026-08-20T06:21:00+02:00",
+    "source": "com.sec.android.app.shealth"
+  },
+  "series": [
+    {
+      "value": 88.4,
+      "at": "2026-08-20T06:21:00+02:00"
+    }
+  ]
+}

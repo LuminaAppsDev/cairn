@@ -1,0 +1,12 @@
+{
+  "description": "A 45-minute break keeps one episode; a 90-minute one starts a second. The night begins the evening before, so its onset segments live in the previous day's shard \u2014 a reader that does not read back far enough reports a sleep starting at midnight.",
+  "now": "2026-08-20T12:00:00",
+  "timezone": "Europe/Berlin",
+  "queries": [
+    {
+      "id": "nights",
+      "name": "lastNNights",
+      "n": 2
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "description": "Two sources describe the same forty minutes and disagree about what they were: the wearable says deep sleep, the vendor app says awake. One window is one span of time, so exactly one segment survives and the wearable decides. A reader that puts the stage in the dedup key keeps both, and reports an awakening that never happened.",
+  "now": "2026-08-20T12:00:00",
+  "timezone": "Europe/Berlin",
+  "queries": [
+    {
+      "id": "nights",
+      "name": "lastNNights",
+      "n": 1
+    }
+  ]
+}
