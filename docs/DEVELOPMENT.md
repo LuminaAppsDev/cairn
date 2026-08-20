@@ -252,6 +252,13 @@ Runs, inside the container:
 Both are plain PHP with no Composer and no PHPUnit, so they run anywhere `php`
 does.
 
+The suite covers the pure read path *and* the Nextcloud-facing seam. The
+classes that touch `OCP` are tested against the real interfaces, loaded from
+`nextcloud/ocp` by `tests/bootstrap.php` — pinned to the lowest Nextcloud the
+app claims, for the same reason psalm analyses against it. So no test needs a
+running server, while `dev matrix` and `dev verify-package` answer the different
+question of whether it works against real ones.
+
 Dependencies and the frontend bundle are a one-time step:
 
 ```bash

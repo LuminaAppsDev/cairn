@@ -127,7 +127,9 @@ css/         cairn.css — themed via Nextcloud custom properties
 src/         the Vue dashboard: App.vue, hand-rolled SVG charts, no chart library
 l10n/        translations (German; English is the source language)
 tests/       read_only_guard.php, validate_info_xml.php — zero-dependency checks
-             Unit/ — the read-path suite, incl. the shared parity cases
+             Unit/ — the read path, the Nextcloud seam, and the parity cases
+             Support/ — storage doubles, so the seam is testable serverless
+             stubs/ — the one private OCP dependency the published stubs omit
 psalm.xml    static analysis, level 2, no baseline
 .php-cs-fixer.dist.php  Nextcloud's coding standard
 docker/      compose.yaml, .env.example — the dev instance

@@ -6,10 +6,15 @@
   The `unit` suite covers lib/Reading/, which is pure PHP with no Nextcloud
   imports at all — that is what lets the read semantics be tested without a
   server, and what makes the shared parity fixtures possible.
+
+  It also covers lib/Service/ and lib/Controller/, which do touch Nextcloud, by
+  mocking the OCP interfaces. tests/bootstrap.php explains where those come
+  from; the short version is that they are loaded from nextcloud/ocp, pinned to
+  the lowest Nextcloud the app claims, so nothing here needs a running server.
 -->
 <phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
-         bootstrap="vendor/autoload.php"
+         bootstrap="tests/bootstrap.php"
          colors="true"
          failOnWarning="true"
          failOnRisky="true"

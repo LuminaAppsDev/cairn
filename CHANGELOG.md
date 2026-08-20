@@ -6,6 +6,53 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- **Tests for the Nextcloud-facing seam — the half that had none.** The read
+  path was covered from the first commit; everything that touches the server was
+  covered only end-to-end, by the compatibility matrix and the packaged-app
+  check. Those prove the whole thing works and say nothing about *which* branch
+  handled a missing folder, a torn line or another user's session. Untested
+  classes went from 17 to 7, and the seven are a no-op bootstrap and plain data
+  holders.
+
+  The controllers are tested against the **real** stack — `QueryFactory`,
+  `NextcloudShardSource`, `DashboardAssembler`, `OverviewService` are all
+  production classes here, with doubles only for the two things that genuinely
+  cannot exist without a server: the filesystem and the session. That was forced
+  by making them `final` and turned out better than mocking them, because a
+  request in a test now travels the same path a real one does. Files are backed
+  by real in-memory streams, so `fopen()` and the 64 KiB line cap are exercised
+  rather than stubbed past.
+
+  What that pinned down, one branch at a time: a window outside the limits is
+  rejected rather than clamped, and the limits themselves are accepted; nights
+  are capped tighter than days because they cost more per unit; every endpoint
+  answers on an empty folder, because an empty folder is a normal state and not
+  an error; a request reads the session user's files and another user reads
+  nothing; `$day` is validated by `readShard` itself rather than by its caller;
+  an over-long line is skipped once rather than once per chunk; blank lines are
+  separators, not damage. And in the assembler, the two averaging rules that
+  change what a number *means* — the step average ignores days that never
+  reported, so a gap does not read as inactivity, and the heart-rate mean is
+  weighted by sample count, so a day with three readings does not outvote one
+  with three hundred.
+
+  `tests/bootstrap.php` loads the `OCP` interfaces from `nextcloud/ocp`, which
+  publishes them as PSR-4 sources but declares no autoload section, being
+  intended for static analysis. Pinned to the lowest Nextcloud the app claims,
+  for the same reason psalm analyses against it. `tests/stubs/` fills the one
+  gap that leaves: `IRootFolder` extends `OC\Hooks\Emitter`, which lives in the
+  server's private namespace and is not shipped. Adding it made psalm's
+  `MissingDependency` suppression unnecessary, so that is gone too — one fewer
+  place where an analyser was told to look away.
+
+  Two bugs in the test helpers themselves are worth recording, because both are
+  traps this codebase already documents. PHP coerced the year folder `"2026"`
+  into `int 2026` — the exact numeric-key coercion `StrictJson` exists to avoid,
+  met in a helper rather than in the reader. And the storage doubles were mocks
+  when they should have been stubs: the tests care what storage *returns*, never
+  how often it was asked, and a mock would fail whenever the reader was made
+  more efficient.
+
 - **App-store packaging: `dev package` and `dev verify-package`.** The release
   tarball's contents come from an **allowlist**, not an exclude list, and that
   is the point of it: an exclude list ships whatever nobody thought to exclude —

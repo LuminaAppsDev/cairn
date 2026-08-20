@@ -49,18 +49,6 @@
 		<MissingOverrideAttribute errorLevel="suppress"/>
 
 		<!--
-			A gap in the published stubs rather than in this code: OCP's
-			IRootFolder extends \OC\Hooks\Emitter, which lives in the server's
-			private namespace and is not shipped with nextcloud/ocp. Scoped to
-			the one file that legitimately holds a reference to it.
-		-->
-		<MissingDependency>
-			<errorLevel type="suppress">
-				<file name="lib/Service/CairnRootLocator.php"/>
-			</errorLevel>
-		</MissingDependency>
-
-		<!--
 			PHPUnit initialises fixtures in setUp(), which is the de-facto
 			constructor for a test case; psalm cannot see the framework calling
 			it. Confined to tests/ so the rule keeps its teeth everywhere real

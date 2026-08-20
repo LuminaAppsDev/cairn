@@ -411,9 +411,10 @@ because the on-disk format is the one genuinely expensive thing to change
   level 2 with no baseline, and a compatibility matrix (`dev matrix`) that
   installs every claimed Nextcloud major in turn rather than trusting
   `info.xml`. Read-only is enforced statically, not asserted.
-- **Remaining:** app-store packaging — `krankerl.toml`, a signing key, the
-  submission — and integration tests for the controllers, which are currently
-  covered end-to-end by the matrix rather than in isolation.
+- **Remaining:** the app-store submission itself — requesting the signing
+  certificate Nextcloud counter-signs, registering the app id, and uploading a
+  release. `dev package` and `dev verify-package` build and prove the artefact;
+  what is left needs an account, not code.
 - **Exit:** installs on a user Nextcloud, renders aggregates from `/Cairn/`,
   never writes.
 
