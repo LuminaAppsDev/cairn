@@ -6,6 +6,37 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- **App-store packaging: `dev package` and `dev verify-package`.** The release
+  tarball's contents come from an **allowlist**, not an exclude list, and that
+  is the point of it: an exclude list ships whatever nobody thought to exclude —
+  a stray `.env`, a signing key, an export left in the tree — while an allowlist
+  can only *omit* something, which fails visibly on first install. It carries no
+  `vendor/`, because the app has no runtime dependencies at all: `composer.json`
+  requires a PHP version and nothing else, and Nextcloud autoloads `OCA\Cairn`
+  from `lib/` itself. 140 KB, 68 files, byte-identical across builds — fixed
+  timestamps, owner and sort order, the same reasoning as the reproducible
+  F-Droid builds in `docs/RELEASE.md` §2.
+
+  `verify-package` is the half that matters, because packaging that has only
+  been inspected has never been tested. It unpacks the tarball into a **clean**
+  Nextcloud and drives the page, the bundle and all six endpoints, then asserts
+  no `tests/`, `src/`, `docker/` or `vendor/` came along. It uses a compose file
+  with **no bind mount of the working tree** — with the ordinary one,
+  `custom_apps/cairn` *is* the working tree, so the check would exercise the
+  code on disk while appearing to exercise the artefact, and a missing file
+  would pass. Verified to fail: dropping `templates` from the allowlist produces
+  a tarball that installs, enables, and then cannot render a page — reported as
+  exactly that.
+
+  Signing is wired up but inert until a certificate exists. With one present the
+  run writes `appinfo/signature.json` via `occ integrity:sign-app` and prints the
+  detached signature the upload form wants, deleting the key from the container
+  afterwards; without one it says so and produces an unsigned tarball, which
+  installs from disk but will not be accepted by the store. `krankerl` is the
+  usual tool here and is deliberately not used: it is another binary to install,
+  against a dev environment whose whole premise is that Docker is the only
+  prerequisite.
+
 - **A compatibility matrix, because `info.xml` was making a promise nobody had
   checked.** The app declares `min-version="32" max-version="34"` — a promise to
   everyone installing from the app store — and had only ever run on 34. A stale
@@ -575,6 +606,13 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- **`wait_for_install` reported timeouts into `/dev/null`.** It ended in `die`,
+  and every caller runs it inside a conditional with output suppressed — so a
+  Nextcloud that never came up exited the script silently, its own explanation
+  discarded. It now returns non-zero and lets each caller decide; `up` still
+  dies with the same message. Found because the first `verify-package` run
+  failed with no output at all.
+
 - **The per-stage sleep breakdown double-counted the same minutes.** Time per
   stage was a plain tally, so a whole-night `session` was added to the
   light/deep/rem segments describing those very minutes — the parts summed to
@@ -683,6 +721,18 @@ All notable changes to this project are documented in this file.
   publish steps create two `mktemp` files; with a single `trap` registered after
   both, a failing second `mktemp` aborts the step under `set -e` before the trap
   exists, orphaning the first file.
+
+### Security
+
+- **The pre-commit hook refused Android signing material but not the Nextcloud
+  app's private key.** App-store releases are signed with an OpenSSL keypair
+  conventionally kept at `~/.nextcloud/certificates/cairn.key`, and a copy left
+  in the working tree would have been committable. `*.key`, `*.pem` and `*.p8`
+  are now refused alongside the keystores. `.crt` is deliberately still allowed:
+  the counter-signed certificate is public and belongs in the repository, while
+  the key beside it never does. Found by testing the hook against the file the
+  new packaging step is about to make people create, rather than after somebody
+  created one.
 
 ## 0.2.3 — 2026-08-19
 

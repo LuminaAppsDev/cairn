@@ -1,6 +1,7 @@
 # Build output and installed dependencies. None of this is committed: the
 # app-store tarball is produced by `composer install` and `npm run build`, not
 # from a checked-in bundle.
+/build/
 /js/
 /node_modules/
 /vendor/

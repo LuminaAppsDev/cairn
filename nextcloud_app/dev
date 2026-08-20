@@ -49,6 +49,31 @@ MATRIX_IMAGES=(
 # looking covered.
 MATRIX_PHP_FLOOR="php:8.2-cli-alpine@sha256:6d3dcc922fa36d06d6eefba5697a0aee599cf2f306b3cc2700a6526bc8fd5c09"
 
+# Exactly what a release tarball contains, as an allowlist.
+#
+# An allowlist, not an exclude list, and that is the whole point: an exclude
+# list ships whatever nobody thought to exclude — a stray .env, a key, an
+# export someone left in the tree. This can only ever omit something, which
+# fails visibly the first time the app is installed.
+#
+# Note what is absent. `vendor/` is not here because the app has no runtime
+# dependencies at all: `composer.json` requires only a PHP version, and
+# Nextcloud autoloads OCA\Cairn from lib/ itself. What ships is first-party
+# code and the built bundle, with nothing to audit underneath.
+PACKAGE_PATHS=(
+	"appinfo"
+	"lib"
+	"templates"
+	"img"
+	"l10n"
+	"js"
+	"LICENSE"
+	"README.md"
+)
+
+# The tarball lands here. Gitignored: it is a build artefact.
+PACKAGE_DIR="build"
+
 # The matrix runs its own stack on its own port, so it never collides with a
 # `dev up` instance you have open.
 MATRIX_PROJECT="cairn-matrix"
@@ -195,10 +220,12 @@ wait_for_install() {
 		fi
 	done
 
+	# Returns rather than dying: callers run this inside conditionals, and a
+	# `die` there exits the script with its own explanation discarded.
 	warn "Nextcloud did not finish installing within ${INSTALL_TIMEOUT_SECONDS}s."
 	say "Last 50 lines of the container log:" >&2
 	compose logs --tail=50 nextcloud >&2 || true
-	die "the dev instance never became ready." "Try 'nextcloud_app/dev reset' for a clean slate, or read the log above."
+	return 1
 }
 
 # Turn off APCu as Nextcloud's local cache.
@@ -385,7 +412,7 @@ cmd_up() {
 	compose up --detach --wait --wait-timeout 120 nextcloud 2>/dev/null \
 		|| compose up --detach nextcloud
 
-	wait_for_install
+	wait_for_install || die "the dev instance never became ready." "Try 'nextcloud_app/dev reset' for a clean slate, or read the log above."
 	enable_app
 	# So a restart always serves the assets currently on disk.
 	occ config:app:set theming cachebuster --value="$(date +%s%N)" >/dev/null
@@ -494,6 +521,10 @@ cmd_test() {
 # Everything the app must survive on one Nextcloud version, in order of how
 # early it would fail. Echoes one line per check; returns non-zero on the first
 # failure so the summary can say which step it was.
+#
+# `source` (the default) drives the working tree mounted into the container;
+# `package` drives an unpacked release tarball, which has no tests/ to run and
+# is instead checked for not carrying any.
 matrix_probe() {
 	local base="http://localhost:${MATRIX_PORT}"
 	local auth
@@ -509,6 +540,19 @@ matrix_probe() {
 		return 1
 	fi
 	say "    app enables"
+
+	# occ answers over the CLI as soon as the install is written, which is a
+	# little before Apache is serving. Wait for the socket rather than letting
+	# the first request fail and read as a broken app.
+	local waited=0
+	until curl --silent --output /dev/null --max-time 5 "${base}/status.php"; do
+		waited=$((waited + 1))
+		if [[ "${waited}" -gt 30 ]]; then
+			say "    the server never started answering on ${base}"
+			return 1
+		fi
+		sleep 1
+	done
 
 	local page
 	page="$(curl "${api[@]}" "${base}/index.php/apps/cairn/")" || return 1
@@ -540,11 +584,30 @@ matrix_probe() {
 	done
 	say "    all six endpoints answer"
 
-	# Under this version's PHP, which is the point: the app claims 8.2 and each
-	# image ships a different interpreter.
-	compose exec -T nextcloud php /var/www/html/custom_apps/cairn/tests/read_only_guard.php >/dev/null || return 1
-	compose exec -T nextcloud php /var/www/html/custom_apps/cairn/tests/validate_info_xml.php >/dev/null || return 1
-	say "    read-only guard and info.xml pass on this PHP"
+	if [[ "${1:-source}" == "package" ]]; then
+		# The release must not carry its own scaffolding. Asserting the absence
+		# is the check: an allowlist can only omit, and this is where an
+		# accidental addition to PACKAGE_PATHS would show up.
+		local unwanted=() dir
+		for dir in tests src docker vendor node_modules dev-data; do
+			if compose exec -T nextcloud \
+				test -e "/var/www/html/custom_apps/cairn/${dir}" >/dev/null 2>&1; then
+				unwanted+=("${dir}")
+			fi
+		done
+		if [[ ${#unwanted[@]} -gt 0 ]]; then
+			say "    the installed app carries development files: ${unwanted[*]}"
+			return 1
+		fi
+		say "    no development files shipped"
+	else
+		# Under this version's PHP, which is the point: the app claims 8.2 and
+		# each image ships a different interpreter. Only meaningful against the
+		# working tree — the tarball has no tests/, by design.
+		compose exec -T nextcloud php /var/www/html/custom_apps/cairn/tests/read_only_guard.php >/dev/null || return 1
+		compose exec -T nextcloud php /var/www/html/custom_apps/cairn/tests/validate_info_xml.php >/dev/null || return 1
+		say "    read-only guard and info.xml pass on this PHP"
+	fi
 
 	# A 200 can still hide a caught exception. The log is where those surface.
 	if compose exec -T nextcloud sh -c 'grep -c "custom_apps/cairn" /var/www/html/data/nextcloud.log 2>/dev/null || true' \
@@ -567,7 +630,7 @@ matrix_one() {
 	compose down --volumes --remove-orphans >/dev/null 2>&1 || true
 	compose up --detach nextcloud >/dev/null 2>&1
 
-	if wait_for_install >/dev/null 2>&1; then
+	if wait_for_install; then
 		say "    php $(compose exec -T nextcloud php -r 'echo PHP_VERSION;' 2>/dev/null)"
 		disable_apcu >/dev/null 2>&1 || true
 		fix_custom_apps_owner >/dev/null 2>&1 || true
@@ -665,6 +728,182 @@ cmd_matrix() {
 	say "info.xml's 32-34 claim holds."
 }
 
+# The app version, from the one file that declares it.
+app_version() {
+	sed -n -E 's|.*<version>([^<]+)</version>.*|\1|p' "${APP_ROOT}/appinfo/info.xml" | head -1
+}
+
+cmd_package() {
+	require_docker
+	local version staging tarball
+	version="$(app_version)"
+	if [[ -z "${version}" ]]; then
+		die "appinfo/info.xml has no <version>." "The app store keys releases on it; it cannot be inferred."
+	fi
+
+	step "Building the frontend"
+	node_run npm run build
+
+	step "Staging cairn ${version}"
+	staging="$(mktemp -d)"
+	# shellcheck disable=SC2064  # expand now: the path must be captured here.
+	trap "rm -rf '${staging}'" EXIT
+	mkdir -p "${staging}/cairn"
+
+	local path
+	for path in "${PACKAGE_PATHS[@]}"; do
+		if [[ ! -e "${APP_ROOT}/${path}" ]]; then
+			die "the release is missing '${path}'." "Run 'nextcloud_app/dev build' if it is js/, otherwise check PACKAGE_PATHS in this script."
+		fi
+		cp -R "${APP_ROOT}/${path}" "${staging}/cairn/"
+	done
+
+	# Source maps are for developing, not for shipping: two megabytes of them
+	# would be most of the tarball.
+	find "${staging}/cairn/js" -name '*.map' -delete
+
+	package_assert_clean "${staging}/cairn"
+
+	mkdir -p "${APP_ROOT}/${PACKAGE_DIR}"
+	tarball="${APP_ROOT}/${PACKAGE_DIR}/cairn-${version}.tar.gz"
+
+	package_sign "${staging}/cairn" || return 1
+
+	step "Packing"
+	# Deterministic: a fixed timestamp, owner and sort order, so the same input
+	# produces the same bytes. The same reasoning as the reproducible APK builds
+	# in docs/RELEASE.md — a tarball nobody can reproduce is one nobody can check.
+	tar --create --gzip --file "${tarball}" \
+		--directory "${staging}" \
+		--sort=name --owner=0 --group=0 --numeric-owner \
+		--mtime="@0" --mode='go-w' \
+		cairn
+
+	say "  ${tarball}"
+	say "  $(du -h "${tarball}" | cut -f1), sha256 $(sha256sum "${tarball}" | cut -c1-16)…"
+	package_signature "${tarball}"
+}
+
+# Nothing may ship that was not asked for. Belt to the allowlist's braces: if a
+# future PACKAGE_PATHS entry pulls in a whole directory, this is what notices.
+package_assert_clean() {
+	local root="$1" found
+	found="$(find "${root}" \( \
+		-name '.env' -o -name '*.key' -o -name '*.pem' -o -name '*.jsonl' \
+		-o -name 'node_modules' -o -name 'vendor' -o -name '.git' \
+		-o -name '*.map' -o -name 'dev-data' \
+	\) -print)"
+	if [[ -n "${found}" ]]; then
+		say "Refusing to package: the staging tree contains files that must not ship." >&2
+		while IFS= read -r offender; do
+			printf '  %s\n' "${offender}" >&2
+		done <<<"${found}"
+		die "the release tree is not clean." "Fix PACKAGE_PATHS in this script rather than deleting by hand."
+	fi
+	say "  $(find "${root}" -type f | wc -l | tr -d ' ') files, nothing unexpected"
+}
+
+# Nextcloud verifies an app's integrity from a signature.json inside it, and the
+# app store verifies the download from a detached signature. Both use the
+# certificate Nextcloud counter-signs for this app id; see docs/RELEASE.md §6.
+package_sign() {
+	local root="$1" key cert
+	key="$(setting CAIRN_SIGN_KEY "${HOME}/.nextcloud/certificates/cairn.key")"
+	cert="$(setting CAIRN_SIGN_CERT "${HOME}/.nextcloud/certificates/cairn.crt")"
+
+	if [[ ! -f "${key}" || ! -f "${cert}" ]]; then
+		step "Signing"
+		say "  skipped: no signing certificate."
+		say "  An unsigned tarball installs from disk but the app store will not"
+		say "  take it. Requesting a certificate is a one-time step — see"
+		say "  docs/RELEASE.md §6."
+		return 0
+	fi
+
+	container_running || die "signing needs the dev instance." "occ generates signature.json: run 'nextcloud_app/dev up' first."
+
+	step "Signing"
+	compose cp "${root}" "nextcloud:/tmp/cairn-sign" >/dev/null
+	compose cp "${key}" "nextcloud:/tmp/sign.key" >/dev/null
+	compose cp "${cert}" "nextcloud:/tmp/sign.crt" >/dev/null
+	occ integrity:sign-app --privateKey=/tmp/sign.key --certificate=/tmp/sign.crt \
+		--path=/tmp/cairn-sign >/dev/null
+	compose cp "nextcloud:/tmp/cairn-sign/appinfo/signature.json" \
+		"${root}/appinfo/signature.json" >/dev/null
+	# The key must not outlive the operation, even in a throwaway container.
+	compose exec -T nextcloud rm -rf /tmp/cairn-sign /tmp/sign.key /tmp/sign.crt >/dev/null
+	say "  appinfo/signature.json written"
+}
+
+# The app store's upload form wants a detached signature over the tarball.
+package_signature() {
+	local tarball="$1" key
+	key="$(setting CAIRN_SIGN_KEY "${HOME}/.nextcloud/certificates/cairn.key")"
+	[[ -f "${key}" ]] || return 0
+
+	if ! command -v openssl >/dev/null 2>&1; then
+		say "  openssl is not installed; the store's detached signature was not generated."
+		return 0
+	fi
+	step "Detached signature (for the app store upload form)"
+	openssl dgst -sha512 -sign "${key}" "${tarball}" | openssl base64 -A
+	echo
+}
+
+# Install the tarball the way a user would, on a clean instance, and check the
+# app actually works from it.
+#
+# Packaging that has only ever been inspected is packaging that has never been
+# tested: the failure mode is a missing file nobody notices until somebody else
+# installs it. This unpacks the artefact into a fresh Nextcloud and drives it.
+cmd_verify_package() {
+	require_docker
+	local tarball version status=0
+	version="$(app_version)"
+	tarball="${APP_ROOT}/${PACKAGE_DIR}/cairn-${version}.tar.gz"
+	[[ -f "${tarball}" ]] || die "no tarball at ${tarball}." "Build one first: nextcloud_app/dev package"
+
+	step "Installing cairn ${version} from the tarball"
+	say "Runs as project '${MATRIX_PROJECT}' on port ${MATRIX_PORT}, so your own"
+	say "instance is left alone."
+
+	export CAIRN_DEV_PORT="${MATRIX_PORT}"
+	COMPOSE_PROJECT="${MATRIX_PROJECT}"
+	# A compose file with no bind mount of the working tree. The ordinary one
+	# mounts nextcloud_app/ over custom_apps/cairn, which would mean testing the
+	# working tree while believing you were testing the artefact.
+	COMPOSE_FILE="${APP_ROOT}/docker/compose.verify.yaml"
+	compose down --volumes --remove-orphans >/dev/null 2>&1 || true
+
+	compose up --detach nextcloud >/dev/null 2>&1
+	if wait_for_install; then
+		disable_apcu >/dev/null 2>&1 || true
+		compose cp "${tarball}" "nextcloud:/tmp/cairn.tar.gz" >/dev/null
+		compose exec -T nextcloud tar -xzf /tmp/cairn.tar.gz -C /var/www/html/custom_apps >/dev/null
+		compose exec -T nextcloud chown -R www-data:www-data /var/www/html/custom_apps >/dev/null
+		occ app:disable firstrunwizard >/dev/null 2>&1 || true
+		occ app:enable cairn >/dev/null 2>&1 || true
+		matrix_seed || status=1
+		if [[ "${status}" -eq 0 ]]; then
+			matrix_probe package || status=1
+		fi
+	else
+		say "    Nextcloud never finished installing"
+		status=1
+	fi
+
+	compose down --volumes --remove-orphans >/dev/null 2>&1 || true
+	COMPOSE_PROJECT=""
+	COMPOSE_FILE="${APP_ROOT}/docker/compose.yaml"
+	unset CAIRN_DEV_PORT
+
+	if [[ "${status}" -ne 0 ]]; then
+		die "the packaged app does not work when installed." "Something the app needs is missing from PACKAGE_PATHS."
+	fi
+	say ""
+	say "The tarball installs and runs."
+}
+
 cmd_check() {
 	container_running || die "the dev instance is not running." "Checks run inside the container: nextcloud_app/dev up"
 	step "Read-only guard"
@@ -715,6 +954,9 @@ Cairn Nextcloud app — development environment
                          the frontend lint, the read-only guard and info.xml.
   ./dev matrix           Run the app against every Nextcloud major info.xml
                          claims. Uses its own project and port.
+  ./dev package          Build a release tarball for the app store, signed if
+                         a certificate is configured.
+  ./dev verify-package   Install that tarball on a clean Nextcloud and drive it.
   ./dev check            Run the read-only guard and validate appinfo/info.xml.
   ./dev status           Is it running, and is the app enabled?
   ./dev occ ARGS...      Run an occ command, e.g. ./dev occ app:list
@@ -756,6 +998,8 @@ main() {
 		watch) cmd_watch ;;
 		lint) cmd_lint ;;
 		matrix) cmd_matrix ;;
+		package) cmd_package ;;
+		verify-package) cmd_verify_package ;;
 		test) cmd_test "$@" ;;
 		status) cmd_status ;;
 		reset) cmd_reset ;;

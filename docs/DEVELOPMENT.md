@@ -342,6 +342,20 @@ claim or the environment changes, on demand, and weekly. It is deliberately
 *not* on every push: three Nextcloud installs would queue every other job behind
 them on a single-runner host. Run it locally before changing read-path code.
 
+### 4.7 Building a release
+
+```bash
+nextcloud_app/dev package          # -> build/cairn-<version>.tar.gz
+nextcloud_app/dev verify-package   # install it on a clean Nextcloud and drive it
+```
+
+The full procedure, including the one-time signing certificate, is
+[`docs/RELEASE.md` §6](RELEASE.md). Two things worth knowing here: the tarball's
+contents come from an allowlist rather than an exclude list, and
+`verify-package` uses a compose file with no bind mount of the working tree —
+otherwise it would exercise the code on disk while appearing to exercise the
+artefact.
+
 Reference: Nextcloud Developer Manual —
 <https://docs.nextcloud.com/server/latest/developer_manual/>.
 

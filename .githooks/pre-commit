@@ -22,8 +22,12 @@ health=()
 for path in "${staged[@]}"; do
 	[[ -n "${path}" ]] || continue
 
+	# Android signing material, plus the OpenSSL private keys the Nextcloud
+	# app store's code signing uses. `.crt` is deliberately absent: the app
+	# certificate is public and belongs in the repository, while the `.key`
+	# beside it must never be.
 	if [[ "${path}" =~ (^|/)key\.properties$ ]] \
-		|| [[ "${path}" =~ \.(keystore|jks|p12|pfx)$ ]]; then
+		|| [[ "${path}" =~ \.(keystore|jks|p12|pfx|key|pem|p8)$ ]]; then
 		secrets+=("${path}")
 		continue
 	fi

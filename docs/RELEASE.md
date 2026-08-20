@@ -775,44 +775,86 @@ Sources: [App Review Guidelines](https://developer.apple.com/app-store/review/gu
 
 ---
 
-## 6. Nextcloud App Store (the PHP + Vue app — Phase 7, not built yet)
+## 6. Nextcloud App Store (the PHP + Vue app)
 
-Forward-looking: this is the path for the optional Nextcloud web app once it
-exists (DESIGN.md §7). It's an **AGPL** classic server-side app, distributed via
-[apps.nextcloud.com](https://apps.nextcloud.com/), installed by self-hosters
-onto their own instance.
+The optional Nextcloud web app (DESIGN.md §7), distributed via
+[apps.nextcloud.com](https://apps.nextcloud.com/) and installed by self-hosters
+onto their own instance. **AGPL-3.0-or-later** — see `docs/DEVELOPMENT.md` §5
+for why that is not the same reason people usually give.
 
-### App structure
-- `appinfo/info.xml` declares the app id, metadata, AGPL licence, and crucially
-  the **compatibility window**:
-  ```xml
-  <dependencies>
-      <php min-version="8.1" max-version="8.4"/>
-      <nextcloud min-version="30" max-version="31"/>
-  </dependencies>
-  ```
-  Validated against the [`info.xsd`](https://apps.nextcloud.com/schema/apps/info.xsd) schema.
+### Build a release
 
-### One-time setup (register + signing certificate)
-Nextcloud App Store releases are **cryptographically signed**:
-1. Generate an app keypair (OpenSSL) — by convention under
-   `~/.nextcloud/certificates/`.
-2. Post the **Certificate Signing Request** to
-   [`nextcloud/app-certificate-requests`](https://github.com/nextcloud/app-certificate-requests)
-   (with a public email on your GitHub account so they can verify ownership).
-3. Once countersigned, **register the app id** on the App Store via its REST API
-   or the "Register app" web form (it asks for the certificate + a signature
-   over the app id to prove you hold the private key).
+```bash
+nextcloud_app/dev package          # -> nextcloud_app/build/cairn-<version>.tar.gz
+nextcloud_app/dev verify-package   # install it on a clean Nextcloud and drive it
+```
 
-### Per release
-1. Build a release **tarball** of the app.
-2. **Sign** it (OpenSSL signature over the tarball) — or use **`krankerl`**, a
-   CLI that packages, signs, and publishes in one standardized flow (it finds
-   keys in `~/.nextcloud/certificates` from the app id in `info.xml`).
-3. Upload the release via the App Store **REST API** or the "Upload release" web
-   form; set the download URL + the supported version range from `info.xml`.
+`package` builds the frontend, stages the release and packs it. Three things
+about how it does that are deliberate:
 
-Sources: [Nextcloud App Store developer guide](https://nextcloudappstore.readthedocs.io/en/latest/developer.html),
+- **The contents come from an allowlist** (`PACKAGE_PATHS` in
+  `nextcloud_app/dev`), not an exclude list. An exclude list ships whatever
+  nobody thought to exclude — a stray `.env`, a signing key, an export somebody
+  left in the tree. An allowlist can only *omit* something, and that fails
+  visibly the first time the app is installed.
+- **There is no `vendor/`.** The app has no runtime dependencies: `composer.json`
+  requires only a PHP version, and Nextcloud autoloads `OCA\Cairn` from `lib/`
+  itself. What ships is first-party code and the built bundle, with nothing
+  underneath it to audit.
+- **The tarball is reproducible** — fixed timestamps, owner and sort order, so
+  the same input produces the same bytes. Same reasoning as the F-Droid builds
+  in §2: an artefact nobody can reproduce is one nobody can check.
+
+`verify-package` is the half that matters. It unpacks the tarball into a *clean*
+Nextcloud — using `docker/compose.verify.yaml`, which deliberately has **no bind
+mount of the working tree**, or the check would exercise the code on disk while
+appearing to exercise the artefact — then enables the app and drives the page,
+the bundle and all six endpoints. It also asserts no `tests/`, `src/`, `docker/`
+or `vendor/` came along. Packaging that has only been *inspected* has never been
+tested; the failure mode is a missing file nobody notices until somebody else
+installs it.
+
+### One-time setup: the signing certificate
+
+App Store releases are cryptographically signed, so this is needed before the
+first upload and never again:
+
+1. Generate a keypair, by convention under `~/.nextcloud/certificates/`:
+   ```bash
+   openssl req -nodes -newkey rsa:4096 -keyout cairn.key -out cairn.csr -subj "/CN=cairn"
+   ```
+2. Open a PR adding `cairn.csr` to
+   [`nextcloud/app-certificate-requests`](https://github.com/nextcloud/app-certificate-requests).
+   Your GitHub account needs a public email so they can verify ownership.
+3. When it is counter-signed, save the returned `cairn.crt` beside the key, and
+   register the app id on the App Store — the form asks for the certificate and
+   a signature over the app id, proving you hold the private key.
+
+> **The private key never enters this repository.** `.githooks/pre-commit`
+> refuses `*.key`, `*.pem` and `*.p8` outright, alongside the Android signing
+> material. The `.crt` is public and may be committed. Keep the key where the
+> tooling expects it, or point `CAIRN_SIGN_KEY` and `CAIRN_SIGN_CERT` at it.
+
+With a certificate present, `dev package` additionally writes
+`appinfo/signature.json` into the tarball (Nextcloud's integrity check, via
+`occ integrity:sign-app`) and prints the base64 detached signature the upload
+form asks for. Without one it says so and produces an unsigned tarball, which
+installs from disk but will not be accepted by the store.
+
+### Publish
+
+1. Bump `<version>` in `nextcloud_app/appinfo/info.xml`.
+2. Confirm the compatibility claim: `nextcloud_app/dev matrix` (§7).
+3. `nextcloud_app/dev package && nextcloud_app/dev verify-package`.
+4. Attach the tarball to a release so it has a stable download URL.
+5. Upload via the App Store's REST API or the "Upload release" web form, giving
+   the download URL and the printed signature.
+
+`krankerl` is the usual tool for steps 3–5 and is a reasonable alternative. It
+is deliberately not used here: it is another binary to install, and the whole
+point of this dev environment is that Docker is the only prerequisite.
+
+Sources: [App Store developer guide](https://nextcloudappstore.readthedocs.io/en/latest/developer.html),
 [Code signing](https://docs.nextcloud.com/server/stable/developer_manual/app_publishing_maintenance/code_signing.html),
 [Release automation](https://docs.nextcloud.com/server/latest/developer_manual/app_publishing_maintenance/release_automation.html),
 [krankerl](https://github.com/ChristophWurst/krankerl).
@@ -826,6 +868,14 @@ This is the **accepted maintenance tax** of the Nextcloud path (DESIGN.md §7,
 major is **automatically disabled on upgrade** until you publish a compatible
 release. Self-hosters upgrade on their own schedule, so a stale app silently
 disappears for them.
+
+**Check the claim, do not assert it.** `nextcloud_app/dev matrix` installs every
+Nextcloud major `info.xml` names, enables the app and drives it, plus parses
+every file under the declared PHP floor — which none of the Nextcloud images
+ships, so that half would otherwise go untested while looking covered. Run it
+before every release. `info.xml`'s range, the `MATRIX_IMAGES` table in
+`nextcloud_app/dev` and `docker/compose.yaml`'s default image are one claim
+written three times; move them together.
 
 **Cadence.** Nextcloud ships roughly **three major releases per year** (e.g. 30,
 31, 32…). Each has a developer **"Upgrade to Nextcloud NN"** guide listing

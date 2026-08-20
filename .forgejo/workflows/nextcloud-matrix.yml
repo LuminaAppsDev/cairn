@@ -6,8 +6,8 @@
 # tax of shipping a Nextcloud app (DESIGN.md §7): get it wrong and the app is
 # silently disabled on somebody else's server after they upgrade.
 #
-# The work is done by `nextcloud_app/dev matrix`, so a contributor runs exactly
-# what CI runs. It installs each version in turn, enables the app, seeds
+# The work is done by `nextcloud_app/dev matrix` and `dev verify-package`, so a
+# contributor runs exactly what CI runs. It installs each version in turn, enables the app, seeds
 # generated data, and checks the page, the bundle and all six endpoints — plus
 # the read-only guard and info.xml under that version's PHP, which differs
 # across the three (8.3, 8.4, 8.5). It also parses every file under PHP 8.2,
@@ -35,6 +35,7 @@ on:
       - 'nextcloud_app/appinfo/info.xml'
       # The environment the claim is tested in.
       - 'nextcloud_app/docker/compose.yaml'
+      - 'nextcloud_app/docker/compose.verify.yaml'
       - 'nextcloud_app/dev'
       - '.forgejo/workflows/nextcloud-matrix.yml'
 
@@ -92,6 +93,16 @@ jobs:
           set -euo pipefail
           ./dev matrix
 
+      # The artefact, not the working tree. `verify-package` unpacks the tarball
+      # into a clean Nextcloud with no bind mount, so a file missing from the
+      # release cannot be masked by the copy on disk. This lives here rather
+      # than in nextcloud-ci.yml because it needs Docker, like the matrix.
+      - name: Release tarball installs and runs
+        run: |
+          set -euo pipefail
+          ./dev package
+          ./dev verify-package
+
       # The matrix tears its own stack down, including on failure. This is the
       # backstop for a killed job, and it names its own project so it can never
       # touch anything else on the host.
@@ -99,5 +110,7 @@ jobs:
         if: always()
         run: |
           set -euo pipefail
-          docker compose --file docker/compose.yaml --project-name cairn-matrix \
-            down --volumes --remove-orphans >/dev/null 2>&1 || true
+          for file in docker/compose.yaml docker/compose.verify.yaml; do
+            docker compose --file "$file" --project-name cairn-matrix \
+              down --volumes --remove-orphans >/dev/null 2>&1 || true
+          done

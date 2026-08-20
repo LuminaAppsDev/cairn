@@ -40,6 +40,8 @@ generates a synthetic tree that is structurally identical to a real export.
 ./dev test [ARGS...]   Unit and parity tests, on the container's PHP.
 ./dev lint             psalm, PHP coding standard, frontend lint, guards.
 ./dev matrix           Run against every Nextcloud major info.xml claims.
+./dev package          Build the app-store release tarball.
+./dev verify-package   Install that tarball on a clean Nextcloud and drive it.
 ./dev refresh          Bump asset URLs after editing a static file by hand.
 ./dev check            Read-only guard + info.xml schema validation.
 ./dev status           Running? App enabled?
@@ -159,6 +161,28 @@ every file under the PHP floor, which none of the Nextcloud images ships.
 `info.xml`'s range, the `MATRIX_IMAGES` table in `dev`, and
 `docker/compose.yaml`'s default image are one claim written three times. Move
 them together.
+
+## Releasing
+
+```bash
+./dev package          # -> build/cairn-<version>.tar.gz
+./dev verify-package   # unpack it on a clean Nextcloud and drive it
+```
+
+The tarball's contents come from an **allowlist** in `dev`, not an exclude
+list: an exclude list ships whatever nobody thought to exclude, while an
+allowlist can only omit something — which fails visibly on first install. It
+carries no `vendor/`, because the app has no runtime dependencies at all. And
+it is reproducible: fixed timestamps, owner and sort order, so the same input
+gives the same bytes.
+
+`verify-package` is the half that matters, and it uses a compose file with **no
+bind mount of the working tree** — otherwise the check would exercise the code
+on disk while appearing to exercise the artefact.
+
+Signing needs a certificate Nextcloud counter-signs for this app id; the private
+key never enters this repository and the pre-commit hook refuses it. Full
+procedure in [`docs/RELEASE.md` §6](../docs/RELEASE.md).
 
 ## Licence
 
