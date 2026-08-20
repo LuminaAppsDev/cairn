@@ -28,32 +28,28 @@ Builds:
       - flutterVersion=$(sed -n -E "s/.*FLUTTER_VERSION:\s*'?([0-9.]+)'?.*/\1/p" .forgejo/workflows/release.yml
         | head -1)
       - '[ -n "$flutterVersion" ]'
-      - flutterCommit=$(sed -n -E "s/.*FLUTTER_COMMIT:\s*'?([0-9a-f]{40})'?.*/\1/p"
-        .forgejo/workflows/release.yml | head -1)
-      - '[ -n "$flutterCommit" ]'
       - git -C $$flutter$$ checkout -f $flutterVersion
-      - '[ "$(git -C $$flutter$$ rev-parse HEAD)" = "$flutterCommit" ]'
-      - export FLUTTER_BIN=$(cd $$flutter$$ && pwd)/bin/flutter
+      - export PATH=$(cd $$flutter$$ && pwd)/bin:$PATH
       - cd ..
-      - '[ -d com.luminaapps.cairn ] && rm -rf /build/cairn && mv com.luminaapps.cairn
-        /build/cairn || [ -d /build/cairn ]'
-      - pushd /build/cairn >/dev/null
+      - rm -rf /build/cairn
+      - mv com.luminaapps.cairn /build/cairn
+      - pushd /build/cairn
       - export PUB_CACHE=$(pwd)/.pub-cache
-      - $FLUTTER_BIN config --no-analytics
-      - $FLUTTER_BIN pub get --enforce-lockfile
-      - popd >/dev/null
+      - flutter config --no-analytics
+      - flutter pub get --enforce-lockfile
+      - popd
       - mv /build/cairn com.luminaapps.cairn
     scandelete:
       - .pub-cache
     build:
-      - export FLUTTER_BIN=$(cd $$flutter$$ && pwd)/bin/flutter
+      - export PATH=$(cd $$flutter$$ && pwd)/bin:$PATH
       - cd ..
-      - '[ -d com.luminaapps.cairn ] && rm -rf /build/cairn && mv com.luminaapps.cairn
-        /build/cairn || [ -d /build/cairn ]'
-      - pushd /build/cairn >/dev/null
+      - rm -rf /build/cairn
+      - mv com.luminaapps.cairn /build/cairn
+      - pushd /build/cairn
       - export PUB_CACHE=$(pwd)/.pub-cache
-      - $FLUTTER_BIN build apk --release --split-per-abi --target-platform=android-arm
-      - popd >/dev/null
+      - flutter build apk --release --split-per-abi --target-platform=android-arm
+      - popd
       - mv /build/cairn com.luminaapps.cairn
 
   - versionName: 0.2.3
@@ -73,32 +69,28 @@ Builds:
       - flutterVersion=$(sed -n -E "s/.*FLUTTER_VERSION:\s*'?([0-9.]+)'?.*/\1/p" .forgejo/workflows/release.yml
         | head -1)
       - '[ -n "$flutterVersion" ]'
-      - flutterCommit=$(sed -n -E "s/.*FLUTTER_COMMIT:\s*'?([0-9a-f]{40})'?.*/\1/p"
-        .forgejo/workflows/release.yml | head -1)
-      - '[ -n "$flutterCommit" ]'
       - git -C $$flutter$$ checkout -f $flutterVersion
-      - '[ "$(git -C $$flutter$$ rev-parse HEAD)" = "$flutterCommit" ]'
-      - export FLUTTER_BIN=$(cd $$flutter$$ && pwd)/bin/flutter
+      - export PATH=$(cd $$flutter$$ && pwd)/bin:$PATH
       - cd ..
-      - '[ -d com.luminaapps.cairn ] && rm -rf /build/cairn && mv com.luminaapps.cairn
-        /build/cairn || [ -d /build/cairn ]'
-      - pushd /build/cairn >/dev/null
+      - rm -rf /build/cairn
+      - mv com.luminaapps.cairn /build/cairn
+      - pushd /build/cairn
       - export PUB_CACHE=$(pwd)/.pub-cache
-      - $FLUTTER_BIN config --no-analytics
-      - $FLUTTER_BIN pub get --enforce-lockfile
-      - popd >/dev/null
+      - flutter config --no-analytics
+      - flutter pub get --enforce-lockfile
+      - popd
       - mv /build/cairn com.luminaapps.cairn
     scandelete:
       - .pub-cache
     build:
-      - export FLUTTER_BIN=$(cd $$flutter$$ && pwd)/bin/flutter
+      - export PATH=$(cd $$flutter$$ && pwd)/bin:$PATH
       - cd ..
-      - '[ -d com.luminaapps.cairn ] && rm -rf /build/cairn && mv com.luminaapps.cairn
-        /build/cairn || [ -d /build/cairn ]'
-      - pushd /build/cairn >/dev/null
+      - rm -rf /build/cairn
+      - mv com.luminaapps.cairn /build/cairn
+      - pushd /build/cairn
       - export PUB_CACHE=$(pwd)/.pub-cache
-      - $FLUTTER_BIN build apk --release --split-per-abi --target-platform=android-arm64
-      - popd >/dev/null
+      - flutter build apk --release --split-per-abi --target-platform=android-arm64
+      - popd
       - mv /build/cairn com.luminaapps.cairn
 
   - versionName: 0.2.3
@@ -118,32 +110,28 @@ Builds:
       - flutterVersion=$(sed -n -E "s/.*FLUTTER_VERSION:\s*'?([0-9.]+)'?.*/\1/p" .forgejo/workflows/release.yml
         | head -1)
       - '[ -n "$flutterVersion" ]'
-      - flutterCommit=$(sed -n -E "s/.*FLUTTER_COMMIT:\s*'?([0-9a-f]{40})'?.*/\1/p"
-        .forgejo/workflows/release.yml | head -1)
-      - '[ -n "$flutterCommit" ]'
       - git -C $$flutter$$ checkout -f $flutterVersion
-      - '[ "$(git -C $$flutter$$ rev-parse HEAD)" = "$flutterCommit" ]'
-      - export FLUTTER_BIN=$(cd $$flutter$$ && pwd)/bin/flutter
+      - export PATH=$(cd $$flutter$$ && pwd)/bin:$PATH
       - cd ..
-      - '[ -d com.luminaapps.cairn ] && rm -rf /build/cairn && mv com.luminaapps.cairn
-        /build/cairn || [ -d /build/cairn ]'
-      - pushd /build/cairn >/dev/null
+      - rm -rf /build/cairn
+      - mv com.luminaapps.cairn /build/cairn
+      - pushd /build/cairn
       - export PUB_CACHE=$(pwd)/.pub-cache
-      - $FLUTTER_BIN config --no-analytics
-      - $FLUTTER_BIN pub get --enforce-lockfile
-      - popd >/dev/null
+      - flutter config --no-analytics
+      - flutter pub get --enforce-lockfile
+      - popd
       - mv /build/cairn com.luminaapps.cairn
     scandelete:
       - .pub-cache
     build:
-      - export FLUTTER_BIN=$(cd $$flutter$$ && pwd)/bin/flutter
+      - export PATH=$(cd $$flutter$$ && pwd)/bin:$PATH
       - cd ..
-      - '[ -d com.luminaapps.cairn ] && rm -rf /build/cairn && mv com.luminaapps.cairn
-        /build/cairn || [ -d /build/cairn ]'
-      - pushd /build/cairn >/dev/null
+      - rm -rf /build/cairn
+      - mv com.luminaapps.cairn /build/cairn
+      - pushd /build/cairn
       - export PUB_CACHE=$(pwd)/.pub-cache
-      - $FLUTTER_BIN build apk --release --split-per-abi --target-platform=android-x64
-      - popd >/dev/null
+      - flutter build apk --release --split-per-abi --target-platform=android-x64
+      - popd
       - mv /build/cairn com.luminaapps.cairn
 
 AllowedAPKSigningKeys: b53624a0de7eef20330857f3cc0f261fce1e5eeb4c60ad42a9f9487a8daac9e0

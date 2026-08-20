@@ -44,19 +44,6 @@ All notable changes to this project are documented in this file.
   is fail-closed: a named-but-unreadable base exits non-zero rather than
   printing an all-clear.
 
-### Fixed
-
-- **The shared Flutter SDK install is now atomic** in both workflows. Each
-  cloned straight into `$HOME/flutter-$VERSION`, guarded only by a check that
-  `bin/flutter` was executable. A run killed mid-clone left that path
-  half-populated, and `git clone` refuses to write into a non-empty directory —
-  so every later run of *both* workflows would keep failing until someone
-  deleted it by hand. Harmless while only tag pushes built; the new CI job's
-  `cancel-in-progress` makes it reachable. Both now stage the clone and `mv` it
-  into place, keeping a rival job's tree if it published first.
-
-### Added
-
 - **Gradle dependency verification.** `android/gradle/verification-metadata.xml`
   pins a SHA-256 for every Maven artifact the Android build resolves — ~900
   components, covering the app's dependencies, Flutter's engine artifacts and
@@ -85,6 +72,29 @@ All notable changes to this project are documented in this file.
   deliberately wrong sum makes the wrapper refuse to run.
 
 ### Changed
+
+- **Simplified the F-Droid recipe's build steps** at the fdroiddata reviewer's
+  request: the Flutter SDK goes on `PATH` instead of being referenced through a
+  `FLUTTER_BIN` variable, the conditional `mv` guard became a plain
+  `rm -rf /build/cairn` followed by `mv`, and `pushd`/`popd` no longer discard
+  their output. The `rm -rf` is kept deliberately — it is not a check, and
+  without it a leftover `/build/cairn` makes `mv` nest the tree inside it and
+  build the wrong source.
+
+  The commit assertion on the Flutter SDK was dropped too. It read
+  `FLUTTER_COMMIT` from the release workflow and failed closed if the checked-out
+  tag did not resolve to it. Conceding it is cheap: the identical assertion still
+  runs in `release.yml`, which is the side that holds the signing key, and on
+  F-Droid's side a moved tag still fails closed because the rebuild stops
+  matching the reference binary. Only the diagnosis is lost.
+
+  Verified with a full `fdroid build --test --on-server` inside
+  `registry.gitlab.com/fdroid/fdroidserver:buildserver`: the rebuild of the
+  pinned commit reports "...successfully verified" against the published
+  reference APK, and the file remains in canonical `rewritemeta` form. The
+  fail-closed backstop the concession relies on was tested too — pointing a
+  block's `binary:` at the wrong ABI's APK ends the build with "compared built
+  binary to supplied reference binary but failed" and a non-zero exit.
 
 - **`repositoriesMode` is deliberately not set** — it would be the obvious way
   to stop a third-party plugin introducing a repository of its own, but it is
@@ -128,6 +138,15 @@ All notable changes to this project are documented in this file.
   fdroidserver from git master rather than using the Debian package.
 
 ### Fixed
+
+- **The shared Flutter SDK install is now atomic** in both workflows. Each
+  cloned straight into `$HOME/flutter-$VERSION`, guarded only by a check that
+  `bin/flutter` was executable. A run killed mid-clone left that path
+  half-populated, and `git clone` refuses to write into a non-empty directory —
+  so every later run of *both* workflows would keep failing until someone
+  deleted it by hand. Harmless while only tag pushes built; the new CI job's
+  `cancel-in-progress` makes it reachable. Both now stage the clone and `mv` it
+  into place, keeping a rival job's tree if it published first.
 
 - **The release job no longer mistakes an API outage for "no release exists".**
   Both publish steps looked up the release by tag with `curl -sS` and then

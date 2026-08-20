@@ -473,8 +473,8 @@ only. The Android SDK, build-tools and NDK come from `sdkmanager` over Google's
 own manifests and are not verified here — the NDK matters most, since its
 toolchain output is baked into every native `.so`. Dart packages are pinned
 separately, by `pubspec.lock` plus `--enforce-lockfile` in both CI and the
-F-Droid recipe. The Flutter SDK is pinned by `FLUTTER_COMMIT`, asserted in the
-recipe's `prebuild`. Read "dependency verification is on" as one layer, not as a
+F-Droid recipe. The Flutter SDK is pinned by `FLUTTER_COMMIT`, asserted
+in `release.yml` — no longer in the recipe; see §2a-recipe. Read "dependency verification is on" as one layer, not as a
 verified toolchain.
 
 Note also what a checksum is and is not: this is trust-on-first-use. A hash
@@ -552,11 +552,25 @@ carry `%v` (the version name) and the ABI instead.
 **`commit:` pins a full hash by choice, not by requirement.** fdroidserver has no
 validator for the field, and `lint` objects only to branch names, so a tag would
 be accepted, and a large minority of fdroiddata recipes do use tags. We pin the
-hash because tags are mutable and a repointed one would silently change what gets rebuilt. The
-`prebuild:` steps apply the same reasoning to the Flutter SDK: they read
-`FLUTTER_COMMIT` out of the release workflow and fail closed if the checked-out
-SDK does not match, so a moved upstream tag surfaces as an obvious toolchain
-error instead of an unexplained reproducibility failure.
+hash because tags are mutable and a repointed one would silently change what
+gets rebuilt.
+
+The `prebuild:` steps used to apply the same reasoning to the Flutter SDK,
+asserting the checked-out tag resolved to `FLUTTER_COMMIT`. The fdroiddata
+reviewer asked for that line to go, and conceding it costs little: the identical
+assertion still runs in [`release.yml`](../.forgejo/workflows/release.yml),
+which is the side holding the signing key, and on F-Droid's side a moved
+upstream tag still fails closed — the rebuild simply stops matching the
+reference binary. What is lost is only the diagnosis: an obvious toolchain error
+becomes an unexplained reproducibility failure. If verification ever fails for
+no visible reason, check whether the Flutter tag moved before looking anywhere
+else.
+
+That backstop is not an assumption. Pointing one block's `binary:` at the wrong
+ABI's APK, so the rebuild could not possibly match, ends the build with
+*"compared built binary to supplied reference binary but failed"* and a non-zero
+exit — nothing is published. Worth knowing precisely because so much of the
+argument for conceding checks elsewhere rests on it.
 
 **Why the seed is the v0.2.3 commit.** It is the earliest tag whose published
 APKs can actually be verified. v0.2.2 introduced the per-ABI assets and the
@@ -565,11 +579,20 @@ dependency-metadata signing block, which F-Droid's scanner rejects outright, so
 verification never took effect. Tags before v0.2.2 published only a universal
 APK.
 
-**The `mv`/`pushd` round trip is guarded for idempotency.** If an attempt fails
-between the two moves, the checkout is stranded at `/build/cairn`; moving again
-would nest it (`mv src existing-dir`) and silently build the wrong tree, masking
-the original error. The guard matters for repeated local runs in one buildserver
-container — F-Droid's own builds get a fresh VM each time.
+**The `mv`/`pushd` round trip clears its target first.** Moving onto an
+existing `/build/cairn` would nest the checkout inside it
+(`mv src existing-dir`) and silently build the wrong tree. An earlier version
+guarded this with a conditional; the reviewer asked for fewer checks, so it is
+now a plain `rm -rf /build/cairn` before the `mv`.
+
+Know how the two differ. The old conditional could *resume* from a run that died
+between the two moves, with the checkout stranded at `/build/cairn` and the
+original directory already gone. The new form deletes that stranded copy and
+then fails on the `mv`, because the source no longer exists. Both refuse to
+build the wrong tree — the old one by resuming, the new one by failing loudly —
+but only the old one let you retry without a fresh checkout. That matters solely
+for repeated local runs in one buildserver container; F-Droid's own builds get a
+fresh VM each time, so nothing is stranded there to begin with.
 
 **`AllowedAPKSigningKeys`** is the certificate F-Droid must find on every
 downloaded reference binary, as lower-case hex SHA-256 with no colons — the form
