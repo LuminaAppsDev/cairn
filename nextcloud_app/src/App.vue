@@ -81,30 +81,63 @@
 
 					<MetricSection
 						:title="t('cairn', 'Sleep')"
-						:subtitle="lastNight ? date(lastNight.night, { weekday: 'long', day: 'numeric', month: 'long' }) : ''"
 						:loading="sleep.loading"
 						:error="sleep.error"
 						:empty="!!sleep.data && sleep.data.nights.length === 0">
 						<template #empty>
 							{{ t('cairn', 'No sleep tracked recently.') }}
 						</template>
-						<template v-if="lastNight">
+						<template v-if="selectedNight">
+							<!--
+								Nights come back newest first, so "earlier" moves
+								forward through the list. Both buttons carry a word
+								as well as an arrow: an arrow alone is ambiguous
+								when the list runs backwards from the way a
+								calendar reads.
+							-->
+							<div class="cairn__nights">
+								<NcButton
+									:disabled="nightIndex >= lastNightIndex"
+									:aria-label="t('cairn', 'Earlier night')"
+									@click="nightIndex += 1">
+									<template #icon>
+										<ChevronLeftIcon :size="20" />
+									</template>
+									{{ t('cairn', 'Earlier') }}
+								</NcButton>
+								<span class="cairn__night-label">
+									<strong>{{ nightHeading }}</strong>
+									<span class="cairn__night-range">{{ nightRange }}</span>
+								</span>
+								<NcButton
+									:disabled="nightIndex === 0"
+									:aria-label="t('cairn', 'Later night')"
+									@click="nightIndex -= 1">
+									<template #icon>
+										<ChevronRightIcon :size="20" />
+									</template>
+									{{ t('cairn', 'Later') }}
+								</NcButton>
+							</div>
 							<div class="cairn__tiles cairn__tiles--compact">
 								<StatTile
 									:label="t('cairn', 'Time asleep')"
-									:value="duration(lastNight.totalSleepMs)" />
+									:value="duration(selectedNight.totalSleepMs)"
+									:caption="selectedNight.timeInBedMs
+										? t('cairn', '{total} in bed', { total: duration(selectedNight.timeInBedMs) })
+										: ''" />
 								<StatTile
 									:label="t('cairn', 'Awakenings')"
-									:value="number(lastNight.awakenings)" />
+									:value="number(selectedNight.awakenings)" />
 								<StatTile
 									:label="t('cairn', 'Efficiency')"
-									:value="percent(lastNight.efficiency)"
-									:caption="lastNight.efficiency === null
+									:value="percent(selectedNight.efficiency)"
+									:caption="selectedNight.efficiency === null
 										? t('cairn', 'No wake markers recorded')
 										: ''" />
 							</div>
-							<SleepHypnogram v-if="lastNight.segments.length" :night="lastNight" />
-							<p v-if="lastNight.sources.length > 1" class="cairn__note">
+							<SleepHypnogram v-if="selectedNight.segments.length" :night="selectedNight" />
+							<p v-if="selectedNight.sources.length > 1" class="cairn__note">
 								{{ t('cairn', 'Multiple sources tracked this night; totals may overlap.') }}
 							</p>
 						</template>
@@ -201,10 +234,13 @@
 <script setup>
 import { loadState } from '@nextcloud/initial-state'
 import { translatePlural as n, translate as t } from '@nextcloud/l10n'
-import { computed, onMounted, reactive } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import NcAppContent from '@nextcloud/vue/components/NcAppContent'
+import NcButton from '@nextcloud/vue/components/NcButton'
 import NcContent from '@nextcloud/vue/components/NcContent'
 import NcEmptyContent from '@nextcloud/vue/components/NcEmptyContent'
+import ChevronLeftIcon from 'vue-material-design-icons/ChevronLeft.vue'
+import ChevronRightIcon from 'vue-material-design-icons/ChevronRight.vue'
 import FolderIcon from 'vue-material-design-icons/Folder.vue'
 import BarChart from './components/BarChart.vue'
 import LineChart from './components/LineChart.vue'
@@ -269,7 +305,48 @@ onMounted(() => {
 	files.load()
 })
 
-const lastNight = computed(() => sleep.data?.nights?.[0] ?? null)
+// Which night is on screen: 0 is the most recent, counting backwards.
+const nightIndex = ref(0)
+const nights = computed(() => sleep.data?.nights ?? [])
+const lastNightIndex = computed(() => Math.max(0, nights.value.length - 1))
+const selectedNight = computed(() => nights.value[nightIndex.value] ?? null)
+const lastNight = computed(() => nights.value[0] ?? null)
+
+// A reload can return fewer nights than before, which would otherwise leave the
+// index pointing past the end and the section apparently empty.
+watch(nights, (list) => {
+	if (nightIndex.value > list.length - 1) {
+		nightIndex.value = 0
+	}
+})
+
+const nightHeading = computed(() => {
+	if (!selectedNight.value) {
+		return ''
+	}
+	if (nightIndex.value === 0) {
+		return t('cairn', 'Last night')
+	}
+	return date(selectedNight.value.night, { weekday: 'long', day: 'numeric', month: 'long' })
+})
+
+/*
+ * The onset and final waking, which is what tells two nights apart when both
+ * are filed under the same date — a sleep beginning before midnight is filed
+ * under the day it started, so an evening onset and the following night's early
+ * one share a date.
+ */
+const nightRange = computed(() => {
+	if (!selectedNight.value) {
+		return ''
+	}
+	const night = selectedNight.value
+	const day = nightIndex.value === 0
+		? date(night.night, { weekday: 'long', day: 'numeric', month: 'long' })
+		: ''
+	const span = `${time(night.start)} – ${time(night.end)}`
+	return day ? `${day} · ${span}` : span
+})
 const latestWeight = computed(() => weight.data?.latest ?? null)
 
 const stepsCaption = computed(() => {
@@ -406,6 +483,28 @@ function activityName(raw) {
 	grid-row: 1 / span 2;
 	align-self: center;
 	text-align: end;
+	font-variant-numeric: tabular-nums;
+}
+
+.cairn__nights {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	margin-bottom: 16px;
+}
+
+.cairn__night-label {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 2px;
+	text-align: center;
+}
+
+.cairn__night-range {
+	color: var(--color-text-maxcontrast);
+	font-size: 13px;
 	font-variant-numeric: tabular-nums;
 }
 

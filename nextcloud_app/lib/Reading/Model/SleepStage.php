@@ -46,4 +46,21 @@ enum SleepStage: string {
 			self::Awake, self::InBed, self::OutOfBed => false,
 		};
 	}
+
+	/**
+	 * Whether this stage positively asserts *not* asleep.
+	 *
+	 * Deliberately narrower than `!isAsleep()`. `in_bed` is absent because some
+	 * sources emit it across the entire time in bed, overlapping all of the
+	 * sleep within it — treating that as wakefulness would zero out the night.
+	 * Being in bed is compatible with being asleep; being awake, or out of bed,
+	 * is not.
+	 */
+	public function isAwake(): bool {
+		return match ($this) {
+			self::Awake, self::OutOfBed => true,
+			self::Light, self::Deep, self::Rem, self::AsleepUnspecified,
+			self::Session, self::InBed => false,
+		};
+	}
 }

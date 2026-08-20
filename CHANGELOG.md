@@ -40,20 +40,11 @@ All notable changes to this project are documented in this file.
   `findPackageJSON` from `node:module`, which does not exist before 22, so 20 is
   simply not a toolchain this app builds on.
 
-- **A parity case pinning a real sleep defect, deliberately.** Samsung Health
-  emits a whole-night `session` segment alongside the fine-grained stages,
-  including the awake ones. `session` counts as asleep, so the union of asleep
-  intervals swallows every awake period: a real night with **26 awakenings**
-  reported 6 h 16 min asleep and **100% efficiency**. Subtracting the awake
-  union, or ignoring `session` where finer stages exist, both give 5 h 30 min
-  and 88% — two independent corrections agreeing is a good sign which is right.
-
-  Both readers currently do the wrong thing identically, so this is a defect in
-  the read semantics (`DESIGN.md` §4.3) rather than in either port, and the
-  shipped phone app shows the same number today. The case records current
-  behaviour so it cannot quietly change, and says plainly that the golden is not
-  the desired answer: fixing it must land in both readers together, updating the
-  golden in the same commit.
+- **A parity case for the sleep-total rule.** Samsung Health emits a
+  whole-night `session` segment alongside the fine-grained stages, including the
+  awake ones, and `session` counts as asleep — so a reader taking only the union
+  of asleep intervals swallows every awakening. The case pins the corrected
+  behaviour in both readers; the defect it was written to expose is fixed below.
 
 - **A cross-frontend parity suite, so the two readers cannot drift apart
   silently.** `docs/DESIGN.md` §4.3 makes the read semantics a property of the
@@ -512,6 +503,39 @@ All notable changes to this project are documented in this file.
   fdroidserver from git master rather than using the Debian package.
 
 ### Fixed
+
+- **Sleep totals counted time you were awake.** A night's time asleep was the
+  union of asleep-stage intervals. Samsung Health emits a whole-night `session`
+  segment alongside the fine-grained stages, `session` counts as asleep, and
+  that one segment spans the awake stretches inside it — so a real night with
+  **26 awakenings** reported 6 h 16 min asleep at **100 % efficiency**. Across
+  five nights of a real export, every efficiency figure was 100 %.
+
+  Time asleep is now the union of sleep intervals **minus** the union of wake
+  intervals: a set difference, not a heuristic about which stages to ignore, so
+  it needs no special case for sources that emit a session marker and none for
+  sources that do not. The same night now reads 5 h 30 min at 88 %, and the five
+  nights read 86–98 %, tracking their awakening counts. Two independent
+  corrections — subtracting the wake union, and ignoring `session` where finer
+  stages exist — agreed on the answer before either was written, which is what
+  gave confidence it was right.
+
+  `in_bed` is deliberately **not** treated as wakefulness: some sources emit it
+  across the entire time in bed, and subtracting it would zero out the night.
+  Being in bed is compatible with being asleep; `awake` and `out_of_bed` are not.
+
+  Both readers had the bug identically, so it was a defect in the read semantics
+  (`DESIGN.md` §4.3, now amended) rather than in either port — the shipped phone
+  app was showing the same wrong number. Fixed in the Flutter and PHP readers in
+  the same commit, with the shared golden updated alongside; the only test that
+  failed on either side was the parity case that had pinned the old behaviour.
+
+- **The Nextcloud sleep view can step through nights,** as the phone app's can.
+  Both buttons carry a word as well as an arrow, because the list runs newest
+  first and an arrow alone leaves the direction ambiguous. The heading shows the
+  onset date and the time range, which is what tells apart two nights filed under
+  the same date — a sleep beginning before midnight is filed under the day it
+  started, so an evening onset and the next night's early one share one.
 
 - **An edited PHP file kept serving its previous version for up to a minute.**
   The Nextcloud image ships `opcache.revalidate_freq=60`, which is right for a

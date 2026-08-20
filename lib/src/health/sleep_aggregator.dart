@@ -116,39 +116,79 @@ class SleepEpisodeAggregator {
       start: start,
       end: end,
       source: group.first.source,
-      totalSleep: _asleepUnion(group),
+      totalSleep: _asleepTime(group),
       stageDurations: stageDurations,
       awakenings: awakenings,
     );
   }
 
-  /// Total time asleep as the duration of the *union* of asleep-stage
-  /// intervals. Using the union (not a sum) means an overall session segment
-  /// that overlaps its own stage segments is not double-counted.
-  Duration _asleepUnion(List<SleepSegmentSample> group) {
-    final intervals = [
+  /// Total time actually asleep: sleep intervals, minus any wakefulness inside
+  /// them (DESIGN.md §4.3).
+  ///
+  /// A *union* rather than a sum, because sources overlap their own segments —
+  /// Samsung Health emits a whole-night `session` alongside the light/deep/rem
+  /// breakdown of the same minutes, and summing those reports eleven hours of
+  /// sleep for a seven-hour night.
+  ///
+  /// And a *difference* rather than only a union, because that same whole-night
+  /// `session` also spans the awake stretches inside it. Counting the union
+  /// alone reported a real night with twenty-six awakenings as 6 h 16 min of
+  /// unbroken sleep at 100 % efficiency; subtracting the wake intervals gives
+  /// 5 h 30 min at 88 %, which is what the stage segments actually say.
+  ///
+  /// The rule is a set operation rather than a heuristic about which stages to
+  /// ignore: time asleep is time inside a sleep interval and not inside a wake
+  /// interval. That needs no special case for sources emitting a session marker
+  /// and none for sources that do not.
+  Duration _asleepTime(List<SleepSegmentSample> group) {
+    final asleep = _merge([
       for (final s in group)
         if (s.stage.isAsleep) (start: s.start, end: s.end),
-    ]..sort((a, b) => a.start.compareTo(b.start));
+    ]);
+    final awake = _merge([
+      for (final s in group)
+        if (s.stage.isAwake) (start: s.start, end: s.end),
+    ]);
 
     var total = Duration.zero;
-    DateTime? mergeStart;
-    DateTime? mergeEnd;
-    for (final interval in intervals) {
-      if (mergeEnd == null || interval.start.isAfter(mergeEnd)) {
-        if (mergeStart != null && mergeEnd != null) {
-          total += mergeEnd.difference(mergeStart);
+    for (final sleep in asleep) {
+      var cursor = sleep.start;
+      for (final wake in awake) {
+        if (!wake.end.isAfter(cursor)) continue;
+        if (!wake.start.isBefore(sleep.end)) break;
+        if (wake.start.isAfter(cursor)) {
+          total += wake.start.difference(cursor);
         }
-        mergeStart = interval.start;
-        mergeEnd = interval.end;
-      } else if (interval.end.isAfter(mergeEnd)) {
-        mergeEnd = interval.end;
+        if (wake.end.isAfter(cursor)) cursor = wake.end;
+        if (!cursor.isBefore(sleep.end)) break;
       }
-    }
-    if (mergeStart != null && mergeEnd != null) {
-      total += mergeEnd.difference(mergeStart);
+      if (cursor.isBefore(sleep.end)) total += sleep.end.difference(cursor);
     }
     return total;
+  }
+
+  /// Collapses intervals into non-overlapping, ascending spans. Touching
+  /// intervals merge: 01:00–02:00 then 02:00–03:00 is one two-hour stretch.
+  List<({DateTime start, DateTime end})> _merge(
+    List<({DateTime start, DateTime end})> intervals,
+  ) {
+    if (intervals.isEmpty) return const [];
+    final sorted = [...intervals]..sort((a, b) => a.start.compareTo(b.start));
+
+    final merged = <({DateTime start, DateTime end})>[];
+    var start = sorted.first.start;
+    var end = sorted.first.end;
+    for (final interval in sorted.skip(1)) {
+      if (!interval.start.isAfter(end)) {
+        if (interval.end.isAfter(end)) end = interval.end;
+        continue;
+      }
+      merged.add((start: start, end: end));
+      start = interval.start;
+      end = interval.end;
+    }
+    merged.add((start: start, end: end));
+    return merged;
   }
 
   DateTime _night(DateTime t) => DateTime(t.year, t.month, t.day);

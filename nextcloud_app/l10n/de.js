@@ -14,6 +14,8 @@ OC.L10N.register(
         "Cairn never changes these files. It only reads them.": "Cairn verändert diese Dateien nie. Es liest sie nur.",
         "Couldn't load this data.": "Diese Daten konnten nicht geladen werden.",
         "Deep": "Tief",
+        "Earlier": "Früher",
+        "Earlier night": "Frühere Nacht",
         "Efficiency": "Effizienz",
         "Files on disk": "Dateien auf der Festplatte",
         "Format version {version}, written by {generator}.": "Formatversion {version}, geschrieben von {generator}.",
@@ -21,6 +23,8 @@ OC.L10N.register(
         "Heart rate": "Puls",
         "In bed": "Im Bett",
         "Last night": "Letzte Nacht",
+        "Later": "Später",
+        "Later night": "Spätere Nacht",
         "Latest weight": "Aktuelles Gewicht",
         "Light": "Leicht",
         "Metric": "Messwert",
@@ -59,6 +63,7 @@ OC.L10N.register(
         "steps": "Schritte",
         "{average} a day on average": "im Schnitt {average} pro Tag",
         "{change} {unit} over this period": "{change} {unit} in diesem Zeitraum",
-        "{min}–{max} over {days} days": "{min}–{max} über {days} Tage"
+        "{min}–{max} over {days} days": "{min}–{max} über {days} Tage",
+        "{total} in bed": "{total} im Bett"
     },
     "nplurals=2; plural=(n != 1);");

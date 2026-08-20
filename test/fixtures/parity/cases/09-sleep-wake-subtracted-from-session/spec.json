@@ -1,0 +1,12 @@
+{
+  "description": "Samsung Health emits a whole-night 'session' segment alongside the fine-grained stages, including the awake ones. 'session' counts as asleep, so a reader that takes only the union of asleep intervals swallows every awake period: this night would report four hours asleep and 100% efficiency despite two awakenings totalling an hour. Time asleep is time inside a sleep interval and NOT inside a wake interval \u2014 a set difference, not a heuristic about which stages to ignore, so it needs no special case for sources that emit a session marker and none for sources that do not. Found on real data: a night with 26 awakenings reported 6h16m at 100%; it is 5h30m at 88%. Both readers had the bug identically, which is why it was a defect in the read semantics rather than in either port.",
+  "now": "2026-08-20T12:00:00",
+  "timezone": "Europe/Berlin",
+  "queries": [
+    {
+      "id": "nights",
+      "name": "lastNNights",
+      "n": 1
+    }
+  ]
+}

@@ -110,7 +110,7 @@ final class SleepEpisodeAggregator {
 				$stages[$key] = ($stages[$key] ?? 0) + $segment->durationMillis();
 			}
 
-			$total = $this->asleepUnionMillis($group);
+			$total = $this->asleepMillis($group);
 			$night = Timestamps::dayKey($start, $this->display);
 			if (!isset($bestPerNight[$night]) || $total > $bestPerNight[$night]) {
 				$bestPerNight[$night] = $total;
@@ -146,44 +146,98 @@ final class SleepEpisodeAggregator {
 	}
 
 	/**
-	 * Total time actually asleep: the **union** of the asleep intervals.
+	 * Total time actually asleep: sleep intervals, minus any wakefulness inside
+	 * them.
 	 *
 	 * A union rather than a sum, because sources overlap their own segments —
 	 * Samsung emits a whole-night `session` alongside the light/deep/rem
 	 * breakdown of the same minutes. Summing those reports eleven hours of sleep
 	 * for a seven-hour night.
 	 *
+	 * And a *difference* rather than only a union, because that same whole-night
+	 * `session` also spans the awake stretches inside it. Counting the union
+	 * alone reported a night with twenty-six awakenings as six hours sixteen of
+	 * unbroken sleep at 100% efficiency; subtracting the wake intervals gives
+	 * five hours thirty at 88%, which is what the stage segments actually say.
+	 *
+	 * The rule is deliberately a set operation rather than a heuristic about
+	 * which stages to ignore: time asleep is time inside a sleep interval and
+	 * not inside a wake interval. That needs no special case for sources that
+	 * emit a session marker, and none for sources that do not.
+	 *
 	 * @param list<SleepStageReading> $group
 	 */
-	private function asleepUnionMillis(array $group): int {
-		$asleep = array_values(array_filter(
+	private function asleepMillis(array $group): int {
+		$asleep = $this->merge(array_filter(
 			$group,
 			static fn (SleepStageReading $s): bool => $s->stage->isAsleep(),
 		));
-		if ($asleep === []) {
-			return 0;
-		}
-		usort($asleep, static fn (SleepStageReading $a, SleepStageReading $b): int
-			=> $a->start <=> $b->start);
+		$awake = $this->merge(array_filter(
+			$group,
+			static fn (SleepStageReading $s): bool => $s->stage->isAwake(),
+		));
 
 		$total = 0;
-		$mergeStart = $asleep[0]->start;
-		$mergeEnd = $asleep[0]->end;
+		foreach ($asleep as [$start, $end]) {
+			$cursor = $start;
+			foreach ($awake as [$wakeStart, $wakeEnd]) {
+				if ($wakeEnd <= $cursor) {
+					continue;
+				}
+				if ($wakeStart >= $end) {
+					break;
+				}
+				if ($wakeStart > $cursor) {
+					$total += Timestamps::elapsedMillis($cursor, $wakeStart);
+				}
+				$cursor = $wakeEnd > $cursor ? $wakeEnd : $cursor;
+				if ($cursor >= $end) {
+					break;
+				}
+			}
+			if ($cursor < $end) {
+				$total += Timestamps::elapsedMillis($cursor, $end);
+			}
+		}
 
-		foreach (array_slice($asleep, 1) as $segment) {
-			// Touching intervals merge: 01:00-02:00 and 02:00-03:00 are two
-			// hours of continuous sleep, not two separate stretches.
-			if ($segment->start <= $mergeEnd) {
-				if ($segment->end > $mergeEnd) {
-					$mergeEnd = $segment->end;
+		return $total;
+	}
+
+	/**
+	 * Collapse segments into non-overlapping intervals, ascending.
+	 *
+	 * Touching intervals merge: 01:00–02:00 followed by 02:00–03:00 is two hours
+	 * of one thing, not two separate stretches.
+	 *
+	 * @param iterable<SleepStageReading> $segments
+	 *
+	 * @return list<array{\DateTimeImmutable, \DateTimeImmutable}>
+	 */
+	private function merge(iterable $segments): array {
+		$intervals = [];
+		foreach ($segments as $segment) {
+			$intervals[] = [$segment->start, $segment->end];
+		}
+		if ($intervals === []) {
+			return [];
+		}
+		usort($intervals, static fn (array $a, array $b): int => $a[0] <=> $b[0]);
+
+		$merged = [];
+		[$start, $end] = $intervals[0];
+		foreach (array_slice($intervals, 1) as [$next, $nextEnd]) {
+			if ($next <= $end) {
+				if ($nextEnd > $end) {
+					$end = $nextEnd;
 				}
 				continue;
 			}
-			$total += Timestamps::elapsedMillis($mergeStart, $mergeEnd);
-			$mergeStart = $segment->start;
-			$mergeEnd = $segment->end;
+			$merged[] = [$start, $end];
+			$start = $next;
+			$end = $nextEnd;
 		}
+		$merged[] = [$start, $end];
 
-		return $total + Timestamps::elapsedMillis($mergeStart, $mergeEnd);
+		return $merged;
 	}
 }

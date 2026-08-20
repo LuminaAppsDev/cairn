@@ -94,6 +94,24 @@ enum SleepStage {
     SleepStage.session => true,
     SleepStage.awake || SleepStage.inBed || SleepStage.outOfBed => false,
   };
+
+  /// Whether this stage positively asserts *not* asleep, for subtracting
+  /// wakefulness from an overlapping sleep interval (DESIGN.md §4.3).
+  ///
+  /// Deliberately narrower than `!isAsleep`: [SleepStage.inBed] is absent
+  /// because some sources emit it across the whole time in bed, overlapping all
+  /// the sleep within it — treating that as wakefulness would zero out the
+  /// night. Being in bed is compatible with being asleep; being awake, or out
+  /// of bed, is not.
+  bool get isAwake => switch (this) {
+    SleepStage.awake || SleepStage.outOfBed => true,
+    SleepStage.light ||
+    SleepStage.deep ||
+    SleepStage.rem ||
+    SleepStage.asleepUnspecified ||
+    SleepStage.session ||
+    SleepStage.inBed => false,
+  };
 }
 
 /// Provenance of a reading (DESIGN.md §4.3): which app/device produced it.
