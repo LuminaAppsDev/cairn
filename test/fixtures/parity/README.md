@@ -61,6 +61,7 @@ rather than a formatting one.
 | Measured value | JSON number; compared with a tolerance of 1e-9 |
 | Absent | `null` — every field is always present, so `null` never means "missing key" |
 | Lists | compared **in order**; read order is part of the semantics |
+| Maps | compared by content, not key order (`perStageMs`) |
 
 ## The timezone is load-bearing
 

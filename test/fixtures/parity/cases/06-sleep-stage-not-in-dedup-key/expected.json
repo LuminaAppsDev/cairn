@@ -9,6 +9,11 @@
       "isMainSleep": true,
       "timeInBedMs": null,
       "efficiency": null,
+      "perStageMs": {
+        "deep": 2400000,
+        "light": 5400000,
+        "rem": 8400000
+      },
       "sources": [
         "Galaxy Fit3"
       ]

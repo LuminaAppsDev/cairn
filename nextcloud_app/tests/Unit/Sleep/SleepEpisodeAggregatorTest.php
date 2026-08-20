@@ -96,11 +96,77 @@ final class SleepEpisodeAggregatorTest extends TestCase {
 		self::assertCount(1, $episodes);
 		// 23:30 to 06:00 is 390 minutes; the naive sum would be 780.
 		self::assertSame(390 * self::MINUTE, $episodes[0]->totalSleepMillis);
-		self::assertGreaterThan(
+		// And the breakdown adds up to exactly that, rather than to 780 — the
+		// session claims only the minutes no finer stage accounted for.
+		self::assertSame(
 			$episodes[0]->totalSleepMillis,
 			array_sum($episodes[0]->perStageMillis),
-			'the per-stage sum double-counts by design; total sleep must not',
 		);
+	}
+
+	/**
+	 * The breakdown is a partition, not a tally.
+	 *
+	 * A plain sum per stage double-counts, because the whole-night `session`
+	 * covers the very minutes the light/deep/rem segments describe. Each stage
+	 * claims only what no more specific stage has already claimed, which leaves
+	 * `session` meaning what it honestly is: asleep, stage unrecorded.
+	 */
+	public function testPerStageIsAPartitionOfTheNight(): void {
+		$episodes = $this->aggregator->aggregate([
+			Readings::stage(SleepStage::Session, '01:00', '05:00'),
+			Readings::stage(SleepStage::Light, '01:00', '02:00'),
+			Readings::stage(SleepStage::Awake, '02:00', '02:30'),
+			Readings::stage(SleepStage::Deep, '02:30', '03:30'),
+			Readings::stage(SleepStage::Rem, '03:30', '04:00'),
+		]);
+
+		$stages = $episodes[0]->perStageMillis;
+		self::assertSame(60 * self::MINUTE, $stages['light']);
+		self::assertSame(30 * self::MINUTE, $stages['awake']);
+		self::assertSame(60 * self::MINUTE, $stages['deep']);
+		self::assertSame(30 * self::MINUTE, $stages['rem']);
+		// 04:00-05:00 is the only stretch no finer stage described.
+		self::assertSame(60 * self::MINUTE, $stages['session']);
+		// Everything together is the whole four-hour window.
+		self::assertSame(4 * self::HOUR, array_sum($stages));
+	}
+
+	/**
+	 * The invariant that ties the breakdown to the headline figure: whatever a
+	 * chart shows as sleep must add up to the number beside it.
+	 */
+	public function testSleepStagesSumToTotalSleep(): void {
+		$episodes = $this->aggregator->aggregate([
+			Readings::stage(SleepStage::Session, '01:00', '05:00'),
+			Readings::stage(SleepStage::Light, '01:00', '02:00'),
+			Readings::stage(SleepStage::Awake, '02:00', '02:30'),
+			Readings::stage(SleepStage::Light, '02:30', '03:30'),
+			Readings::stage(SleepStage::Awake, '03:30', '04:00'),
+			Readings::stage(SleepStage::Rem, '04:00', '05:00'),
+		]);
+
+		$episode = $episodes[0];
+		$asleep = 0;
+		foreach ($episode->perStageMillis as $wire => $millis) {
+			if (SleepStage::from($wire)->isAsleep()) {
+				$asleep += $millis;
+			}
+		}
+
+		self::assertSame($episode->totalSleepMillis, $asleep);
+		self::assertSame(3 * self::HOUR, $asleep);
+	}
+
+	/** Repeated segments of one stage are one stretch, not two. */
+	public function testOverlappingSameStageSegmentsAreNotDoubleCounted(): void {
+		$episodes = $this->aggregator->aggregate([
+			Readings::stage(SleepStage::Deep, '01:00', '03:00'),
+			Readings::stage(SleepStage::Deep, '02:00', '04:00'),
+		]);
+
+		self::assertSame(3 * self::HOUR, $episodes[0]->perStageMillis['deep']);
+		self::assertSame(3 * self::HOUR, $episodes[0]->totalSleepMillis);
 	}
 
 	public function testTouchingAsleepIntervalsMergeIntoOneStretch(): void {

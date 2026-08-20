@@ -182,6 +182,15 @@ Map<String, Object?> _night(NightSleep night) => {
   'isMainSleep': night.isMainSleep,
   'timeInBedMs': night.timeInBed?.inMilliseconds,
   'efficiency': night.efficiency,
+  // The per-stage breakdown is a partition with invariants of its own — the
+  // sleep stages must sum to totalSleepMs — so it belongs in the contract
+  // rather than being left to each reader.
+  'perStageMs': {
+    for (final entry
+        in (night.perStage.entries.toList()
+          ..sort((a, b) => a.key.wireName.compareTo(b.key.wireName))))
+      entry.key.wireName: entry.value.inMilliseconds,
+  },
   'sources': night.sources.toList()..sort(),
 };
 

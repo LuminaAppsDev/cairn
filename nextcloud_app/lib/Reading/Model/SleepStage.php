@@ -48,6 +48,26 @@ enum SleepStage: string {
 	}
 
 	/**
+	 * Stages in decreasing order of specificity, for attributing overlapping
+	 * time to exactly one of them (see the per-stage breakdown).
+	 *
+	 * Wakefulness comes first, so the breakdown agrees with the total: a moment
+	 * counted as awake is never also counted as sleep. Then the named sleep
+	 * stages, then the two that only say "asleep, stage unknown", then `in_bed`,
+	 * which says only where the body was.
+	 *
+	 * @return list<self>
+	 */
+	public static function bySpecificity(): array {
+		return [
+			self::Awake, self::OutOfBed,
+			self::Deep, self::Rem, self::Light,
+			self::AsleepUnspecified, self::Session,
+			self::InBed,
+		];
+	}
+
+	/**
 	 * Whether this stage positively asserts *not* asleep.
 	 *
 	 * Deliberately narrower than `!isAsleep()`. `in_bed` is absent because some

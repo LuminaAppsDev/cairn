@@ -95,6 +95,25 @@ enum SleepStage {
     SleepStage.awake || SleepStage.inBed || SleepStage.outOfBed => false,
   };
 
+  /// Stages in decreasing order of specificity, for attributing overlapping
+  /// time to exactly one of them (see the per-stage breakdown in
+  /// `SleepEpisodeAggregator`).
+  ///
+  /// Wakefulness comes first, so the breakdown agrees with the total: a moment
+  /// counted as awake is never also counted as sleep. Then the named sleep
+  /// stages, then the two that say only "asleep, stage unknown", then
+  /// [SleepStage.inBed], which says only where the body was.
+  static const List<SleepStage> bySpecificity = [
+    SleepStage.awake,
+    SleepStage.outOfBed,
+    SleepStage.deep,
+    SleepStage.rem,
+    SleepStage.light,
+    SleepStage.asleepUnspecified,
+    SleepStage.session,
+    SleepStage.inBed,
+  ];
+
   /// Whether this stage positively asserts *not* asleep, for subtracting
   /// wakefulness from an overlapping sleep interval (DESIGN.md §4.3).
   ///

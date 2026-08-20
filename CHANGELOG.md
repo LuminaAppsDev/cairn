@@ -504,6 +504,31 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- **The per-stage sleep breakdown double-counted the same minutes.** Time per
+  stage was a plain tally, so a whole-night `session` was added to the
+  light/deep/rem segments describing those very minutes — the parts summed to
+  more than the night. Nothing rendered them as durations yet, so it was latent
+  rather than visible, which is exactly the state in which a wrong number waits
+  for the first chart to show it.
+
+  The breakdown is now a **partition**: every instant is attributed to exactly
+  one stage, each claiming only time no more specific stage has claimed, in the
+  order `awake`, `out_of_bed`, `deep`, `rem`, `light`, `asleep_unspecified`,
+  `session`, `in_bed`. Wakefulness comes first deliberately, so the breakdown
+  cannot contradict the total.
+
+  Two invariants follow, and both are asserted in each reader's tests and in the
+  shared fixtures: the asleep stages sum to **exactly** the night's total sleep,
+  and every stage together sums to the time the source actually described.
+  Checked against a real export — 5 h 30 min of stages against 5 h 30 min of
+  total, on each of three nights. `session` now means what it honestly is,
+  asleep with the stage unrecorded, and on a source that describes every minute
+  it claims nothing at all: it disappeared from all three real nights.
+
+  `perStageMs` joined the parity encoding at the same time, so the breakdown is
+  a cross-frontend contract rather than something each reader decides for
+  itself. `DESIGN.md` §4.3 states the rule.
+
 - **Sleep totals counted time you were awake.** A night's time asleep was the
   union of asleep-stage intervals. Samsung Health emits a whole-night `session`
   segment alongside the fine-grained stages, `session` counts as asleep, and

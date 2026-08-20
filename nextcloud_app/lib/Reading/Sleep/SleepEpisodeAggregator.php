@@ -90,8 +90,6 @@ final class SleepEpisodeAggregator {
 			$start = $group[0]->start;
 			$end = $group[0]->end;
 			$awakenings = 0;
-			/** @var array<string, int> $stages */
-			$stages = [];
 
 			foreach ($group as $segment) {
 				if ($segment->end > $end) {
@@ -103,12 +101,8 @@ final class SleepEpisodeAggregator {
 					// `in_bed` and `out_of_bed` are position, not waking up.
 					$awakenings++;
 				}
-				$key = $segment->stage->value;
-				// A plain sum per stage. Overlapping same-stage segments do
-				// double-count here, which is why the breakdown is presented as
-				// a proportion and total sleep is computed separately.
-				$stages[$key] = ($stages[$key] ?? 0) + $segment->durationMillis();
 			}
+			$stages = $this->perStageMillis($group);
 
 			$total = $this->asleepMillis($group);
 			$night = Timestamps::dayKey($start, $this->display);
@@ -168,56 +162,85 @@ final class SleepEpisodeAggregator {
 	 * @param list<SleepStageReading> $group
 	 */
 	private function asleepMillis(array $group): int {
-		$asleep = $this->merge(array_filter(
-			$group,
-			static fn (SleepStageReading $s): bool => $s->stage->isAsleep(),
+		return $this->totalMillis($this->subtract(
+			$this->mergeStage($group, static fn (SleepStage $s): bool => $s->isAsleep()),
+			$this->mergeStage($group, static fn (SleepStage $s): bool => $s->isAwake()),
 		));
-		$awake = $this->merge(array_filter(
-			$group,
-			static fn (SleepStageReading $s): bool => $s->stage->isAwake(),
-		));
-
-		$total = 0;
-		foreach ($asleep as [$start, $end]) {
-			$cursor = $start;
-			foreach ($awake as [$wakeStart, $wakeEnd]) {
-				if ($wakeEnd <= $cursor) {
-					continue;
-				}
-				if ($wakeStart >= $end) {
-					break;
-				}
-				if ($wakeStart > $cursor) {
-					$total += Timestamps::elapsedMillis($cursor, $wakeStart);
-				}
-				$cursor = $wakeEnd > $cursor ? $wakeEnd : $cursor;
-				if ($cursor >= $end) {
-					break;
-				}
-			}
-			if ($cursor < $end) {
-				$total += Timestamps::elapsedMillis($cursor, $end);
-			}
-		}
-
-		return $total;
 	}
 
 	/**
-	 * Collapse segments into non-overlapping intervals, ascending.
+	 * How the night divides between stages, as a **partition**: every instant is
+	 * attributed to exactly one of them.
 	 *
-	 * Touching intervals merge: 01:00–02:00 followed by 02:00–03:00 is two hours
-	 * of one thing, not two separate stretches.
+	 * A plain sum per stage would double-count the same minutes, because a
+	 * whole-night `session` overlaps the light/deep/rem breakdown of those very
+	 * minutes — the parts would add up to more than the night. So each stage
+	 * claims only time no more specific stage has already claimed
+	 * ({@see SleepStage::bySpecificity()}), which leaves `session` meaning what
+	 * it honestly is: asleep, with the stage unrecorded.
 	 *
-	 * @param iterable<SleepStageReading> $segments
+	 * Two properties follow, and both are asserted in the tests. The sleep
+	 * stages sum to exactly the total from {@see self::asleepMillis()}, because
+	 * wakefulness is claimed first and cannot be claimed twice. And every stage
+	 * together sums to the covered time, so a breakdown chart adds up.
+	 *
+	 * @param list<SleepStageReading> $group
+	 *
+	 * @return array<string, int> stage wire value => milliseconds, non-zero only
+	 */
+	private function perStageMillis(array $group): array {
+		/** @var list<array{\DateTimeImmutable, \DateTimeImmutable}> $claimed */
+		$claimed = [];
+		$out = [];
+
+		foreach (SleepStage::bySpecificity() as $stage) {
+			$intervals = $this->mergeStage(
+				$group,
+				static fn (SleepStage $candidate): bool => $candidate === $stage,
+			);
+			if ($intervals === []) {
+				continue;
+			}
+			$millis = $this->totalMillis($this->subtract($intervals, $claimed));
+			if ($millis > 0) {
+				$out[$stage->value] = $millis;
+			}
+			$claimed = $this->merge([...$claimed, ...$intervals]);
+		}
+
+		return $out;
+	}
+
+	/**
+	 * Merged intervals of every segment whose stage passes `$matches`.
+	 *
+	 * @param list<SleepStageReading>    $group
+	 * @param callable(SleepStage): bool $matches
 	 *
 	 * @return list<array{\DateTimeImmutable, \DateTimeImmutable}>
 	 */
-	private function merge(iterable $segments): array {
+	private function mergeStage(array $group, callable $matches): array {
 		$intervals = [];
-		foreach ($segments as $segment) {
-			$intervals[] = [$segment->start, $segment->end];
+		foreach ($group as $segment) {
+			if ($matches($segment->stage)) {
+				$intervals[] = [$segment->start, $segment->end];
+			}
 		}
+
+		return $this->merge($intervals);
+	}
+
+	/**
+	 * Collapse intervals into non-overlapping, ascending spans.
+	 *
+	 * Touching intervals merge: 01:00–02:00 then 02:00–03:00 is one two-hour
+	 * stretch, not two.
+	 *
+	 * @param list<array{\DateTimeImmutable, \DateTimeImmutable}> $intervals
+	 *
+	 * @return list<array{\DateTimeImmutable, \DateTimeImmutable}>
+	 */
+	private function merge(array $intervals): array {
 		if ($intervals === []) {
 			return [];
 		}
@@ -239,5 +262,60 @@ final class SleepEpisodeAggregator {
 		$merged[] = [$start, $end];
 
 		return $merged;
+	}
+
+	/**
+	 * `$from` with every part of `$remove` cut out of it.
+	 *
+	 * Both arguments must already be merged and ascending.
+	 *
+	 * @param list<array{\DateTimeImmutable, \DateTimeImmutable}> $from
+	 * @param list<array{\DateTimeImmutable, \DateTimeImmutable}> $remove
+	 *
+	 * @return list<array{\DateTimeImmutable, \DateTimeImmutable}>
+	 */
+	private function subtract(array $from, array $remove): array {
+		if ($remove === []) {
+			return $from;
+		}
+
+		$out = [];
+		foreach ($from as [$start, $end]) {
+			$cursor = $start;
+			foreach ($remove as [$cutStart, $cutEnd]) {
+				if ($cutEnd <= $cursor) {
+					continue;
+				}
+				if ($cutStart >= $end) {
+					break;
+				}
+				if ($cutStart > $cursor) {
+					$out[] = [$cursor, $cutStart];
+				}
+				if ($cutEnd > $cursor) {
+					$cursor = $cutEnd;
+				}
+				if ($cursor >= $end) {
+					break;
+				}
+			}
+			if ($cursor < $end) {
+				$out[] = [$cursor, $end];
+			}
+		}
+
+		return $out;
+	}
+
+	/**
+	 * @param list<array{\DateTimeImmutable, \DateTimeImmutable}> $intervals
+	 */
+	private function totalMillis(array $intervals): int {
+		$total = 0;
+		foreach ($intervals as [$start, $end]) {
+			$total += Timestamps::elapsedMillis($start, $end);
+		}
+
+		return $total;
 	}
 }

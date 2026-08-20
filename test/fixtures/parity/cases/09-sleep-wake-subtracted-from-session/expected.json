@@ -9,6 +9,11 @@
       "isMainSleep": true,
       "timeInBedMs": 14400000,
       "efficiency": 0.75,
+      "perStageMs": {
+        "awake": 3600000,
+        "light": 7200000,
+        "rem": 3600000
+      },
       "sources": [
         "com.sec.android.app.shealth"
       ]

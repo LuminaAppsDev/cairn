@@ -104,12 +104,11 @@ class SleepEpisodeAggregator {
     final start = group.first.start;
     var end = group.first.end;
     var awakenings = 0;
-    final stageDurations = <SleepStage, Duration>{};
     for (final segment in group) {
       if (segment.end.isAfter(end)) end = segment.end;
-      final duration = segment.end.difference(segment.start);
-      stageDurations[segment.stage] =
-          (stageDurations[segment.stage] ?? Duration.zero) + duration;
+      // Counted per segment, not per merged interval: two adjacent awake
+      // spans are two awakenings. And specifically `awake` — in-bed and
+      // out-of-bed are position, not waking up.
       if (segment.stage == SleepStage.awake) awakenings++;
     }
     return _EpisodeStats(
@@ -117,7 +116,7 @@ class SleepEpisodeAggregator {
       end: end,
       source: group.first.source,
       totalSleep: _asleepTime(group),
-      stageDurations: stageDurations,
+      stageDurations: _perStage(group),
       awakenings: awakenings,
     );
   }
@@ -140,32 +139,48 @@ class SleepEpisodeAggregator {
   /// ignore: time asleep is time inside a sleep interval and not inside a wake
   /// interval. That needs no special case for sources emitting a session marker
   /// and none for sources that do not.
-  Duration _asleepTime(List<SleepSegmentSample> group) {
-    final asleep = _merge([
-      for (final s in group)
-        if (s.stage.isAsleep) (start: s.start, end: s.end),
-    ]);
-    final awake = _merge([
-      for (final s in group)
-        if (s.stage.isAwake) (start: s.start, end: s.end),
-    ]);
+  Duration _asleepTime(List<SleepSegmentSample> group) => _total(
+    _subtract(
+      _mergeWhere(group, (stage) => stage.isAsleep),
+      _mergeWhere(group, (stage) => stage.isAwake),
+    ),
+  );
 
-    var total = Duration.zero;
-    for (final sleep in asleep) {
-      var cursor = sleep.start;
-      for (final wake in awake) {
-        if (!wake.end.isAfter(cursor)) continue;
-        if (!wake.start.isBefore(sleep.end)) break;
-        if (wake.start.isAfter(cursor)) {
-          total += wake.start.difference(cursor);
-        }
-        if (wake.end.isAfter(cursor)) cursor = wake.end;
-        if (!cursor.isBefore(sleep.end)) break;
-      }
-      if (cursor.isBefore(sleep.end)) total += sleep.end.difference(cursor);
+  /// How the night divides between stages, as a **partition**: every instant is
+  /// attributed to exactly one of them.
+  ///
+  /// A plain sum per stage double-counts, because a whole-night `session`
+  /// covers the very minutes the light/deep/rem segments describe — the parts
+  /// would add up to more than the night. Each stage claims only time no more
+  /// specific stage has already claimed ([SleepStage.bySpecificity]), which
+  /// leaves `session` meaning what it honestly is: asleep, stage unrecorded.
+  ///
+  /// Two properties follow, both asserted in the tests: the sleep stages sum to
+  /// exactly [_asleepTime], because wakefulness is claimed first and cannot be
+  /// claimed twice; and every stage together sums to the covered time, so a
+  /// breakdown chart adds up.
+  Map<SleepStage, Duration> _perStage(List<SleepSegmentSample> group) {
+    var claimed = <({DateTime start, DateTime end})>[];
+    final out = <SleepStage, Duration>{};
+
+    for (final stage in SleepStage.bySpecificity) {
+      final intervals = _mergeWhere(group, (candidate) => candidate == stage);
+      if (intervals.isEmpty) continue;
+      final free = _total(_subtract(intervals, claimed));
+      if (free > Duration.zero) out[stage] = free;
+      claimed = _merge([...claimed, ...intervals]);
     }
-    return total;
+    return out;
   }
+
+  /// Merged intervals of every segment whose stage passes [matches].
+  List<({DateTime start, DateTime end})> _mergeWhere(
+    List<SleepSegmentSample> group,
+    bool Function(SleepStage stage) matches,
+  ) => _merge([
+    for (final s in group)
+      if (matches(s.stage)) (start: s.start, end: s.end),
+  ]);
 
   /// Collapses intervals into non-overlapping, ascending spans. Touching
   /// intervals merge: 01:00–02:00 then 02:00–03:00 is one two-hour stretch.
@@ -189,6 +204,40 @@ class SleepEpisodeAggregator {
     }
     merged.add((start: start, end: end));
     return merged;
+  }
+
+  /// [from] with every part of [remove] cut out. Both must already be merged.
+  List<({DateTime start, DateTime end})> _subtract(
+    List<({DateTime start, DateTime end})> from,
+    List<({DateTime start, DateTime end})> remove,
+  ) {
+    if (remove.isEmpty) return from;
+
+    final out = <({DateTime start, DateTime end})>[];
+    for (final span in from) {
+      var cursor = span.start;
+      for (final cut in remove) {
+        if (!cut.end.isAfter(cursor)) continue;
+        if (!cut.start.isBefore(span.end)) break;
+        if (cut.start.isAfter(cursor)) {
+          out.add((start: cursor, end: cut.start));
+        }
+        if (cut.end.isAfter(cursor)) cursor = cut.end;
+        if (!cursor.isBefore(span.end)) break;
+      }
+      if (cursor.isBefore(span.end)) {
+        out.add((start: cursor, end: span.end));
+      }
+    }
+    return out;
+  }
+
+  Duration _total(List<({DateTime start, DateTime end})> intervals) {
+    var total = Duration.zero;
+    for (final interval in intervals) {
+      total += interval.end.difference(interval.start);
+    }
+    return total;
   }
 
   DateTime _night(DateTime t) => DateTime(t.year, t.month, t.day);

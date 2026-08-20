@@ -107,6 +107,8 @@ final class ParityEncoder {
 	private function night(NightSleep $night): array {
 		$sources = $night->sources;
 		sort($sources);
+		$stages = $night->perStageMillis;
+		ksort($stages);
 
 		return [
 			'night' => $night->night,
@@ -117,6 +119,10 @@ final class ParityEncoder {
 			'isMainSleep' => $night->isMainSleep,
 			'timeInBedMs' => $night->timeInBedMillis,
 			'efficiency' => $night->efficiency,
+			// The per-stage breakdown is a partition with invariants of its own
+			// — the sleep stages must sum to totalSleepMs — so it belongs in the
+			// contract rather than being left to each reader.
+			'perStageMs' => $stages,
 			'sources' => $sources,
 		];
 	}

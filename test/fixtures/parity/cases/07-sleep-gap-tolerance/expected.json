@@ -9,6 +9,9 @@
       "isMainSleep": true,
       "timeInBedMs": null,
       "efficiency": null,
+      "perStageMs": {
+        "light": 3600000
+      },
       "sources": [
         "com.sec.android.app.shealth"
       ]
@@ -22,6 +25,10 @@
       "isMainSleep": true,
       "timeInBedMs": null,
       "efficiency": null,
+      "perStageMs": {
+        "deep": 13500000,
+        "light": 6000000
+      },
       "sources": [
         "com.sec.android.app.shealth"
       ]
