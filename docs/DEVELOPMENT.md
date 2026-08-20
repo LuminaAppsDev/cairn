@@ -26,7 +26,10 @@ lib/                       → Flutter app source (Dart)
 test/                      → Dart/Flutter tests
 android/ ios/              → platform projects (Android + iOS only)
 docs/                      → DESIGN.md (source of truth), this file
+nextcloud_app/             → the read-only Nextcloud web app (PHP + Vue, AGPL — §4, §5)
+tool/                      → repo tooling (Python); incl. the dev-data generator
 analysis_options.yaml      → strict lint config (very_good_analysis + strict-*)
+.flake8                    → flake8 aligned to black's 88 columns (tool/*.py)
 ```
 
 The `lib/src/*` boundary files are **abstract interfaces** around every native
@@ -145,52 +148,116 @@ v2 and secure storage assume TLS.
 
 ---
 
-## 4. Nextcloud web app (PHP + Vue) — later stage
+## 4. Nextcloud web app (PHP + Vue)
 
 A separate, **read-only** consumer of the `/Cairn/` files, installed onto the
-user's own Nextcloud (DESIGN.md §7). Not part of v1; set this up only when
-starting the v1.5 phase (DESIGN.md §15).
+user's own Nextcloud (DESIGN.md §7). It lives in [`nextcloud_app/`](../nextcloud_app/),
+which has its own [README](../nextcloud_app/README.md) and its own licence (§5).
 
 ### 4.1 Prerequisites
 
-| Tool | Notes |
-|---|---|
-| PHP | Match the target Nextcloud's supported PHP (8.1+ for current releases). |
-| Composer | PHP dependency manager. |
-| Node.js + npm | Builds the Vue frontend. |
-| A Nextcloud dev instance | See §4.2. |
+**Docker, and nothing else.** PHP, Composer and Node all run inside the dev
+container, so there is no host toolchain to match against the server's.
 
-### 4.2 A Nextcloud development instance
+(The container runs PHP 8.5, which is what Nextcloud 34 ships. If you also have
+PHP on your host it is probably a different minor — prefer the container for
+anything you intend to trust.)
 
-Use the maintained dev environment
-[`nextcloud-docker-dev`](https://github.com/juliusknorr/nextcloud-docker-dev),
-or bind-mount the app into a plain Nextcloud container's `custom_apps/`
-directory. The server's admin `occ` CLI is used to enable apps.
+### 4.2 Bring it up
 
-### 4.3 Scaffold, build, enable
+```bash
+nextcloud_app/dev up
+```
 
-- Generate the app skeleton from
-  <https://apps.nextcloud.com/developer/apps/generate>, or copy an existing
-  minimal app. It lives in a dedicated subtree of this repo
-  (proposed: `nextcloud_app/`).
-- `appinfo/info.xml` must declare the licence. Per the Nextcloud app store this
-  app is **AGPL-3.0-or-later** (`<licence>agpl</licence>`) — see §5.
-- Build:
+One command: starts a pinned Nextcloud, waits out its first-run install, enables
+the app, loads health data, and prints the URL — <http://localhost:8080>, user
+`admin`, password `admin`. It is idempotent, so re-running it is the way to
+recover a confused instance.
 
-  ```bash
-  composer install        # PHP deps
-  npm ci && npm run build  # Vue frontend bundle
-  ```
+The app is bind-mounted from your working tree, so the edit loop is *edit a PHP
+file, reload the page*. There is no build step and nothing to copy.
 
-- Enable on your dev instance:
+```
+./dev up [--no-seed]   Start it. Safe to re-run.
+./dev seed [DIR]       Reload health data.
+./dev refresh          Bump asset URLs after editing CSS, JS or an icon.
+./dev check            Read-only guard + info.xml schema validation.
+./dev status           Running? App enabled?
+./dev occ ARGS...      Any occ command, e.g. ./dev occ app:list
+./dev logs [-f]        Tail the server log.
+./dev shell            Root shell in the container.
+./dev down             Stop, keeping data.
+./dev reset            Destroy everything, including seeded data.
+```
 
-  ```bash
-  occ app:enable cairn
-  ```
+PHP and templates need nothing: save the file and reload. **Static assets — CSS,
+JavaScript, icons — need `./dev refresh`**, because Nextcloud serves them
+`immutable` with a year-long max-age and only a server-side cachebuster varies
+the URL. Skipping it means hunting for a hard reload in every browser.
 
-- **Version-track against Nextcloud majors.** Keep `info.xml`'s
-  `max-version` current or the app is disabled on server upgrade
-  (DESIGN.md §7).
+`up` also switches Nextcloud's local cache off. The image enables APCu, whose
+memory is per-process, so `occ` updates the database and the CLI's cache while
+the Apache worker keeps serving what it cached earlier — config changes appear
+to be accepted and then do nothing. On a single-user dev container that is a far
+worse trade than the lost caching.
+
+Earlier revisions of this document recommended
+[`nextcloud-docker-dev`](https://github.com/juliusknorr/nextcloud-docker-dev).
+It is a fine project, but it is a second repository to clone with its own
+conventions and it wants your app inside *its* workspace. `nextcloud_app/docker/compose.yaml`
+is around fifty readable lines instead, which is the better trade for one app.
+
+### 4.3 Health data for the dev instance
+
+`./dev seed` resolves a source in this order, first hit wins:
+
+1. the path you pass — `./dev seed ~/Downloads/Cairn`
+2. `CAIRN_SEED_DIR` in `nextcloud_app/docker/.env` (gitignored, created on first run)
+3. `nextcloud_app/dev-data/local/` — gitignored; drop an export in here
+4. a synthetic tree from `tool/generate_dev_health_data.py`, generated on demand
+
+Point any of them at the `Cairn` folder **itself** — the one holding
+`manifest.json` — not at its parent. That is the usual mistake.
+
+Because of step 4, a fresh clone with no data at all still comes up populated.
+The generated tree is not random noise: it plants, by date, every case where a
+plausible reader disagrees with the phone app about the same bytes (cumulative
+step snapshots, source priority beating a later ingest, a superseded weight
+correction, sleep gaps either side of the 60-minute episode tolerance,
+deliberately malformed lines). It prints what it planted and why.
+
+> **A real export is personal health data.** It never enters this repository:
+> `dev-data/` and `docker/.env` are gitignored, and `.githooks/pre-commit`
+> refuses them even if `git add -f` got past that (§6). Seeded data is copied
+> into a Docker volume — **`./dev reset` is how you erase it**; stopping the
+> container is not enough.
+
+### 4.4 Checks
+
+```bash
+nextcloud_app/dev check
+```
+
+Runs, inside the container:
+
+- **`tests/read_only_guard.php`** — a static scan proving the app has no write
+  path: no mutating filesystem call anywhere in `lib/`, no `fopen` in a mode
+  other than read, and `OCP\Files\*` imported only by the two classes allowed
+  to touch storage. It fails closed if it scanned nothing, because a guard that
+  reports all-clear while checking nothing is worse than no guard.
+- **`tests/validate_info_xml.php`** — validates `appinfo/info.xml` against the
+  app store's own schema (cached at `tests/fixtures/info.xsd`), and asserts the
+  licence is AGPL-3.0-or-later and that no write surface is declared.
+
+Both are plain PHP with no Composer and no PHPUnit, so they run anywhere `php`
+does. They fold into the PHPUnit suite when the read-path port brings one.
+
+### 4.5 Version-tracking against Nextcloud majors
+
+`info.xml`'s `max-version` must move with each Nextcloud major or the app is
+disabled on server upgrade (DESIGN.md §7). Bump it only after checking the app
+still enables against the new major, and move `docker/compose.yaml`'s pinned
+image — tag **and** digest — at the same time.
 
 Reference: Nextcloud Developer Manual —
 <https://docs.nextcloud.com/server/latest/developer_manual/>.
@@ -204,9 +271,28 @@ Reference: Nextcloud Developer Manual —
   **not** use the AGPL-licensed `nextcloud` Dart client — WebDAV and Login
   Flow v2 are implemented over the permissive `http` package — so importing it
   would relicense the whole app to AGPL.
-- The **Nextcloud web app links AGPL Nextcloud server code** and ships via the
-  NC app store, so its subtree carries its **own AGPL-3.0-or-later licence**.
-  MIT and AGPL coexist cleanly via per-directory licensing.
+- The **Nextcloud web app subtree carries its own AGPL-3.0-or-later licence**
+  (`nextcloud_app/LICENSE`, and `<licence>AGPL-3.0-or-later</licence>` in
+  `appinfo/info.xml`). MIT and AGPL coexist cleanly via per-directory licensing.
+
+  The reason is worth stating precisely, because two plausible ones are wrong.
+  **It is not an app-store rule** — the store's `info.xsd` accepts `MIT`,
+  `Apache-2.0`, `BSD-*`, `MPL-2.0` and more, and apps ship under those today.
+  **Nor is it the plugin-linking question** on its own: that is genuinely
+  unsettled, MIT is GPL-compatible either way, and Cairn never redistributes
+  Nextcloud — the user installs it.
+
+  What binds is the **frontend we bundle**. `@nextcloud/vue` and
+  `@nextcloud/vite-config` are AGPL-3.0-or-later; `@nextcloud/router`,
+  `@nextcloud/l10n` and `@nextcloud/initial-state` are GPL-3.0-or-later. Those
+  are compiled into the `js/` bundle the app ships, which is ordinary
+  distribution of a combined work and needs no linking theory at all. Using the
+  Nextcloud toolkit is a deliberate choice — it is what makes the app look and
+  behave like the rest of the server — and this licence is its consequence.
+
+  The corollary: an MIT web app is possible, but only by avoiding every
+  `@nextcloud/*` package, and that has to be decided before the frontend is
+  written rather than retrofitted.
 
 ---
 
@@ -218,8 +304,12 @@ Reference: Nextcloud Developer Manual —
 git config core.hooksPath .githooks
 ```
 
-It refuses to commit signing secrets (`key.properties`, keystores) even if
-`git add -f` bypassed `.gitignore`.
+It refuses to commit, even if `git add -f` bypassed `.gitignore`:
+
+- **signing secrets** — `key.properties`, keystores, `.p12`/`.pfx`;
+- **personal health data** — anything under `nextcloud_app/dev-data/`,
+  `nextcloud_app/docker/.env`, and any `.jsonl` outside `test/fixtures/`. A
+  leaked signing key can be rotated; a leaked health history cannot.
 
 The pre-commit gate is binding — see [CLAUDE.md](../CLAUDE.md):
 

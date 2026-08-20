@@ -391,13 +391,24 @@ because the on-disk format is the one genuinely expensive thing to change
   incl. screenshots, are ready); complete the store declarations/build for any
   other channel(s) pursued.
 
-### Phase 7 — Nextcloud web app (v1.5) ⬜
+### Phase 7 — Nextcloud web app (v1.5) 🚧
 
 - **Goal:** an optional, read-only second frontend with server-side
   aggregation.
 - **Scope:** read-only PHP + Vue app (§7) in its own subtree under
   **AGPL-3.0-or-later** (see `DEVELOPMENT.md` §5); roll-ups computed
   server-side; basic charts; version-tracked against Nextcloud majors.
+- **Done:** the subtree `nextcloud_app/` exists with a one-command Docker dev
+  environment (`nextcloud_app/dev up`), a synthetic health-data generator so a
+  fresh clone comes up populated without anyone's real export, and a skeleton
+  that locates, lists and decodes the `/Cairn/` shards read-only — with the
+  read-only property enforced statically rather than asserted.
+- **Remaining:** port the §4.3 read semantics to PHP (last-ingested-wins,
+  source-priority dedup, sleep-episode aggregation) behind a **shared
+  golden-fixture harness consumed by both the Dart and PHP readers** — the two
+  frontends must agree on the same bytes, and only a shared fixture proves it;
+  then the JSON API, the Vue dashboard and charts; then app-store packaging and
+  a Nextcloud-major compatibility matrix in CI.
 - **Exit:** installs on a user Nextcloud, renders aggregates from `/Cairn/`,
   never writes.
 

@@ -6,6 +6,166 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- **`nextcloud_app/dev refresh`, and the reason a dev instance needed it.**
+  Nextcloud serves app assets with `Cache-Control: max-age=15778463, immutable`,
+  which tells the browser never to revalidate them, and the only thing that
+  varies the URL is a `?v=<md5(appVersion)>-<cachebuster>` suffix the server
+  controls. Editing a stylesheet therefore changed nothing on screen until a
+  hard reload, in every browser under test. `refresh` bumps the cachebuster, and
+  `up` bumps it too so a restart always serves what is on disk. PHP and
+  templates never needed it — they are read on every request.
+
+  Setting the `debug` system config would drop the suffix entirely, which sounds
+  like the fix and is the opposite of one: with no query string and an
+  `immutable` header the browser has even less reason to look again.
+
+  Fixing it turned up a second, larger problem. The image configures APCu as
+  Nextcloud's local cache, and APCu memory is per-process: `occ` runs in the CLI
+  process and updates the database and *its* cache, while the Apache worker goes
+  on serving the value it cached earlier. Bumping the cachebuster took effect
+  only intermittently — six rapid bumps produced three distinct URLs — and the
+  same silent staleness applies to every `occ config:*` change, not just this
+  one. `up` now switches APCu off, after which six rapid bumps produce six
+  distinct URLs. That has to be done by emptying `config/apcu.config.php` *and*
+  then deleting the key: `occ config:system:delete memcache.local` reports
+  success while only editing `config.php`, the separate file re-supplies the
+  value on the next request, and Nextcloud writes its whole merged config view
+  back to `config.php` on any `set` — so each half alone leaves the value in
+  place. Nextcloud now warns that no memory cache is configured; on a throwaway
+  single-user container that is much the cheaper of the two problems.
+
+  `up` also chowns `custom_apps` to the web-server user, and disables the
+  first-run wizard. The first is a defect this compose file introduced:
+  bind-mounting the app at `custom_apps/cairn` makes Docker create the parent
+  directory itself, owned by root, before the image's entrypoint would have
+  created and chowned it — so Nextcloud had an apps path it was told was
+  writable and was not, and **Settings › Apps returned a 500 on every visit**.
+  Confirmed unrelated to this app by reproducing it with Cairn disabled. It is
+  worth fixing here precisely because the app still worked: the page it breaks
+  is the one a contributor opens to check their app is listed, and it points the
+  blame somewhere else entirely.
+
+- **The app page renders on an opaque, centred sheet, and the header icon is
+  white.** Three things were wrong once it was looked at in a browser rather
+  than in `curl` output.
+
+  Nextcloud's `#content` is transparent and shows the user's background image
+  straight through, so the page's muted text — `--color-text-maxcontrast`, used
+  for column headers and the explanatory note — was being read against a photo.
+  Real apps avoid this by rendering into an opaque app-content area; this page
+  now does the same with a single sheet on `--color-main-background`, which also
+  fixes it for dark mode and for Theming's custom backgrounds. Verified under an
+  emulated `prefers-color-scheme: dark`: the sheet turns near-black and the text
+  inverts, because not one literal colour appears in the stylesheet.
+
+  The sheet is centred rather than pinned to the left edge, and capped at
+  1040px. At a 430px viewport it still fits, and the shard table scrolls inside
+  its own box rather than making the page scroll sideways.
+
+  The navigation icon was black on the blue header because it was authored with
+  `fill="currentColor"` — which has nothing to inherit from when Nextcloud loads
+  it through an `<img>`, so it resolves to black. Nextcloud applies no colour
+  filter of its own (confirmed: `filter: none` on the icon of every app), and
+  every first-party `img/app.svg` is authored white; `files/img/app.svg` is
+  literally `fill="#fff"`. It is now white, with `img/app-dark.svg` added as the
+  dark-on-light variant that 25 of the bundled apps also ship.
+
+  The app *name* beside it was never actually bold: its computed `font-weight`
+  is 500, identical to Files, Photos and Dashboard, because Nextcloud renders it
+  from its own current-app button. What made it look heavier was the black icon
+  next to white text; matching the icon resolved the appearance without
+  touching the label.
+
+- **The Nextcloud web app subtree (`nextcloud_app/`), with a development
+  environment that needs only Docker.** `nextcloud_app/dev up` starts a pinned
+  Nextcloud, waits out its first-run install, enables the app, loads health data
+  and prints the URL. The app is bind-mounted from the working tree, so the edit
+  loop is *edit a PHP file, reload the page* — no build step and nothing to copy.
+
+  One container, not two: the app reads *files* and never touches the database,
+  so SQLite costs nothing observable and removes a service, a healthcheck and a
+  startup-ordering problem. It also makes `dev reset` honest — `down -v` really
+  does return you to nothing, which matters because seeded health data lives in
+  that volume.
+
+  No Dockerfile, deliberately. The official Nextcloud image must start as root
+  to fix permissions before dropping to `www-data`, which collides head-on with
+  this repo's rule that every Dockerfile carries a `USER` instruction. Consuming
+  the stock image from compose sidesteps that rather than making an exception to
+  it; the pinning rule still binds and is honoured by tag *and* digest.
+
+  The published port is bound to `127.0.0.1` explicitly. Compose's short port
+  syntax defaults to `0.0.0.0`, which would have put a Nextcloud whose admin
+  password is literally `admin` — and whose volume may hold a real health export
+  — on every interface of the machine; `NEXTCLOUD_TRUSTED_DOMAINS` is no defence
+  there, because a spoofed `Host` header satisfies it. Confirmed by checking that
+  the instance answers on `localhost` and refuses the connection on the host's
+  LAN address, with and without a spoofed header.
+
+  `app:enable` is verified rather than trusted: it can report success while
+  Nextcloud rejects the app for a version mismatch, so `up` re-reads `app:list`
+  and fails loudly if the app is absent. Earlier revisions of `DEVELOPMENT.md`
+  recommended `nextcloud-docker-dev`; that is a second repository to clone with
+  its own conventions, wanting the app inside *its* workspace, which is the
+  opposite of the one-command goal.
+
+- **`tool/generate_dev_health_data.py`**, so a fresh clone comes up populated
+  without anyone's real export. The only genuine `/Cairn/` folder is a person's
+  health history and can never be committed, which would otherwise leave a
+  first-time contributor with five blank screens and no way to tell a working
+  reader from a broken one.
+
+  It is not a random-noise generator. Each case where a plausible-looking reader
+  silently disagrees with the mobile app about the same bytes is planted by its
+  own named function, on a fixed date, with a printed explanation — cumulative
+  whole-day step snapshots that must resolve to the newest rather than the sum,
+  source priority outranking a *later* ingest timestamp, a superseded weight
+  correction, provenance that is all-or-nothing (a `source_name` with no
+  `modality` yields *no* source), sleep windows on both sides of the 60-minute
+  episode gap, segments deduplicated with the stage deliberately excluded from
+  the key, and seven kinds of malformed line. Output is deterministic for a
+  given seed, verified by generating twice and diffing.
+
+  The planted catalogue is the specification the PHP read-path port will be held
+  to, which is why it exists before the port rather than after.
+
+- **A read-only guarantee that is enforced rather than asserted.**
+  `nextcloud_app/tests/read_only_guard.php` statically refuses any mutating
+  filesystem call in `lib/`, any `fopen` in a mode other than read, and any
+  `OCP\Files\*` import outside the two classes allowed to touch storage — so no
+  writable handle can escape into code that might use it. It fails closed if it
+  scanned zero files, because a guard reporting all-clear while checking nothing
+  is worse than no guard; both behaviours were verified against a deliberately
+  bad file and an empty tree. `tests/validate_info_xml.php` validates
+  `appinfo/info.xml` against the app store's own schema and asserts the licence
+  and the absence of any declared write surface. Both are plain PHP — no
+  Composer, no PHPUnit, no server — so they run anywhere `php` does.
+
+  Read-only is the app's whole contract (`DESIGN.md` §7): a second writer turns a
+  folder of append-only shards into a folder of Nextcloud conflict copies. The
+  dev container additionally mounts the app `:ro`, verified by watching a `touch`
+  inside it fail.
+
+  Two hardening details in the reader itself. Lines are read with a 64 KiB cap
+  rather than an unbounded `fgets()`: "only the mobile app writes here" is a
+  design intention, not an enforced boundary — the folder is ordinary Nextcloud
+  storage the user can sync anything into — and one pathological line would
+  otherwise buffer into memory on every page load. An over-long line is consumed
+  without being held and counted once, not once per chunk; a planted 5 MB line
+  renders in 0.2 s at 12 MB RSS. The cap is passed as `MAX_LINE_BYTES + 1`
+  because `fgets($h, $n)` reads `$n - 1` bytes, so the constant means what it
+  says; verified at exactly 65535, 65536 and 65537 bytes. And `readShard()`
+  validates its own `$day` argument rather than trusting the caller: today it is
+  only ever reached from a pattern-matched directory listing, but the method is
+  one "show me this day" feature away from taking a request parameter, and a
+  `../` in it would then walk out of the metric folder.
+
+- **`.flake8`, aligning flake8 to black's 88 columns.** flake8 defaults to 79
+  while black wraps at 88, so a black-formatted file could only satisfy both by
+  accident — the existing `tool/*.py` pass only because they happen to stay
+  under 79. Black is the canonical authority per `CLAUDE.md`, so flake8 is
+  aligned to it rather than fought.
+
 - **A CI workflow that fires on every branch push**
   (`.forgejo/workflows/ci.yml`). Until now `release.yml` was the only
   workflow and it fires solely on a `vX.Y.Z` tag, so the first automated
@@ -72,6 +232,41 @@ All notable changes to this project are documented in this file.
   deliberately wrong sum makes the wrapper refuse to run.
 
 ### Changed
+
+- **`docs/DEVELOPMENT.md` §5 gives the right reason for the AGPL subtree.** It
+  claimed the licence was an app-store requirement. It is not: the store's
+  `info.xsd` enumerates `MIT`, `Apache-2.0`, `BSD-*`, `MPL-2.0` and others, and
+  apps ship under those today. The plugin-linking question does not force it
+  either — that is unsettled, MIT is GPL-compatible regardless, and Cairn never
+  redistributes Nextcloud.
+
+  What actually binds is the frontend the app bundles: `@nextcloud/vue` and
+  `@nextcloud/vite-config` are AGPL-3.0-or-later, and `@nextcloud/router`,
+  `/l10n` and `/initial-state` are GPL-3.0-or-later, all compiled into the `js/`
+  bundle that ships — ordinary distribution of a combined work, no linking
+  theory required. The conclusion is unchanged and `info.xml` carries
+  `AGPL-3.0-or-later` (the SPDX form, valid since the schema's `min-version` 31,
+  rather than the deprecated `agpl`). The corollary is now written down: an MIT
+  web app is possible, but only by avoiding every `@nextcloud/*` package, and
+  that has to be decided before the frontend is written.
+
+- **The pre-commit hook refuses personal health data, not only signing secrets.**
+  It now rejects anything staged under `nextcloud_app/dev-data/`,
+  `nextcloud_app/docker/.env`, or any `.jsonl` outside `test/fixtures/` — the
+  export's actual payload, and the realistic way a stray shard copied "just to
+  look at" would leak. Both paths are gitignored already; the hook is the layer
+  that survives `git add -f`. A leaked signing key can be rotated; a leaked
+  health history cannot.
+
+  It also reads the staged list as `git -c core.quotePath=false diff --cached
+  --name-only -z`, which is load-bearing rather than tidiness. With Git's
+  defaults, a path containing any non-ASCII byte, a backslash or a quote arrives
+  C-escaped and wrapped in double quotes — `édata.jsonl` comes through as
+  `"\303\251data.jsonl"`. Both guards anchor their patterns at each end, so the
+  added quotes defeat them simultaneously and the file sails through. Confirmed
+  by staging exactly that filename against the previous version and watching it
+  pass; it is now caught. NUL delimiting additionally stops a path containing a
+  newline from being read as two paths.
 
 - **Simplified the F-Droid recipe's build steps** at the fdroiddata reviewer's
   request: the Flutter SDK goes on `PATH` instead of being referenced through a

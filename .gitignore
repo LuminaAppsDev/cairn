@@ -91,3 +91,16 @@ lcov.info
 
 # FVM Version Cache
 .fvm/
+
+# Nextcloud app (PHP + Vue)
+nextcloud_app/vendor/
+nextcloud_app/node_modules/
+nextcloud_app/js/
+nextcloud_app/.php-cs-fixer.cache
+nextcloud_app/.phpunit.cache/
+
+# Nextcloud app dev environment. dev-data/ can hold a real health export and
+# docker/.env points at one, so neither may ever be committed. The pre-commit
+# hook refuses them even if --force got past this file.
+nextcloud_app/dev-data/
+nextcloud_app/docker/.env

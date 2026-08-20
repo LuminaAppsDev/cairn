@@ -1,0 +1,53 @@
+# SPDX-FileCopyrightText: 2026 Max Fiedler
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# A throwaway Nextcloud for developing the Cairn app against.
+#
+# ONE CONTAINER, ON PURPOSE. The app reads files and never touches the database,
+# so running Postgres alongside would add a service, a healthcheck and a startup
+# ordering problem in exchange for fidelity this app cannot observe. SQLite keeps
+# `reset` honest too: `down -v` really does return you to nothing.
+#
+# NO DOCKERFILE, ALSO ON PURPOSE. The official Nextcloud image has to start as
+# root to fix permissions before dropping to www-data, which collides with the
+# rule that every Dockerfile in this repository carries a USER instruction.
+# Consuming the stock image sidesteps that rather than making an exception to it.
+# The pinning rule still applies and is honoured below: tag *and* digest.
+#
+# Do not point anything you care about at this. The admin password is `admin`.
+
+name: cairn-dev
+
+services:
+  nextcloud:
+    # Pinned by tag and digest. Bump both together, and only after checking the
+    # app still enables — info.xml's max-version has to move with it.
+    image: nextcloud:34.0.3-apache@sha256:368cd1c75bc4a32c2aee8a119cae31bcebff80c374782f404c440c3295726814
+    ports:
+      # Bound to loopback explicitly. Compose's short syntax defaults to
+      # 0.0.0.0, which would put a Nextcloud whose admin password is literally
+      # "admin" — and whose volume may hold a real health export — on every
+      # interface of the machine. NEXTCLOUD_TRUSTED_DOMAINS is no defence: a
+      # spoofed Host header satisfies it. Change this only if you know why.
+      - "127.0.0.1:${CAIRN_DEV_PORT:-8080}:80"
+    environment:
+      # No DB service to wait for, and no credentials to invent.
+      SQLITE_DATABASE: nextcloud.db
+      NEXTCLOUD_ADMIN_USER: "${CAIRN_ADMIN_USER:-admin}"
+      NEXTCLOUD_ADMIN_PASSWORD: "${CAIRN_ADMIN_PASSWORD:-admin}"
+      # Both spellings, because people reach this by either.
+      NEXTCLOUD_TRUSTED_DOMAINS: "localhost 127.0.0.1"
+    volumes:
+      # The server's own tree. Anonymous to the host and destroyed by `reset`,
+      # which matters here: seeded health data lands inside it.
+      - nextcloud_html:/var/www/html
+      # The app itself, live from the working tree — edit a PHP file and reload
+      # the page, no rebuild and no copy step.
+      #
+      # Mounted read-only as a structural backstop to the read-only guarantee the
+      # code already makes (see tests/read_only_guard.php). Nothing in the app
+      # writes here, so nothing legitimate can notice.
+      - ../:/var/www/html/custom_apps/cairn:ro
+
+volumes:
+  nextcloud_html:

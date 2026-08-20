@@ -1,0 +1,484 @@
+#!/usr/bin/env bash
+#
+# SPDX-FileCopyrightText: 2026 Max Fiedler
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# The Cairn Nextcloud app's development environment, in one script.
+#
+# The goal is that a person who has never seen this repository can run
+# `nextcloud_app/dev up`, wait, and have a working Nextcloud with the app enabled
+# and real-shaped health data in it. Everything else here exists to keep that
+# promise true on the second run and the tenth.
+#
+#   ./dev up        start it, install it, enable the app, load data
+#   ./dev help      everything else
+#
+# Docker is the only prerequisite.
+
+set -euo pipefail
+
+APP_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd -- "${APP_ROOT}/.." && pwd)"
+COMPOSE_FILE="${APP_ROOT}/docker/compose.yaml"
+ENV_FILE="${APP_ROOT}/docker/.env"
+ENV_EXAMPLE="${APP_ROOT}/docker/.env.example"
+GENERATED_DIR="${APP_ROOT}/dev-data/generated"
+LOCAL_DIR="${APP_ROOT}/dev-data/local"
+GENERATOR="${REPO_ROOT}/tool/generate_dev_health_data.py"
+
+# How long to wait for Nextcloud's first-run install. It unpacks the whole
+# server tree into the volume, which on a cold cache is genuinely slow.
+INSTALL_TIMEOUT_SECONDS=300
+
+# Metric folders a valid Cairn tree contains at least one of.
+METRIC_SLUGS=(heart-rate steps sleep activity weight)
+
+say() { printf '%s\n' "$*"; }
+step() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
+warn() { printf 'warning: %s\n' "$*" >&2; }
+
+# Every failure exits with an actionable second line. A dev environment that
+# fails opaquely costs more than one that does not exist.
+die() {
+	printf 'error: %s\n' "$1" >&2
+	if [[ $# -gt 1 ]]; then
+		printf '%s\n' "$2" >&2
+	fi
+	exit 1
+}
+
+compose() {
+	docker compose --file "${COMPOSE_FILE}" "$@"
+}
+
+# occ, as the web-server user, without a TTY so this works from scripts and CI.
+occ() {
+	compose exec -T --user www-data nextcloud php occ "$@"
+}
+
+# Read a KEY=VALUE out of docker/.env without sourcing it: that file is
+# hand-edited and a stray backtick should not run anything.
+env_value() {
+	local key="$1" value
+	[[ -f "${ENV_FILE}" ]] || return 0
+	value="$(sed -n -E "s/^[[:space:]]*${key}=(.*)$/\1/p" "${ENV_FILE}" | tail -1)"
+	# Strip one layer of surrounding quotes, if present.
+	value="${value%\"}"
+	value="${value#\"}"
+	value="${value%\'}"
+	value="${value#\'}"
+	printf '%s' "${value}"
+}
+
+# The shell environment wins over docker/.env, matching how compose itself
+# resolves variables.
+setting() {
+	local key="$1" fallback="${2:-}" from_env
+	if [[ -n "${!key:-}" ]]; then
+		printf '%s' "${!key}"
+		return 0
+	fi
+	from_env="$(env_value "${key}")"
+	printf '%s' "${from_env:-${fallback}}"
+}
+
+admin_user() { setting CAIRN_ADMIN_USER admin; }
+admin_password() { setting CAIRN_ADMIN_PASSWORD admin; }
+dev_port() { setting CAIRN_DEV_PORT 8080; }
+base_url() { printf 'http://localhost:%s' "$(dev_port)"; }
+
+# Called once from main(), in the main shell. Doing this inside the accessors
+# would be useless: they run inside command substitutions, where `die`'s exit
+# kills only the subshell and the caller carries on with an empty value.
+validate_settings() {
+	local user port
+	user="$(admin_user)"
+	port="$(dev_port)"
+
+	# The admin name becomes a path component inside the container, and that
+	# path is handed to `rm -rf` in cmd_seed. Quoting stops a value from
+	# *executing* anything, but it does not stop `../../..` from resolving
+	# somewhere else first, so the value is constrained rather than just quoted.
+	# `.` is allowed because real user names contain it, which means the
+	# character class alone still admits `.` and `..` — and `..` is precisely the
+	# traversal this check exists to stop: it would turn the seed target into
+	# /var/www/html/data/../files/Cairn and hand that to `rm -rf`. Reject any
+	# name that is only dots, separately from the character check.
+	if ! [[ "${user}" =~ ^[A-Za-z0-9._-]+$ ]] || [[ "${user}" =~ ^\.+$ ]]; then
+		die "CAIRN_ADMIN_USER '${user}' is not a plain user name." "Use only letters, digits, dot, dash and underscore, and not just dots — it becomes a path inside the container."
+	fi
+	if ! [[ "${port}" =~ ^[0-9]+$ ]] || [[ "${port}" -lt 1 ]] || [[ "${port}" -gt 65535 ]]; then
+		die "CAIRN_DEV_PORT '${port}' is not a port number." "Set it to a value between 1 and 65535 in nextcloud_app/docker/.env."
+	fi
+}
+
+require_docker() {
+	command -v docker >/dev/null 2>&1 \
+		|| die "docker is not installed." "Install Docker, then run this again: https://docs.docker.com/engine/install/"
+	docker compose version >/dev/null 2>&1 \
+		|| die "the Docker Compose v2 plugin is missing." "Install docker-compose-plugin; the old standalone docker-compose will not work."
+	docker info >/dev/null 2>&1 \
+		|| die "the Docker daemon is not reachable." "Start Docker (or add yourself to the 'docker' group) and try again."
+}
+
+ensure_env_file() {
+	if [[ -f "${ENV_FILE}" ]]; then
+		return 0
+	fi
+	cp "${ENV_EXAMPLE}" "${ENV_FILE}"
+	say "Created docker/.env from the example. It is gitignored; edit it to point"
+	say "CAIRN_SEED_DIR at your own Cairn export."
+}
+
+container_running() {
+	[[ -n "$(compose ps --quiet --status running nextcloud 2>/dev/null)" ]]
+}
+
+check_port_free() {
+	local port
+	port="$(dev_port)"
+	container_running && return 0
+	if (exec 3<>"/dev/tcp/127.0.0.1/${port}") 2>/dev/null; then
+		exec 3>&- 3<&-
+		die "port ${port} is already in use by something else." "Set CAIRN_DEV_PORT in nextcloud_app/docker/.env to a free port."
+	fi
+	return 0
+}
+
+wait_for_install() {
+	local waited=0
+	step "Waiting for Nextcloud to install itself"
+	while [[ "${waited}" -lt "${INSTALL_TIMEOUT_SECONDS}" ]]; do
+		# occ exits non-zero until the server tree is unpacked and configured,
+		# so its failure is the normal state here rather than an error.
+		if occ status --output=json 2>/dev/null | grep -q '"installed":true'; then
+			say "Nextcloud is up after ${waited}s."
+			return 0
+		fi
+		sleep 3
+		waited=$((waited + 3))
+		if [[ $((waited % 30)) -eq 0 ]]; then
+			say "  still installing (${waited}s)..."
+		fi
+	done
+
+	warn "Nextcloud did not finish installing within ${INSTALL_TIMEOUT_SECONDS}s."
+	say "Last 50 lines of the container log:" >&2
+	compose logs --tail=50 nextcloud >&2 || true
+	die "the dev instance never became ready." "Try 'nextcloud_app/dev reset' for a clean slate, or read the log above."
+}
+
+# Turn off APCu as Nextcloud's local cache.
+#
+# The image enables it, and APCu memory is per-process: `occ` runs in the CLI
+# process and updates the database and *its* cache, while the Apache worker goes
+# on serving the value it cached earlier. A config change then looks like it was
+# accepted and quietly does nothing — verified here, where bumping the asset
+# cachebuster took effect only intermittently until this was switched off.
+#
+# It has to be done by emptying config/apcu.config.php: `occ config:system:delete
+# memcache.local` reports success but only edits config.php, and that separate
+# file re-supplies the value on the next request. config/ is in the image's
+# upgrade-exclude list, so this survives restarts.
+#
+# Nextcloud will warn that no memory cache is configured. On a throwaway
+# single-user dev container that warning is much the cheaper of the two problems.
+disable_apcu() {
+	# A quoted heredoc, so $CONFIG reaches PHP as written rather than being
+	# expanded by either shell on the way.
+	compose exec -T nextcloud tee /var/www/html/config/apcu.config.php >/dev/null <<'PHP_CONFIG'
+<?php
+$CONFIG = array();
+PHP_CONFIG
+	compose exec -T nextcloud chown www-data:www-data /var/www/html/config/apcu.config.php
+
+	# And out of config.php, which needs doing second. Nextcloud merges every
+	# config/*.config.php into one view and writes that whole merged view back to
+	# config.php on any `occ config:system:set` — so by the time we get here the
+	# APCu line has usually been copied across, and emptying the source file
+	# alone would leave it in place.
+	occ config:system:delete memcache.local >/dev/null 2>&1 || true
+}
+
+# Hand custom_apps back to the web-server user.
+#
+# Bind-mounting the app at custom_apps/cairn makes Docker create the parent
+# custom_apps directory itself, owned by root — before the image's entrypoint
+# would have created and chowned it. Nextcloud then has an apps path it has been
+# told is writable but is not, and Settings › Apps returns a 500 ("Cannot write
+# into apps directory") on every visit. The app itself is unaffected, which is
+# exactly what makes this worth fixing here: it breaks a page a contributor will
+# open to check their app is listed, and points the blame somewhere else.
+#
+# Only the parent is touched. The mount below it stays read-only.
+fix_custom_apps_owner() {
+	compose exec -T nextcloud chown www-data:www-data /var/www/html/custom_apps
+}
+
+enable_app() {
+	step "Enabling the Cairn app"
+	# Quieter logs and no sample files in the way of the seeded data.
+	occ config:system:set loglevel --value=2 --type=integer >/dev/null
+	occ config:system:set skeletondirectory --value="" >/dev/null
+
+	disable_apcu
+	fix_custom_apps_owner
+
+	# The first-run wizard opens a full-screen modal over whatever you navigated
+	# to, on every fresh instance. Useful for a real user, pure noise for someone
+	# who just ran `dev up` to look at their app.
+	occ app:disable firstrunwizard >/dev/null 2>&1 || true
+
+	occ app:enable cairn >/dev/null 2>&1 || true
+
+	# Verify rather than trust. `app:enable` can report success while the app is
+	# rejected for a version mismatch, and a dev environment that claims to have
+	# enabled the app but did not is the single most confusing failure here.
+	if ! occ app:list --output=json 2>/dev/null | grep -q '"cairn"'; then
+		warn "The app did not enable. Nextcloud's own reason:"
+		occ app:enable cairn >&2 || true
+		die "the Cairn app is not enabled." "Usually appinfo/info.xml's <nextcloud max-version> is behind the container's version."
+	fi
+	say "Cairn is enabled."
+}
+
+# Resolve where the health data comes from, most explicit first. Echoes the
+# directory; callers treat empty as "nothing usable was found".
+resolve_seed_dir() {
+	local explicit="${1:-}" configured
+	if [[ -n "${explicit}" ]]; then
+		printf '%s' "${explicit}"
+		return 0
+	fi
+	configured="$(setting CAIRN_SEED_DIR)"
+	if [[ -n "${configured}" ]]; then
+		printf '%s' "${configured}"
+		return 0
+	fi
+	if [[ -f "${LOCAL_DIR}/manifest.json" ]]; then
+		printf '%s' "${LOCAL_DIR}"
+		return 0
+	fi
+	printf ''
+}
+
+# A Cairn tree has a manifest and at least one dated shard. Checking both stops
+# the most common mistake by far: pointing at the folder *containing* Cairn.
+validate_seed_dir() {
+	local dir="$1" slug
+	[[ -d "${dir}" ]] || die "seed directory '${dir}' does not exist." "$(seed_help)"
+	[[ -f "${dir}/manifest.json" ]] || die "no manifest.json in '${dir}'." "$(seed_help)"
+	for slug in "${METRIC_SLUGS[@]}"; do
+		if compgen -G "${dir}/${slug}/*/*.jsonl" >/dev/null; then
+			return 0
+		fi
+	done
+	die "no <metric>/<year>/<date>.jsonl shards under '${dir}'." "$(seed_help)"
+}
+
+seed_help() {
+	cat <<'HELP'
+Point it at the Cairn folder itself — the one holding manifest.json and the
+metric directories — not at its parent. Sources are tried in this order:
+  1. the path you pass:  ./dev seed /path/to/Cairn
+  2. CAIRN_SEED_DIR in nextcloud_app/docker/.env
+  3. nextcloud_app/dev-data/local/   (gitignored; drop an export in here)
+  4. a synthetic tree, generated automatically when none of the above exist
+HELP
+}
+
+generate_fixture() {
+	if [[ -f "${GENERATED_DIR}/manifest.json" ]]; then
+		return 0
+	fi
+	command -v python3 >/dev/null 2>&1 \
+		|| die "no seed data configured and python3 is missing, so none can be generated." "$(seed_help)"
+	step "Generating a synthetic Cairn tree"
+	say "No real export configured, so building one that never belonged to anybody."
+	python3 "${GENERATOR}" --out "${GENERATED_DIR}" --force
+}
+
+cmd_seed() {
+	local source_dir user target
+	source_dir="$(resolve_seed_dir "${1:-}")"
+	if [[ -z "${source_dir}" ]]; then
+		generate_fixture
+		source_dir="${GENERATED_DIR}"
+	fi
+	source_dir="$(cd -- "${source_dir}" && pwd)"
+	validate_seed_dir "${source_dir}"
+
+	container_running || die "the dev instance is not running." "Start it first: nextcloud_app/dev up"
+
+	user="$(admin_user)"
+	target="/var/www/html/data/${user}/files/Cairn"
+
+	step "Seeding health data"
+	# Printed in full and unabbreviated: when this is a real export, you should
+	# be able to see at a glance exactly whose data is about to be copied.
+	say "Source: ${source_dir}"
+
+	# Replace rather than merge, so the counts this prints describe the folder
+	# that now exists instead of the union of every seed ever run.
+	compose exec -T nextcloud rm -rf "${target}"
+	compose exec -T nextcloud mkdir -p "${target}"
+	compose cp "${source_dir}/." "nextcloud:${target}/"
+	# `compose cp` writes as root; Nextcloud reads as www-data.
+	compose exec -T nextcloud chown -R www-data:www-data "${target}"
+
+	say "Indexing..."
+	occ files:scan --path="/${user}/files/Cairn" --quiet 2>/dev/null \
+		|| occ files:scan "${user}" --quiet >/dev/null
+
+	local slug count total=0
+	for slug in "${METRIC_SLUGS[@]}"; do
+		count="$(find "${source_dir}/${slug}" -name '*.jsonl' 2>/dev/null | wc -l | tr -d ' ')"
+		total=$((total + count))
+		printf '  %-12s %4s shards\n' "${slug}" "${count}"
+	done
+	say "  ${total} shards in total."
+}
+
+cmd_up() {
+	local seed=1
+	if [[ "${1:-}" = "--no-seed" ]]; then
+		seed=0
+	fi
+
+	ensure_env_file
+	check_port_free
+
+	step "Starting the dev instance"
+	compose up --detach --wait --wait-timeout 120 nextcloud 2>/dev/null \
+		|| compose up --detach nextcloud
+
+	wait_for_install
+	enable_app
+	# So a restart always serves the assets currently on disk.
+	occ config:app:set theming cachebuster --value="$(date +%s%N)" >/dev/null
+	if [[ "${seed}" -eq 1 ]]; then
+		cmd_seed
+	fi
+
+	step "Ready"
+	say "  $(base_url)"
+	say "  user $(admin_user) / password $(admin_password)"
+	say ""
+	say "Open Cairn from the top navigation bar."
+	say "Edit any PHP file under nextcloud_app/ and reload — the app is mounted live."
+	say ""
+	say "  ./dev refresh  after editing CSS, JS or an icon (PHP needs no step)"
+	say "  ./dev check    run the read-only guard and validate info.xml"
+	say "  ./dev occ ...  run any occ command"
+	say "  ./dev reset    destroy the instance and everything seeded into it"
+}
+
+# Nextcloud serves app assets with `Cache-Control: max-age=15778463, immutable`,
+# so a browser is told never to revalidate them. The only thing that varies the
+# URL is the `?v=<md5(appVersion)>-<theming cachebuster>` suffix, and the app
+# version does not change while you are editing. Bumping the cachebuster is
+# therefore the supported way to make an edited stylesheet, script or icon
+# actually load — otherwise it takes a hard reload in every browser you test in.
+#
+# (Setting the `debug` system config would drop the suffix entirely, which
+# sounds better and is worse: with no query string and an `immutable` header,
+# the browser has even less reason to look again.)
+cmd_refresh() {
+	container_running || die "the dev instance is not running." "Start it first: nextcloud_app/dev up"
+	occ config:app:set theming cachebuster --value="$(date +%s%N)" >/dev/null
+	say "Asset URLs bumped. A normal reload now picks up CSS, JS and icon changes."
+	say "PHP and template changes never needed this — they are read on every request."
+}
+
+cmd_check() {
+	container_running || die "the dev instance is not running." "Checks run inside the container: nextcloud_app/dev up"
+	step "Read-only guard"
+	compose exec -T nextcloud php /var/www/html/custom_apps/cairn/tests/read_only_guard.php
+	step "info.xml"
+	compose exec -T nextcloud php /var/www/html/custom_apps/cairn/tests/validate_info_xml.php
+}
+
+cmd_reset() {
+	step "Destroying the dev instance"
+	# `down -v` removes the named volume, and with it the seeded health data.
+	# For a real export this is the erase step, not merely a cleanup.
+	compose down --volumes --remove-orphans
+	rm -rf "${GENERATED_DIR}"
+	say "Volume, container and generated fixtures are gone."
+	say "Run './dev up' for a clean instance."
+}
+
+cmd_status() {
+	if container_running; then
+		say "running at $(base_url) (user $(admin_user))"
+		if occ app:list --output=json 2>/dev/null | grep -q '"cairn"'; then
+			say "cairn: enabled"
+		else
+			say "cairn: NOT enabled — try './dev up'"
+		fi
+	else
+		say "not running. Start it with './dev up'."
+	fi
+}
+
+usage() {
+	cat <<'HELP'
+Cairn Nextcloud app — development environment
+
+  ./dev up [--no-seed]   Start Nextcloud, enable the app, load health data.
+                         Safe to re-run; it is idempotent.
+  ./dev seed [DIR]       Reload health data. Without DIR, resolves in order:
+                         CAIRN_SEED_DIR, dev-data/local/, then a generated tree.
+  ./dev refresh          Bump asset URLs after editing CSS, JS or an icon.
+                         PHP and templates never need this.
+  ./dev check            Run the read-only guard and validate appinfo/info.xml.
+  ./dev status           Is it running, and is the app enabled?
+  ./dev occ ARGS...      Run an occ command, e.g. ./dev occ app:list
+  ./dev logs [-f]        Tail the server log.
+  ./dev shell            A root shell in the container.
+  ./dev down             Stop it, keeping the data.
+  ./dev reset            Destroy it, including everything seeded into it.
+
+Configuration lives in nextcloud_app/docker/.env (gitignored, created on first
+run): CAIRN_SEED_DIR, CAIRN_DEV_PORT, CAIRN_ADMIN_USER, CAIRN_ADMIN_PASSWORD.
+
+Seeded health data lives in a Docker volume, never in this repository. If you
+seeded a real export, './dev reset' is how you erase it.
+HELP
+}
+
+main() {
+	local command="${1:-help}"
+	if [[ $# -gt 0 ]]; then
+		shift
+	fi
+	case "${command}" in
+		help | --help | -h)
+			usage
+			return 0
+			;;
+	esac
+
+	require_docker
+	validate_settings
+
+	case "${command}" in
+		up) cmd_up "$@" ;;
+		seed) cmd_seed "$@" ;;
+		check) cmd_check ;;
+		refresh) cmd_refresh ;;
+		status) cmd_status ;;
+		reset) cmd_reset ;;
+		occ) occ "$@" ;;
+		logs) compose logs "$@" nextcloud ;;
+		shell) compose exec nextcloud bash ;;
+		down) compose down ;;
+		*)
+			printf 'error: unknown command %s\n' "${command}" >&2
+			usage >&2
+			exit 1
+			;;
+	esac
+}
+
+main "$@"
