@@ -23,7 +23,7 @@ use OCA\Cairn\Reading\Model\HealthMetric;
  * frontends that disagree about the same bytes is the one failure this format
  * cannot tolerate (DESIGN.md §4.3).
  */
-class ManifestReader {
+final class ManifestReader {
 	/** What a manifest without a usable `format_version` is assumed to be. */
 	public const DEFAULT_FORMAT_VERSION = 1;
 
@@ -35,14 +35,19 @@ class ManifestReader {
 			return null;
 		}
 
+		// Each field is read once into a local and then tested. Testing one
+		// expression and returning another looks equivalent and is not: nothing
+		// guarantees the second read sees what the first did.
+		$formatVersion = $raw->format_version ?? null;
+		$generator = $raw->generator ?? null;
+		$updated = $raw->updated_date_time ?? null;
+
 		return new Manifest(
-			formatVersion: is_int($raw->format_version ?? null)
-				? $raw->format_version
+			formatVersion: is_int($formatVersion)
+				? $formatVersion
 				: self::DEFAULT_FORMAT_VERSION,
-			generator: is_string($raw->generator ?? null) ? $raw->generator : null,
-			updatedDateTime: is_string($raw->updated_date_time ?? null)
-				? $raw->updated_date_time
-				: null,
+			generator: is_string($generator) ? $generator : null,
+			updatedDateTime: is_string($updated) ? $updated : null,
 			syncAnchors: $this->syncAnchors($raw->sync_anchors ?? null),
 			devices: $this->devices($raw->devices ?? null),
 		);

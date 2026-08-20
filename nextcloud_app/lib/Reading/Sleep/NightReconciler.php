@@ -39,7 +39,7 @@ final class NightReconciler {
 	}
 
 	/**
-	 * @param list<SleepStageReading>   $stageReadings
+	 * @param list<SleepStageReading> $stageReadings
 	 * @param list<SleepEpisodeReading> $storedEpisodes
 	 *
 	 * @return list<NightSleep> in ascending onset order
@@ -61,7 +61,7 @@ final class NightReconciler {
 	}
 
 	/**
-	 * @param list<SleepStageReading>   $allStages
+	 * @param list<SleepStageReading> $allStages
 	 * @param list<SleepEpisodeReading> $storedEpisodes
 	 */
 	private function describe(

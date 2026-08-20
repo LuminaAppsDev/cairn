@@ -87,6 +87,20 @@ jobs:
           set -euo pipefail
           composer install --no-interaction --no-progress --prefer-dist
 
+      # Before the suite: a type error is cheaper to read as a psalm finding
+      # than as a test failure three layers down.
+      - name: Static analysis
+        run: |
+          set -euo pipefail
+          # No baseline, deliberately — a baseline records the mistakes that
+          # existed when it was written and permits them for ever.
+          vendor/bin/psalm --no-cache --no-progress
+
+      - name: Coding standard
+        run: |
+          set -euo pipefail
+          vendor/bin/php-cs-fixer fix --dry-run --diff
+
       # Cheap, dependency-free, and the two that guard the app's actual
       # contract. Run before the suite so a broken promise fails fast.
       - name: Read-only guard

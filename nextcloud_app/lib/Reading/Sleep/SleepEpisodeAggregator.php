@@ -214,7 +214,7 @@ final class SleepEpisodeAggregator {
 	/**
 	 * Merged intervals of every segment whose stage passes `$matches`.
 	 *
-	 * @param list<SleepStageReading>    $group
+	 * @param list<SleepStageReading> $group
 	 * @param callable(SleepStage): bool $matches
 	 *
 	 * @return list<array{\DateTimeImmutable, \DateTimeImmutable}>

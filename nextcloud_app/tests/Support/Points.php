@@ -60,7 +60,7 @@ final class Points {
 		?string $source = self::VENDOR,
 	): string {
 		return '{' . self::header('heart-rate', '1.0', $ingested, $source)
-			. ',"body":{"heart_rate":{"value":' . $value . ',"unit":"beats/min"},'
+			. ',"body":{"heart_rate":{"value":' . (string)$value . ',"unit":"beats/min"},'
 			. '"effective_time_frame":{"date_time":"' . self::iso($at) . '"}}}';
 	}
 
@@ -71,7 +71,7 @@ final class Points {
 		?string $source = self::VENDOR,
 	): string {
 		return '{' . self::header('body-weight', '2.0', $ingested, $source)
-			. ',"body":{"body_weight":{"value":' . $value . ',"unit":"kg"},'
+			. ',"body":{"body_weight":{"value":' . (string)$value . ',"unit":"kg"},'
 			. '"effective_time_frame":{"date_time":"' . self::iso($at) . '"}}}';
 	}
 
@@ -83,7 +83,7 @@ final class Points {
 		?string $source = self::VENDOR,
 	): string {
 		return '{' . self::header('step-count', '3.0', $ingested, $source)
-			. ',"body":{"step_count":{"value":' . $value . ',"unit":"steps"},'
+			. ',"body":{"step_count":{"value":' . (string)$value . ',"unit":"steps"},'
 			. '"effective_time_frame":{"time_interval":{"start_date_time":"' . self::iso($start)
 			. '","end_date_time":"' . self::iso($end) . '"}}}}';
 	}
@@ -122,7 +122,7 @@ final class Points {
 		return '{' . self::header('sleep-episode', '1.0', null, self::VENDOR)
 			. ',"body":{"effective_time_frame":{"time_interval":{"start_date_time":"'
 			. self::iso($start) . '","end_date_time":"' . self::iso($end) . '"}},'
-			. '"total_sleep_time":{"value":' . $totalMinutes . ',"unit":"min"},'
+			. '"total_sleep_time":{"value":' . (string)$totalMinutes . ',"unit":"min"},'
 			. '"is_main_sleep":true,"number_of_awakenings":99}}';
 	}
 }

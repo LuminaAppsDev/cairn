@@ -150,21 +150,32 @@ final class HealthQueryService {
 			$readings = [...$readings, ...$this->scalarsOn(HealthMetric::HeartRate, $day)];
 		}
 
-		/** @var array<string, list<float>> $byDay */
+		// Accumulated as the readings arrive rather than collected into per-day
+		// lists and reduced afterwards: there is then no empty-list case to
+		// reason about, and each value is visited once instead of four times.
+		/** @var array<string, array{min: float, max: float, sum: float, count: int}> $byDay */
 		$byDay = [];
 		foreach ($this->scalars->resolve($readings) as $reading) {
-			$byDay[Timestamps::dayKey($reading->at, $this->display)][] = $reading->value;
+			$day = Timestamps::dayKey($reading->at, $this->display);
+			$seen = $byDay[$day] ?? null;
+			$byDay[$day] = $seen === null
+				? ['min' => $reading->value, 'max' => $reading->value,
+					'sum' => $reading->value, 'count' => 1]
+				: ['min' => min($seen['min'], $reading->value),
+					'max' => max($seen['max'], $reading->value),
+					'sum' => $seen['sum'] + $reading->value,
+					'count' => $seen['count'] + 1];
 		}
 		ksort($byDay);
 
 		$stats = [];
-		foreach ($byDay as $day => $values) {
+		foreach ($byDay as $day => $spread) {
 			$stats[] = new DailyStat(
 				day: $day,
-				min: min($values),
-				max: max($values),
-				mean: array_sum($values) / count($values),
-				count: count($values),
+				min: $spread['min'],
+				max: $spread['max'],
+				mean: $spread['sum'] / (float)$spread['count'],
+				count: $spread['count'],
 			);
 		}
 

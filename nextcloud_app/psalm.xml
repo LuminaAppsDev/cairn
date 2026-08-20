@@ -1,0 +1,75 @@
+<?xml version="1.0"?>
+<!--
+  SPDX-FileCopyrightText: 2026 Max Fiedler
+  SPDX-License-Identifier: AGPL-3.0-or-later
+
+  Static analysis for the app's PHP. Every other language in this repository has
+  a real analyser — dart analyze, flake8/pylint/mypy, shellcheck — and until now
+  PHP had only `php -l`, which is a syntax check and would not notice a null
+  dereference or a wrong argument type.
+
+  There is deliberately no <baseline>: a baseline records the mistakes that
+  existed when it was written and quietly permits them for ever. Findings get
+  fixed, or annotated in place with the reason.
+-->
+<psalm
+	errorLevel="2"
+	resolveFromConfigFile="true"
+	findUnusedBaselineEntry="true"
+	findUnusedCode="false"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xmlns="https://getpsalm.org/schema/config"
+	xsi:schemaLocation="https://getpsalm.org/schema/config vendor/vimeo/psalm/config.xsd">
+	<projectFiles>
+		<directory name="lib"/>
+		<directory name="tests"/>
+		<ignoreFiles>
+			<directory name="vendor"/>
+		</ignoreFiles>
+	</projectFiles>
+
+	<!--
+		The OCP stubs come from nextcloud/ocp rather than a running server, which
+		is what lets this run in CI without Docker. Pinned to Nextcloud 32 —
+		the lowest version info.xml claims — so an API added in 33 or 34 is a
+		finding here rather than a broken install for somebody on 32.
+	-->
+	<extraFiles>
+		<directory name="vendor/nextcloud/ocp"/>
+	</extraFiles>
+
+	<issueHandlers>
+		<!--
+			`#[\Override]` is a PHP 8.3 attribute and info.xml declares 8.2 as
+			the floor, matching what Nextcloud 32 supports. Adding it would make
+			the app uninstallable for anyone on 8.2 in exchange for a compile-time
+			check — so the rule is off until the floor moves, not annotated away
+			file by file.
+		-->
+		<MissingOverrideAttribute errorLevel="suppress"/>
+
+		<!--
+			A gap in the published stubs rather than in this code: OCP's
+			IRootFolder extends \OC\Hooks\Emitter, which lives in the server's
+			private namespace and is not shipped with nextcloud/ocp. Scoped to
+			the one file that legitimately holds a reference to it.
+		-->
+		<MissingDependency>
+			<errorLevel type="suppress">
+				<file name="lib/Service/CairnRootLocator.php"/>
+			</errorLevel>
+		</MissingDependency>
+
+		<!--
+			PHPUnit initialises fixtures in setUp(), which is the de-facto
+			constructor for a test case; psalm cannot see the framework calling
+			it. Confined to tests/ so the rule keeps its teeth everywhere real
+			code is analysed.
+		-->
+		<PropertyNotSetInConstructor>
+			<errorLevel type="suppress">
+				<directory name="tests"/>
+			</errorLevel>
+		</PropertyNotSetInConstructor>
+	</issueHandlers>
+</psalm>

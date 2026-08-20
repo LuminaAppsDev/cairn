@@ -33,7 +33,7 @@ use OCP\Files\NotPermittedException;
  * from an interrupted append — each is skipped, never raised. A single bad line
  * must never take down a page (DESIGN.md §4.3).
  */
-class NextcloudShardSource {
+final class NextcloudShardSource {
 	/**
 	 * Shard days are exactly `YYYY-MM-DD`.
 	 *
@@ -144,7 +144,7 @@ class NextcloudShardSource {
 
 		try {
 			$shard = $yearFolder->get($day . '.jsonl');
-		} catch (NotFoundException | NotPermittedException) {
+		} catch (NotFoundException|NotPermittedException) {
 			return 0;
 		}
 		if (!$shard instanceof File) {
@@ -233,7 +233,7 @@ class NextcloudShardSource {
 				return null;
 			}
 			$decoded = json_decode($file->getContent(), false);
-		} catch (NotFoundException | NotPermittedException | \OCP\Files\GenericFileException | \OCP\Lock\LockedException) {
+		} catch (NotFoundException|NotPermittedException|\OCP\Files\GenericFileException|\OCP\Lock\LockedException) {
 			return null;
 		}
 
@@ -249,7 +249,7 @@ class NextcloudShardSource {
 		}
 		try {
 			$node = $parent->get($name);
-		} catch (NotFoundException | NotPermittedException) {
+		} catch (NotFoundException|NotPermittedException) {
 			return null;
 		}
 
@@ -263,8 +263,10 @@ class NextcloudShardSource {
 	 */
 	private function folderChildren(Folder $folder): array {
 		try {
-			return $folder->getDirectoryListing();
-		} catch (NotFoundException | NotPermittedException) {
+			// Re-indexed: the API returns a keyed array, and the declared list
+			// type is what lets callers iterate it without wondering.
+			return array_values($folder->getDirectoryListing());
+		} catch (NotFoundException|NotPermittedException) {
 			return [];
 		}
 	}

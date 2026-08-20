@@ -396,8 +396,7 @@ cmd_deps() {
 	step "Installing dependencies"
 	say "Composer and npm run in their own containers; nothing needs to be on"
 	say "your machine but Docker."
-	CAIRN_UID="$(id -u)" CAIRN_GID="$(id -g)" \
-		compose run --rm composer install --no-interaction --no-progress
+	composer_run install --no-interaction --no-progress
 	node_run npm install --no-audit --no-fund
 	node_run npm run build
 }
@@ -426,8 +425,20 @@ cmd_watch() {
 	node_run npm run watch
 }
 
+# Composer runs in its own container too, so a contributor needs no PHP either.
+composer_run() {
+	CAIRN_UID="$(id -u)" CAIRN_GID="$(id -g)" compose run --rm composer "$@"
+}
+
 cmd_lint() {
 	require_docker
+	if [[ ! -f "${APP_ROOT}/vendor/bin/psalm" ]]; then
+		die "the PHP analysers are not installed." "Run 'nextcloud_app/dev deps' first."
+	fi
+	step "PHP static analysis"
+	composer_run exec -- psalm --no-cache --no-progress
+	step "PHP coding standard"
+	composer_run exec -- php-cs-fixer fix --dry-run --diff
 	step "Frontend lint"
 	node_run npm run lint
 	step "Read-only guard and info.xml"
@@ -493,7 +504,8 @@ Cairn Nextcloud app — development environment
   ./dev build            Rebuild the frontend bundle.
   ./dev watch            Rebuild the frontend on every save.
   ./dev test [ARGS...]   Run the unit tests on the container's PHP.
-  ./dev lint             Frontend lint, read-only guard and info.xml.
+  ./dev lint             Everything static: psalm, the PHP coding standard,
+                         the frontend lint, the read-only guard and info.xml.
   ./dev check            Run the read-only guard and validate appinfo/info.xml.
   ./dev status           Is it running, and is the app enabled?
   ./dev occ ARGS...      Run an occ command, e.g. ./dev occ app:list

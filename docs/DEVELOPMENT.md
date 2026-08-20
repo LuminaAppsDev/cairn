@@ -257,7 +257,7 @@ Dependencies and the frontend bundle are a one-time step:
 ```bash
 nextcloud_app/dev deps     # Composer + npm + a first build, all containerised
 nextcloud_app/dev test     # runs on the server's own PHP, not your host's
-nextcloud_app/dev lint     # frontend lint, read-only guard, info.xml
+nextcloud_app/dev lint     # psalm, PHP coding standard, frontend lint, guards
 ```
 
 The edit loop differs by layer, and it is worth knowing which:
@@ -267,6 +267,17 @@ The edit loop differs by layer, and it is worth knowing which:
 | PHP, templates | Save and reload. `up` sets `opcache.revalidate_freq=0`; the image ships 60, which would serve the previous version for up to a minute. |
 | `src/` (Vue) | `./dev build`, or leave `./dev watch` running. Both bump the asset cachebuster. |
 | A static file by hand | `./dev refresh` — Nextcloud serves assets `immutable` with a year-long max-age. |
+
+PHP is analysed, not merely syntax-checked. `psalm` runs at level 2 against
+`nextcloud/ocp` stubs pinned to **Nextcloud 32** — the lowest version
+`info.xml` claims — so calling an API added in 33 or 34 is a finding here
+rather than a broken install for somebody on 32. There is deliberately **no
+psalm baseline**: a baseline records the mistakes that existed when it was
+written and permits them for ever. Findings get fixed, or suppressed in
+`psalm.xml` with the reason written next to them.
+
+Formatting follows `nextcloud/coding-standard` — the same reasoning as the Vite
+and ESLint configs. `./dev lint` checks it; `composer cs:fix` applies it.
 
 ### 4.5 Cross-frontend parity (important)
 

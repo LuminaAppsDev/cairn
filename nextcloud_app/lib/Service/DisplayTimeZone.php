@@ -27,7 +27,7 @@ use OCP\IDateTimeZone;
  * §4.3 rules out. `date_default_timezone_set()` is never called: the zone is
  * passed explicitly so nothing can read it implicitly and get a different answer.
  */
-class DisplayTimeZone {
+final class DisplayTimeZone {
 	public function __construct(
 		private readonly IDateTimeZone $dateTimeZone,
 	) {

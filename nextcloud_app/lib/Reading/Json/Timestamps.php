@@ -98,7 +98,7 @@ final class Timestamps {
 	/** Minutes-as-decimal (as OMH writes durations) to whole milliseconds. */
 	public static function minutesToMillis(float $minutes): int {
 		// Half away from zero, matching Dart's `.round()`.
-		return (int)round($minutes * 60000);
+		return (int)round($minutes * 60000.0);
 	}
 
 	/** The local calendar date a reading falls on, as `YYYY-MM-DD`. */

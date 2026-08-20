@@ -6,6 +6,39 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- **Static analysis and a coding standard for the PHP.** Every other language
+  in this repository had a real analyser — `dart analyze --fatal-infos`,
+  flake8/pylint/mypy, shellcheck — while the app subtree had only `php -l`,
+  which is a syntax check and would not notice a null dereference or a wrong
+  argument type. `psalm` now runs at level 2 and `nextcloud/coding-standard`
+  formats, both wired into `dev lint` and `nextcloud-ci.yml`.
+
+  There is deliberately **no psalm baseline**. A baseline records the mistakes
+  that existed when it was written and permits them for ever, which is the
+  opposite of what an analyser is for. The three suppressions in `psalm.xml` are
+  scoped and carry their reasons: `#[\Override]` is a PHP 8.3 attribute and
+  `info.xml` declares 8.2 (matching what Nextcloud 32 supports), so adding it
+  would trade an install for a compile-time check; `MissingDependency` is
+  confined to the one file holding an `IRootFolder`, because OCP's own interface
+  extends a class the published stubs do not ship; and
+  `PropertyNotSetInConstructor` is confined to `tests/`, where PHPUnit's
+  `setUp()` is the de-facto constructor.
+
+  The stubs are pinned to **Nextcloud 32**, the lowest version `info.xml`
+  claims, so calling an API added in 33 or 34 is a finding here rather than a
+  broken install for somebody on 32.
+
+  The first run found 59 issues, 13 of them substantive. `dailyHeartRate` built
+  per-day lists and reduced them three times, which is why `min()` could not be
+  shown to have anything to work on; it now accumulates the spread as readings
+  arrive, visiting each value once. `ManifestReader` tested one expression and
+  returned another — nothing guarantees the second read of a property sees what
+  the first did. `weight()` indexed `$series[count($series) - 1]`, which is
+  `$series[-1]` on an empty series; the `??` made it harmless rather than
+  correct. `folderChildren()` promised a `list` while returning the keyed array
+  the API hands back. The rest were implicit int/float coercions now made
+  visible, and ten classes nothing extends are now `final`.
+
 - **The dashboard: a read-only JSON API and a Vue frontend over it.** Six GET
   endpoints — steps, heart rate, weight, sleep, activity, and what is on disk —
   each scoped server-side to whoever is logged in. No route takes a user id, so

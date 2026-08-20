@@ -29,7 +29,7 @@ final class NightReconcilerTest extends TestCase {
 		return new SleepEpisodeReading(
 			start: Readings::at($start),
 			end: Readings::at($end),
-			totalSleepMillis: (int)round($totalMinutes * self::MINUTE),
+			totalSleepMillis: (int)round($totalMinutes * (float)self::MINUTE),
 			isMainSleep: true,
 			awakenings: 99,
 		);

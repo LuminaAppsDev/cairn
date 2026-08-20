@@ -26,7 +26,7 @@ use OCP\IUserSession;
  * check because there is nothing to submit, and no admin gate because everyone
  * sees only their own files.
  */
-class PageController extends Controller {
+final class PageController extends Controller {
 	public function __construct(
 		IRequest $request,
 		private readonly CairnRootLocator $locator,

@@ -53,7 +53,8 @@ final class OmhReadingParserTest extends TestCase {
 		self::assertSame(84.0, $reading->value);
 		self::assertSame('beats/min', $reading->unit);
 		self::assertSame('2026-08-20 00:00:02', $reading->at->format('Y-m-d H:i:s'));
-		self::assertSame('com.sec.android.app.shealth', $reading->source?->name);
+		self::assertNotNull($reading->source);
+		self::assertSame('com.sec.android.app.shealth', $reading->source->name);
 		self::assertFalse($reading->source->isManual());
 		self::assertSame('2026-08-20 06:42:17', $reading->ingestedAt?->format('Y-m-d H:i:s'));
 	}

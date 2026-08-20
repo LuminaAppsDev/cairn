@@ -20,7 +20,7 @@ use OCA\Cairn\Reading\Model\HealthMetric;
  * the property this skeleton exists to demonstrate before any of the read-path
  * semantics are ported.
  */
-class OverviewService {
+final class OverviewService {
 	public function __construct(
 		private readonly NextcloudShardSource $shards,
 		private readonly ManifestReader $manifestReader,

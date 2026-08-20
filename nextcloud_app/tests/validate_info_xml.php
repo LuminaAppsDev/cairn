@@ -55,7 +55,7 @@ $schema = is_file(SCHEMA_CACHE) ? file_get_contents(SCHEMA_CACHE) : false;
 if ($schema === false) {
 	$schema = @file_get_contents(SCHEMA_URL);
 	if ($schema === false) {
-		fwrite(STDERR, "No cached schema at " . SCHEMA_CACHE . " and " . SCHEMA_URL . " is unreachable.\n");
+		fwrite(STDERR, 'No cached schema at ' . SCHEMA_CACHE . ' and ' . SCHEMA_URL . " is unreachable.\n");
 		fwrite(STDERR, "Fetch it once with network access, then commit it.\n");
 		exit(2);
 	}

@@ -35,8 +35,9 @@ final class ParityTest extends TestCase {
 	 * host run they are found relative to the repository.
 	 */
 	private static function fixturesDir(): string {
+		$fromEnv = getenv('CAIRN_PARITY_FIXTURES');
 		$candidates = array_filter([
-			getenv('CAIRN_PARITY_FIXTURES') ?: null,
+			$fromEnv === false || $fromEnv === '' ? null : $fromEnv,
 			'/parity',
 			dirname(__DIR__, 3) . '/test/fixtures/parity',
 		]);
@@ -47,7 +48,7 @@ final class ParityTest extends TestCase {
 		}
 
 		self::fail(
-			"No parity fixtures found (looked in: " . implode(', ', $candidates) . ").\n"
+			'No parity fixtures found (looked in: ' . implode(', ', $candidates) . ").\n"
 			. 'They live in test/fixtures/parity/ at the repository root; the dev '
 			. 'container mounts them at /parity.',
 		);
@@ -57,7 +58,9 @@ final class ParityTest extends TestCase {
 	public static function cases(): array {
 		$dir = self::fixturesDir() . '/cases';
 		$found = [];
-		foreach (scandir($dir) ?: [] as $entry) {
+		$entries = scandir($dir);
+		self::assertNotFalse($entries, "cannot list {$dir}");
+		foreach ($entries as $entry) {
 			if ($entry !== '.' && $entry !== '..' && is_file("{$dir}/{$entry}/spec.json")) {
 				$found[$entry] = [$entry];
 			}
@@ -85,8 +88,10 @@ final class ParityTest extends TestCase {
 		$encoder = new ParityEncoder(
 			new HealthQueryService(
 				shards: new DirectoryShardSource("{$dir}/tree"),
-				clock: new class ($now) implements Clock {
-					public function __construct(private readonly DateTimeImmutable $now) {
+				clock: new class($now) implements Clock {
+					public function __construct(
+						private readonly DateTimeImmutable $now,
+					) {
 					}
 
 					public function now(): DateTimeImmutable {
@@ -107,9 +112,20 @@ final class ParityTest extends TestCase {
 			$expected,
 			$actual,
 			$slug . ': ' . ($spec['description'] ?? '')
-			. "\n\nexpected: " . json_encode($expected, JSON_PRETTY_PRINT)
-			. "\nactual:   " . json_encode($actual, JSON_PRETTY_PRINT),
+			. "\n\nexpected: " . $this->pretty($expected)
+			. "\nactual:   " . $this->pretty($actual),
 		);
+	}
+
+	/**
+	 * A readable dump for a failure message, never `false`.
+	 *
+	 * @param array<string, mixed> $value
+	 */
+	private function pretty(array $value): string {
+		$json = json_encode($value, JSON_PRETTY_PRINT);
+
+		return $json === false ? '<unencodable>' : $json;
 	}
 
 	/** @return array<string, mixed> */

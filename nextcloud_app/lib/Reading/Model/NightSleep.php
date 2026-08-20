@@ -22,8 +22,8 @@ use DateTimeImmutable;
  */
 final class NightSleep {
 	/**
-	 * @param array<string, int>      $perStageMillis
-	 * @param list<string>            $sources
+	 * @param array<string, int> $perStageMillis
+	 * @param list<string> $sources
 	 * @param list<SleepStageReading> $stages
 	 */
 	public function __construct(

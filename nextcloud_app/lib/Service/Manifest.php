@@ -19,7 +19,7 @@ namespace OCA\Cairn\Service;
 final class Manifest {
 	/**
 	 * @param array<string, string> $syncAnchors metric slug => ISO timestamp
-	 * @param list<string>          $devices
+	 * @param list<string> $devices
 	 */
 	public function __construct(
 		public readonly int $formatVersion,

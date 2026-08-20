@@ -36,7 +36,7 @@ use OCP\IUserSession;
  * exists so a crafted `days=100000` cannot make the server walk three centuries
  * of dates.
  */
-class ApiController extends Controller {
+final class ApiController extends Controller {
 	/** Widest window any endpoint will read. A year of daily shards is plenty. */
 	private const MAX_DAYS = 365;
 	/** Nights are far more expensive per unit than days: each one aggregates

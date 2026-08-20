@@ -21,7 +21,7 @@ use OCA\Cairn\Reading\SystemClock;
  * per caller — which is exactly the kind of drift that would make two screens of
  * the same app disagree about which day a reading belongs to.
  */
-class QueryFactory {
+final class QueryFactory {
 	public function __construct(
 		private readonly NextcloudShardSource $shards,
 		private readonly DisplayTimeZone $timeZone,

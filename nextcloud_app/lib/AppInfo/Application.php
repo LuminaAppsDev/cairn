@@ -22,7 +22,7 @@ use OCP\AppFramework\Bootstrap\IRegistrationContext;
  * registration to do — and nothing here that could acquire a write capability
  * by accident.
  */
-class Application extends App implements IBootstrap {
+final class Application extends App implements IBootstrap {
 	/** The app id, matching info.xml and the `cairn.` route prefix. */
 	public const APP_ID = 'cairn';
 

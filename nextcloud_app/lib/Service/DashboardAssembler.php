@@ -29,7 +29,7 @@ use OCA\Cairn\Reading\Model\WorkoutReading;
  * the parity encoding, so the wire format stays legible next to the fixtures.
  * Formatting for humans is the frontend's job, where the locale is known.
  */
-class DashboardAssembler {
+final class DashboardAssembler {
 	/** @return array<string, mixed> */
 	public function steps(HealthQueryService $queries, int $days): array {
 		$series = $queries->dailySteps($days);
@@ -45,7 +45,7 @@ class DashboardAssembler {
 		return [
 			'unit' => 'steps',
 			'today' => $queries->todayStepTotal(),
-			'average' => $reported === [] ? null : $total / count($reported),
+			'average' => $reported === [] ? null : $total / (float)count($reported),
 			'daysReported' => count($reported),
 			'series' => array_map(
 				static fn (DailyValue $d): array => ['day' => $d->day, 'value' => $d->value],
@@ -66,7 +66,7 @@ class DashboardAssembler {
 		$max = null;
 		foreach ($series as $stat) {
 			$samples += $stat->count;
-			$weighted += $stat->mean * $stat->count;
+			$weighted += $stat->mean * (float)$stat->count;
 			$min = $min === null ? $stat->min : min($min, $stat->min);
 			$max = $max === null ? $stat->max : max($max, $stat->max);
 		}
@@ -76,7 +76,7 @@ class DashboardAssembler {
 			'latest' => $this->scalar($queries->latestScalar(HealthMetric::HeartRate)),
 			'min' => $min,
 			'max' => $max,
-			'mean' => $samples === 0 ? null : $weighted / $samples,
+			'mean' => $samples === 0 ? null : $weighted / (float)$samples,
 			'samples' => $samples,
 			'series' => array_map(
 				static fn (DailyStat $s): array => [
@@ -95,7 +95,7 @@ class DashboardAssembler {
 	public function weight(HealthQueryService $queries, int $days): array {
 		$series = $queries->scalarSeries(HealthMetric::Weight, $days);
 		$first = $series[0] ?? null;
-		$last = $series[count($series) - 1] ?? null;
+		$last = $series === [] ? null : $series[count($series) - 1];
 
 		return [
 			'unit' => $last?->unit ?? 'kg',

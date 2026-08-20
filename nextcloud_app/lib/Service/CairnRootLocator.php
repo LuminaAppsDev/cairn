@@ -22,7 +22,7 @@ use OCP\Files\NotPermittedException;
  * class never creates the folder — the mobile app is the only writer
  * (DESIGN.md §7).
  */
-class CairnRootLocator {
+final class CairnRootLocator {
 	/** The folder the mobile app syncs into, at the root of the user's files. */
 	public const ROOT_NAME = 'Cairn';
 
@@ -41,7 +41,7 @@ class CairnRootLocator {
 	public function locate(string $userId): ?Folder {
 		try {
 			$node = $this->rootFolder->getUserFolder($userId)->get(self::ROOT_NAME);
-		} catch (NotFoundException | NotPermittedException) {
+		} catch (NotFoundException|NotPermittedException) {
 			return null;
 		}
 

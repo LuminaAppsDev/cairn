@@ -38,7 +38,7 @@ generates a synthetic tree that is structurally identical to a real export.
 ./dev build            Rebuild the frontend.
 ./dev watch            Rebuild the frontend on every save.
 ./dev test [ARGS...]   Unit and parity tests, on the container's PHP.
-./dev lint             Frontend lint, read-only guard, info.xml.
+./dev lint             psalm, PHP coding standard, frontend lint, guards.
 ./dev refresh          Bump asset URLs after editing a static file by hand.
 ./dev check            Read-only guard + info.xml schema validation.
 ./dev status           Running? App enabled?
@@ -125,6 +125,8 @@ src/         the Vue dashboard: App.vue, hand-rolled SVG charts, no chart librar
 l10n/        translations (German; English is the source language)
 tests/       read_only_guard.php, validate_info_xml.php — zero-dependency checks
              Unit/ — the read-path suite, incl. the shared parity cases
+psalm.xml    static analysis, level 2, no baseline
+.php-cs-fixer.dist.php  Nextcloud's coding standard
 docker/      compose.yaml, .env.example — the dev instance
 dev          the entrypoint for all of the above
 ```
