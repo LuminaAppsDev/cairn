@@ -552,6 +552,25 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- **The app store now publishes a project contact, not a personal one.**
+  `info.xml` carried a personal address, and the app store shows it to every
+  self-hoster who installs the app. Releases come from the `LuminaAppsDev`
+  account — which is already what `<bugs>` and `<repository>` point at, and what
+  F-Droid lists for the mobile app — so the contact is `luminaapps@gmail.com`
+  in both `info.xml` and `composer.json`. The author name is unchanged and still
+  matches the F-Droid listing, so the two channels name one maintainer.
+
+  `tests/validate_info_xml.php` now asserts the contact and that `<bugs>` and
+  `<repository>` point at the project's own repository. This failure is silent
+  and permanent — an address published in a release cannot be recalled from the
+  installs that already carry it — so it is checked rather than remembered.
+  Verified by putting the personal address and a fork URL back and watching each
+  be refused.
+
+  `docs/RELEASE.md` §6 also records which account opens the signing-certificate
+  request: ownership is verified against that account's public email, so it has
+  to be the same one.
+
 - **`docs/DEVELOPMENT.md` §5 gives the right reason for the AGPL subtree.** It
   claimed the licence was an app-store requirement. It is not: the store's
   `info.xsd` enumerates `MIT`, `Apache-2.0`, `BSD-*`, `MPL-2.0` and others, and

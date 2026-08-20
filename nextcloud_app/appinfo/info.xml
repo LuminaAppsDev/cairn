@@ -30,7 +30,14 @@ because it owns nothing.
 	]]></description>
 	<version>0.1.0</version>
 	<licence>AGPL-3.0-or-later</licence>
-	<author mail="max.fiedler1988@pm.me">Max Fiedler</author>
+	<!--
+	  The published contact, not a personal one. Releases go out from the
+	  LuminaAppsDev account, and the app store shows this address to every
+	  self-hoster who installs the app — it should reach the project rather
+	  than a person. The author name matches what F-Droid already lists for
+	  the mobile app, so the two channels name the same maintainer.
+	-->
+	<author mail="luminaapps@gmail.com">Max Fiedler</author>
 	<namespace>Cairn</namespace>
 	<category>monitoring</category>
 	<category>dashboard</category>

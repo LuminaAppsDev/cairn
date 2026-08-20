@@ -15,11 +15,12 @@ declare(strict_types=1);
  * server when they upgrade Nextcloud and the app simply disappears
  * (DESIGN.md §7).
  *
- * Beyond schema conformance it asserts the two facts the schema cannot know:
- * that the licence really is the AGPL this subtree ships under
- * (docs/DEVELOPMENT.md §5), and that the app declares no write surface —
- * background jobs, repair steps, commands and Sabre plugins are all ways an
- * app acquires the ability to change things, and this one has none.
+ * Beyond schema conformance it asserts the facts the schema cannot know: that
+ * the licence really is the AGPL this subtree ships under (docs/DEVELOPMENT.md
+ * §5); that the app declares no write surface — background jobs, repair steps,
+ * commands and Sabre plugins are all ways an app acquires the ability to change
+ * things, and this one has none; and that the published contact and links point
+ * at the project rather than at a person or a fork.
  *
  * The schema is fetched once and cached beside this script, so the check works
  * offline afterwards and cannot fail a build because a website was down.
@@ -31,6 +32,19 @@ declare(strict_types=1);
 
 const SCHEMA_URL = 'https://apps.nextcloud.com/schema/apps/info.xsd';
 const SCHEMA_CACHE = __DIR__ . '/fixtures/info.xsd';
+
+/**
+ * The address the app store shows to everyone who installs this.
+ *
+ * Asserted because the failure is silent and permanent: a personal address that
+ * slips back in is published to every self-hoster, and cannot be recalled from
+ * the releases that already carry it. Releases go out from the LuminaAppsDev
+ * account, so the contact belongs to the project.
+ */
+const AUTHOR_CONTACT = 'luminaapps@gmail.com';
+
+/** Where issues are reported. Must be the project's repository, not a fork. */
+const PROJECT_HOST = 'github.com/LuminaAppsDev/cairn';
 
 /** Elements through which an app gains a way to write. None may appear. */
 const WRITE_SURFACE = [
@@ -98,6 +112,30 @@ if ($licences !== ['AGPL-3.0-or-later']) {
 		. ' — see docs/DEVELOPMENT.md §5.';
 }
 
+$authors = $root->getElementsByTagName('author');
+if ($authors->length === 0) {
+	$findings[] = 'author: none declared.';
+} else {
+	foreach ($authors as $author) {
+		if (!$author instanceof DOMElement) {
+			continue;
+		}
+		$mail = $author->getAttribute('mail');
+		if ($mail !== AUTHOR_CONTACT) {
+			$findings[] = "author: contact is '{$mail}', expected " . AUTHOR_CONTACT
+				. ' — the app store publishes this to everyone who installs the app.';
+		}
+	}
+}
+
+foreach (['bugs', 'repository'] as $element) {
+	$node = $root->getElementsByTagName($element)->item(0);
+	$url = $node === null ? '' : $node->textContent;
+	if (!str_contains($url, PROJECT_HOST)) {
+		$findings[] = "{$element}: '{$url}' does not point at " . PROJECT_HOST . '.';
+	}
+}
+
 foreach (WRITE_SURFACE as $element) {
 	if ($root->getElementsByTagName($element)->length > 0) {
 		$findings[] = "write surface: <{$element}> is declared, but this app is read-only.";
@@ -116,5 +154,6 @@ $compat = $root->getElementsByTagName('nextcloud')->item(0);
 $range = $compat instanceof DOMElement
 	? $compat->getAttribute('min-version') . '–' . $compat->getAttribute('max-version')
 	: 'unknown';
-echo "info.xml: valid, AGPL-3.0-or-later, no write surface, Nextcloud {$range}.\n";
+echo 'info.xml: valid, AGPL-3.0-or-later, no write surface, contact '
+	. AUTHOR_CONTACT . ", Nextcloud {$range}.\n";
 exit(0);

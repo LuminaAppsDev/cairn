@@ -825,10 +825,17 @@ first upload and never again:
    ```
 2. Open a PR adding `cairn.csr` to
    [`nextcloud/app-certificate-requests`](https://github.com/nextcloud/app-certificate-requests).
-   Your GitHub account needs a public email so they can verify ownership.
+   Open it **from the `LuminaAppsDev` account**, which is where releases come
+   from and what `info.xml`'s `<bugs>` and `<repository>` point at. That account
+   needs `luminaapps@gmail.com` as a **public** email: ownership is verified
+   against it, and it is the same address `info.xml` publishes to everyone who
+   installs the app. `tests/validate_info_xml.php` asserts that address, so it
+   cannot quietly drift back to a personal one.
 3. When it is counter-signed, save the returned `cairn.crt` beside the key, and
    register the app id on the App Store — the form asks for the certificate and
-   a signature over the app id, proving you hold the private key.
+   a signature over the app id, proving you hold the private key. Register from
+   the same account, so the store listing, the issue tracker and the source all
+   name one owner.
 
 > **The private key never enters this repository.** `.githooks/pre-commit`
 > refuses `*.key`, `*.pem` and `*.p8` outright, alongside the Android signing
