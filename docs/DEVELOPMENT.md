@@ -252,12 +252,21 @@ Runs, inside the container:
 Both are plain PHP with no Composer and no PHPUnit, so they run anywhere `php`
 does.
 
-The unit suite needs Composer once:
+Dependencies and the frontend bundle are a one-time step:
 
 ```bash
-nextcloud_app/dev deps     # PHPUnit, via Composer in its own container
+nextcloud_app/dev deps     # Composer + npm + a first build, all containerised
 nextcloud_app/dev test     # runs on the server's own PHP, not your host's
+nextcloud_app/dev lint     # frontend lint, read-only guard, info.xml
 ```
+
+The edit loop differs by layer, and it is worth knowing which:
+
+| You changed | What to do |
+|---|---|
+| PHP, templates | Save and reload. `up` sets `opcache.revalidate_freq=0`; the image ships 60, which would serve the previous version for up to a minute. |
+| `src/` (Vue) | `./dev build`, or leave `./dev watch` running. Both bump the asset cachebuster. |
+| A static file by hand | `./dev refresh` — Nextcloud serves assets `immutable` with a year-long max-age. |
 
 ### 4.5 Cross-frontend parity (important)
 

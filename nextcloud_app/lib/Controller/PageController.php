@@ -10,12 +10,12 @@ declare(strict_types=1);
 namespace OCA\Cairn\Controller;
 
 use OCA\Cairn\AppInfo\Application;
-use OCA\Cairn\Service\HeadlineFiguresService;
-use OCA\Cairn\Service\OverviewService;
+use OCA\Cairn\Service\CairnRootLocator;
 use OCP\AppFramework\Controller;
 use OCP\AppFramework\Http\Attribute\NoAdminRequired;
 use OCP\AppFramework\Http\Attribute\NoCSRFRequired;
 use OCP\AppFramework\Http\TemplateResponse;
+use OCP\AppFramework\Services\IInitialState;
 use OCP\IRequest;
 use OCP\IUserSession;
 
@@ -29,8 +29,8 @@ use OCP\IUserSession;
 class PageController extends Controller {
 	public function __construct(
 		IRequest $request,
-		private readonly OverviewService $overviewService,
-		private readonly HeadlineFiguresService $figuresService,
+		private readonly CairnRootLocator $locator,
+		private readonly IInitialState $initialState,
 		private readonly IUserSession $userSession,
 	) {
 		parent::__construct(Application::APP_ID, $request);
@@ -42,17 +42,18 @@ class PageController extends Controller {
 	#[NoAdminRequired]
 	#[NoCSRFRequired]
 	public function index(): TemplateResponse {
-		$user = $this->userSession->getUser();
+		$uid = $this->userSession->getUser()?->getUID();
 
-		$uid = $user?->getUID();
-
-		return new TemplateResponse(
-			Application::APP_ID,
-			'main',
-			[
-				'overview' => $uid === null ? null : $this->overviewService->forUser($uid),
-				'figures' => $uid === null ? null : $this->figuresService->forUser($uid),
-			],
+		// Handed over with the page rather than fetched. Whether there is a
+		// /Cairn folder at all is the one thing worth knowing before any request
+		// completes: it is the difference between an explanation of how to
+		// connect the phone app and five sections that each load and come back
+		// empty.
+		$this->initialState->provideInitialState(
+			'hasRoot',
+			$uid !== null && $this->locator->locate($uid) !== null,
 		);
+
+		return new TemplateResponse(Application::APP_ID, 'main');
 	}
 }

@@ -367,7 +367,8 @@ cmd_up() {
 	say "Open Cairn from the top navigation bar."
 	say "Edit any PHP file under nextcloud_app/ and reload — the app is mounted live."
 	say ""
-	say "  ./dev refresh  after editing CSS, JS or an icon (PHP needs no step)"
+	say "  ./dev build    rebuild the frontend after editing anything in src/"
+	say "  ./dev watch    rebuild it on every save"
 	say "  ./dev check    run the read-only guard and validate info.xml"
 	say "  ./dev occ ...  run any occ command"
 	say "  ./dev reset    destroy the instance and everything seeded into it"
@@ -392,10 +393,45 @@ cmd_refresh() {
 
 cmd_deps() {
 	require_docker
-	step "Installing PHP dev dependencies"
-	say "Composer runs in its own container; nothing needs to be on your machine."
+	step "Installing dependencies"
+	say "Composer and npm run in their own containers; nothing needs to be on"
+	say "your machine but Docker."
 	CAIRN_UID="$(id -u)" CAIRN_GID="$(id -g)" \
 		compose run --rm composer install --no-interaction --no-progress
+	node_run npm install --no-audit --no-fund
+	node_run npm run build
+}
+
+# npm runs in its own container too, so a contributor needs no Node either.
+node_run() {
+	CAIRN_UID="$(id -u)" CAIRN_GID="$(id -g)" compose run --rm node "$@"
+}
+
+cmd_build() {
+	require_docker
+	step "Building the frontend"
+	node_run npm run build
+	# The bundle URL only changes when the cachebuster does, so bump it here or
+	# the browser keeps the previous build.
+	if container_running; then
+		occ config:app:set theming cachebuster --value="$(date +%s%N)" >/dev/null
+	fi
+}
+
+cmd_watch() {
+	require_docker
+	step "Watching the frontend"
+	say "Rebuilds on save. Reload the page after each build — and note that a"
+	say "reload alone is enough only because './dev up' turned off asset caching."
+	node_run npm run watch
+}
+
+cmd_lint() {
+	require_docker
+	step "Frontend lint"
+	node_run npm run lint
+	step "Read-only guard and info.xml"
+	cmd_check
 }
 
 cmd_test() {
@@ -452,9 +488,12 @@ Cairn Nextcloud app — development environment
                          CAIRN_SEED_DIR, dev-data/local/, then a generated tree.
   ./dev refresh          Bump asset URLs after editing CSS, JS or an icon.
                          PHP and templates never need this.
-  ./dev deps             Install PHP dev dependencies (PHPUnit), via Composer
-                         in its own container. Needed once.
+  ./dev deps             Install PHP and frontend dependencies and build the
+                         bundle, all in their own containers. Needed once.
+  ./dev build            Rebuild the frontend bundle.
+  ./dev watch            Rebuild the frontend on every save.
   ./dev test [ARGS...]   Run the unit tests on the container's PHP.
+  ./dev lint             Frontend lint, read-only guard and info.xml.
   ./dev check            Run the read-only guard and validate appinfo/info.xml.
   ./dev status           Is it running, and is the app enabled?
   ./dev occ ARGS...      Run an occ command, e.g. ./dev occ app:list
@@ -492,6 +531,9 @@ main() {
 		check) cmd_check ;;
 		refresh) cmd_refresh ;;
 		deps) cmd_deps ;;
+		build) cmd_build ;;
+		watch) cmd_watch ;;
+		lint) cmd_lint ;;
 		test) cmd_test "$@" ;;
 		status) cmd_status ;;
 		reset) cmd_reset ;;

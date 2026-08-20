@@ -1,0 +1,12 @@
+{
+  "description": "KNOWN DEFECT, PINNED DELIBERATELY. Samsung Health emits a whole-night 'session' segment alongside the fine-grained stages, including the awake ones. 'session' counts as asleep, so the union of asleep intervals swallows every awake period: this night reports four hours asleep and 100% efficiency despite two awakenings totalling an hour. Seen on real data \u2014 a night with 26 awakenings reported 6h16m and 100%, where subtracting the awake union (or ignoring 'session' when finer stages exist \u2014 both agree) gives 5h30m and 88%. The golden below records what BOTH readers currently do, so the bug cannot quietly change; it is not what they should do. Fixing it is a change to the read semantics in DESIGN.md \u00a74.3 and must land in the Flutter and PHP readers together, updating this golden in the same commit.",
+  "now": "2026-08-20T12:00:00",
+  "timezone": "Europe/Berlin",
+  "queries": [
+    {
+      "id": "nights",
+      "name": "lastNNights",
+      "n": 1
+    }
+  ]
+}

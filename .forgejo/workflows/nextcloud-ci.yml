@@ -106,3 +106,30 @@ jobs:
           # file format rather than to either reader.
           CAIRN_PARITY_FIXTURES="${GITHUB_WORKSPACE}/test/fixtures/parity" \
             vendor/bin/phpunit --cache-directory "$(mktemp -d)"
+
+      # setup-node is fine where setup-php was not: it unpacks a tarball into
+      # the tool cache and needs no sudo. Node 22 specifically —
+      # @nextcloud/eslint-config imports findPackageJSON from node:module, which
+      # does not exist before it.
+      - name: Set up Node
+        uses: https://github.com/actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+
+      - name: Frontend dependencies
+        run: |
+          set -euo pipefail
+          npm ci --no-audit --no-fund
+
+      - name: Lint frontend
+        run: |
+          set -euo pipefail
+          npm run lint
+
+      # Building is the check: a bundle that fails to build is an app that fails
+      # to load, and nothing else here would catch it. The output is gitignored,
+      # so this only ever proves it compiles.
+      - name: Build frontend
+        run: |
+          set -euo pipefail
+          npm run build

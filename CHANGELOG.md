@@ -6,6 +6,55 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- **The dashboard: a read-only JSON API and a Vue frontend over it.** Six GET
+  endpoints — steps, heart rate, weight, sleep, activity, and what is on disk —
+  each scoped server-side to whoever is logged in. No route takes a user id, so
+  there is none to swap for somebody else's and no permission check that could
+  be forgotten. Windows are rejected rather than clamped (`days=0` and
+  `days=100000` both return 400): silently answering a different question than
+  the one asked turns a frontend bug into a puzzling chart instead of a visible
+  error.
+
+  Charts are hand-rolled inline SVG. A charting library would be a large
+  dependency, a Content-Security-Policy conversation and a second theming system
+  to reconcile with Nextcloud's, in exchange for five charts of two shapes.
+  Every colour is a Nextcloud custom property, so they follow a themed instance
+  and dark mode without being told. Each metric section carries its own loading,
+  error and empty state — one endpoint failing must not blank the others, and an
+  empty folder is a normal state that should not look like a broken page.
+
+  The sleep hypnogram draws one row per stage rather than overlaying them, which
+  is what makes the whole-night `session` overlap visible at a glance instead of
+  only in the numbers.
+
+  German is included, in the phone app's `du` voice and reusing its vocabulary
+  (Schritte, Puls, Schlaf, Gewicht) so the two frontends read as one product.
+  Numbers, dates and durations are formatted in the browser from ISO instants
+  and integer milliseconds — the server sends the unambiguous form, and only the
+  browser knows the viewer's locale. Verified end to end: `88,1 kg`,
+  `4.704 pro Tag`, `Mittwoch, 19. August`, and the plural form.
+
+- **`dev deps`, `dev build`, `dev watch` and `dev lint`.** Composer and npm run
+  in their own pinned containers, so Docker is still the only prerequisite. The
+  Node container is 22, not 20: `@nextcloud/eslint-config` imports
+  `findPackageJSON` from `node:module`, which does not exist before 22, so 20 is
+  simply not a toolchain this app builds on.
+
+- **A parity case pinning a real sleep defect, deliberately.** Samsung Health
+  emits a whole-night `session` segment alongside the fine-grained stages,
+  including the awake ones. `session` counts as asleep, so the union of asleep
+  intervals swallows every awake period: a real night with **26 awakenings**
+  reported 6 h 16 min asleep and **100% efficiency**. Subtracting the awake
+  union, or ignoring `session` where finer stages exist, both give 5 h 30 min
+  and 88% — two independent corrections agreeing is a good sign which is right.
+
+  Both readers currently do the wrong thing identically, so this is a defect in
+  the read semantics (`DESIGN.md` §4.3) rather than in either port, and the
+  shipped phone app shows the same number today. The case records current
+  behaviour so it cannot quietly change, and says plainly that the golden is not
+  the desired answer: fixing it must land in both readers together, updating the
+  golden in the same commit.
+
 - **A cross-frontend parity suite, so the two readers cannot drift apart
   silently.** `docs/DESIGN.md` §4.3 makes the read semantics a property of the
   file format rather than of any one reader: the phone and the web app must give
@@ -463,6 +512,23 @@ All notable changes to this project are documented in this file.
   fdroidserver from git master rather than using the Debian package.
 
 ### Fixed
+
+- **An edited PHP file kept serving its previous version for up to a minute.**
+  The Nextcloud image ships `opcache.revalidate_freq=60`, which is right for a
+  server and wrong for a working tree mounted live — and it made this
+  repository's own documentation false, since `dev up`'s output and both READMEs
+  claimed PHP changes need no step. `up` now mounts a small dev php.ini setting
+  it to 0, so a change is picked up on the next request. Found while debugging a
+  500 that had already been fixed in the file being served.
+
+- **`Settings › Apps` returned a 500 on every visit.** Bind-mounting the app at
+  `custom_apps/cairn` makes Docker create the parent directory itself, owned by
+  root, before the image's entrypoint would have created and chowned it — so
+  Nextcloud had an apps path it was told was writable and was not. Confirmed
+  unrelated to this app by reproducing it with Cairn disabled. Worth fixing
+  precisely because the app still worked: the page it breaks is the one a
+  contributor opens to check their app is listed, and it points the blame
+  elsewhere.
 
 - **The shared Flutter SDK install is now atomic** in both workflows. Each
   cloned straight into `$HOME/flutter-$VERSION`, guarded only by a check that

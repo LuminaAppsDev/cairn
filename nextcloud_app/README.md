@@ -34,7 +34,12 @@ generates a synthetic tree that is structurally identical to a real export.
 ```
 ./dev up [--no-seed]   Start it. Idempotent — safe to re-run.
 ./dev seed [DIR]       Reload health data from DIR, or from the resolved default.
-./dev refresh          Bump asset URLs after editing CSS, JS or an icon.
+./dev deps             Install dependencies and build the bundle. Needed once.
+./dev build            Rebuild the frontend.
+./dev watch            Rebuild the frontend on every save.
+./dev test [ARGS...]   Unit and parity tests, on the container's PHP.
+./dev lint             Frontend lint, read-only guard, info.xml.
+./dev refresh          Bump asset URLs after editing a static file by hand.
 ./dev check            Read-only guard + info.xml schema validation.
 ./dev status           Running? App enabled?
 ./dev occ ARGS...      Any occ command, e.g. ./dev occ app:list
@@ -44,11 +49,14 @@ generates a synthetic tree that is structurally identical to a real export.
 ./dev reset            Destroy everything, including seeded data.
 ```
 
-**PHP and templates need no step at all** — they are read on every request, so
-save and reload. **CSS, JavaScript and icons need `./dev refresh`**, because
-Nextcloud serves them with `Cache-Control: max-age=15778463, immutable` and the
-only thing that varies the URL is a cachebuster the server controls. Without it
-you are reaching for a hard reload in every browser you test in.
+**PHP and templates need no step** — save and reload. (`up` sets
+`opcache.revalidate_freq=0`; the image ships 60, which means an edited file
+keeps serving its previous version for up to a minute.)
+
+**Anything under `src/` needs `./dev build`**, or `./dev watch` to rebuild on
+save. Both bump the asset cachebuster for you, which is necessary because
+Nextcloud serves the bundle `immutable` with a year-long max-age and only that
+cachebuster varies its URL.
 
 ## Where the health data comes from
 
@@ -113,6 +121,8 @@ lib/
              ManifestReader, OverviewService — pure, server-free, testable
 templates/   main.php — server-rendered landing page
 css/         cairn.css — themed via Nextcloud custom properties
+src/         the Vue dashboard: App.vue, hand-rolled SVG charts, no chart library
+l10n/        translations (German; English is the source language)
 tests/       read_only_guard.php, validate_info_xml.php — zero-dependency checks
              Unit/ — the read-path suite, incl. the shared parity cases
 docker/      compose.yaml, .env.example — the dev instance
@@ -128,7 +138,12 @@ figures computed from your actual shards.
 
 Those rules are held to the same answers as the Flutter app by the shared
 fixtures in [`test/fixtures/parity/`](../test/fixtures/parity/), which both
-suites run. The JSON API and the Vue dashboard come next.
+suites run.
+
+The dashboard is a Vue app over a read-only JSON API, with charts hand-rolled
+as inline SVG — a charting library would be a large dependency, a
+Content-Security-Policy conversation and a second theming system to reconcile
+with Nextcloud's, for five charts of two shapes.
 
 ## Version tracking
 

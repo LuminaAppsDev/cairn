@@ -54,6 +54,24 @@ services:
       # at a fixed path the PHP suite looks for; read-only, like everything else
       # this container sees of the working tree.
       - ../../test/fixtures/parity:/parity:ro
+      # Development PHP overrides — chiefly opcache revalidation, without which
+      # an edited file keeps serving its previous version for up to a minute.
+      - ./php-dev.ini:/usr/local/etc/php/conf.d/zz-cairn-dev.ini:ro
+
+  # Node, only when asked for. Same reasoning as the composer service below:
+  # behind the `tools` profile, mounted read-write because this is where the
+  # frontend bundle gets built, and running as the invoking user so nothing
+  # lands root-owned in your working tree.
+  node:
+    image: node:22.23-bookworm-slim@sha256:d649c27dae7ba0137b3cef5dd75baa422c08dc3d9e3fc0c23dfb172dc3cc6436
+    profiles: ["tools"]
+    working_dir: /app
+    user: "${CAIRN_UID:-1000}:${CAIRN_GID:-1000}"
+    environment:
+      HOME: /tmp
+      npm_config_cache: /tmp/.npm
+    volumes:
+      - ../:/app
 
   # Composer, only when asked for. Behind the `tools` profile so `up` never
   # starts it, and mounted read-write on purpose: this is the one place vendor/
