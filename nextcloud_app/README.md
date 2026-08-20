@@ -39,6 +39,7 @@ generates a synthetic tree that is structurally identical to a real export.
 ./dev watch            Rebuild the frontend on every save.
 ./dev test [ARGS...]   Unit and parity tests, on the container's PHP.
 ./dev lint             psalm, PHP coding standard, frontend lint, guards.
+./dev matrix           Run against every Nextcloud major info.xml claims.
 ./dev refresh          Bump asset URLs after editing a static file by hand.
 ./dev check            Read-only guard + info.xml schema validation.
 ./dev status           Running? App enabled?
@@ -149,10 +150,15 @@ with Nextcloud's, for five charts of two shapes.
 
 ## Version tracking
 
-`info.xml`'s `max-version` must move with each Nextcloud major or the app is
-disabled on upgrade (`docs/DESIGN.md` §7). Bump it only after checking the app
-still enables against the new major, and move `docker/compose.yaml`'s pinned
-image at the same time.
+`info.xml`'s version range is a promise to everyone installing from the app
+store: a stale `max-version` means the app is silently disabled on their server
+after they upgrade (`docs/DESIGN.md` §7). `./dev matrix` checks the promise
+instead of asserting it — every claimed major installed in turn, plus a parse of
+every file under the PHP floor, which none of the Nextcloud images ships.
+
+`info.xml`'s range, the `MATRIX_IMAGES` table in `dev`, and
+`docker/compose.yaml`'s default image are one claim written three times. Move
+them together.
 
 ## Licence
 

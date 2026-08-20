@@ -6,6 +6,44 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- **A compatibility matrix, because `info.xml` was making a promise nobody had
+  checked.** The app declares `min-version="32" max-version="34"` — a promise to
+  everyone installing from the app store — and had only ever run on 34. A stale
+  `max-version` is the documented maintenance tax of a Nextcloud app
+  (`DESIGN.md` §7): get it wrong and the app is silently disabled on somebody
+  else's server after they upgrade.
+
+  `nextcloud_app/dev matrix` installs each claimed major in turn, enables the
+  app, seeds generated data, and checks the page, the bundle and all six
+  endpoints — plus the read-only guard and `info.xml` under **that version's
+  PHP**, which turns out to differ across all three: 32 ships 8.3.33, 33 ships
+  8.4.24, 34 ships 8.5.9. All three pass.
+
+  That spread exposed a gap the matrix would otherwise have hidden: `info.xml`
+  also declares a PHP floor of 8.2, and **none of the Nextcloud images ships
+  8.2**, so half the compatibility claim was untested while looking covered. The
+  matrix now parses every file under `php:8.2-cli-alpine` first. It passes, so
+  the floor is real rather than aspirational.
+
+  Verified to fail, not just to pass: narrowing `max-version` to 33 makes
+  Nextcloud 34 refuse the app, and the run reports `Nextcloud 34 FAILED` and
+  exits non-zero with the fix in its message. A check that cannot go red is
+  decoration.
+
+  It runs as its own Compose project on its own port and tears each version down
+  afterwards, so it cannot disturb — or be disturbed by — a `dev up` instance you
+  have open. Confirmed by running it with one open.
+
+- **`.forgejo/workflows/nextcloud-matrix.yml`**, running the same command CI
+  users run locally. Deliberately *not* on every push: three Nextcloud installs
+  would queue every other job behind them on a single-runner host. It fires when
+  the claim or the environment changes, on demand, and weekly as a net for a
+  change to `lib/` that broke an older version without touching `info.xml`.
+
+  `info.xml`'s version range, the `MATRIX_IMAGES` table in `dev`, and
+  `compose.yaml`'s default image are one claim written three times; the docs now
+  say so, because the failure mode is one of them moving alone.
+
 - **Static analysis and a coding standard for the PHP.** Every other language
   in this repository had a real analyser — `dart analyze --fatal-infos`,
   flake8/pylint/mypy, shellcheck — while the app subtree had only `php -l`,

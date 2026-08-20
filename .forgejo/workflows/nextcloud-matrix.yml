@@ -1,0 +1,103 @@
+# Does the app actually run on every Nextcloud major it claims?
+#
+# appinfo/info.xml declares `min-version="32" max-version="34"`. That is a
+# promise to anyone installing from the app store, and until this existed it had
+# only ever been tested on 34. A stale max-version is the documented maintenance
+# tax of shipping a Nextcloud app (DESIGN.md §7): get it wrong and the app is
+# silently disabled on somebody else's server after they upgrade.
+#
+# The work is done by `nextcloud_app/dev matrix`, so a contributor runs exactly
+# what CI runs. It installs each version in turn, enables the app, seeds
+# generated data, and checks the page, the bundle and all six endpoints — plus
+# the read-only guard and info.xml under that version's PHP, which differs
+# across the three (8.3, 8.4, 8.5). It also parses every file under PHP 8.2,
+# the floor info.xml declares, which none of the Nextcloud images ships.
+#
+# WHY NOT ON EVERY PUSH. Three full Nextcloud installs take minutes, and this is
+# a single-runner host where that would queue every other job behind it (see
+# ci.yml's note on concurrency). So it runs when the *claim* or the *environment*
+# changes, on demand, and weekly as a safety net for a change to lib/ that broke
+# an older version without touching info.xml. Before changing read-path code,
+# run `nextcloud_app/dev matrix` locally.
+name: Nextcloud compatibility matrix
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Mondays, early. Nothing here is time-sensitive; this is the net that
+    # catches "main stopped working on 32 last Tuesday".
+    - cron: '17 4 * * 1'
+  push:
+    branches:
+      - '**'
+    paths:
+      # The claim itself.
+      - 'nextcloud_app/appinfo/info.xml'
+      # The environment the claim is tested in.
+      - 'nextcloud_app/docker/compose.yaml'
+      - 'nextcloud_app/dev'
+      - '.forgejo/workflows/nextcloud-matrix.yml'
+
+concurrency:
+  # Its own group: Forgejo scopes these per repository, and this job must not
+  # cancel — or be cancelled by — the ordinary gate.
+  group: nextcloud-matrix-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  matrix:
+    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+    runs-on: linux
+    # Three Nextcloud installs, each pulling an image on a cold cache.
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: nextcloud_app
+    steps:
+      - name: Checkout
+        uses: https://github.com/actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      # Verified, not installed — the same reasoning as nextcloud-ci.yml's PHP
+      # step: this host must not expose a passwordless sudo grant reachable from
+      # CI (docs/RELEASE.md).
+      - name: Verify Docker
+        run: |
+          set -euo pipefail
+          if ! command -v docker >/dev/null 2>&1; then
+            echo "docker is not on PATH on this runner." >&2
+            echo "The compatibility matrix needs it: it installs each supported Nextcloud in turn." >&2
+            echo "One-time host prep, or run 'nextcloud_app/dev matrix' locally instead." >&2
+            exit 1
+          fi
+          docker compose version >/dev/null 2>&1 || {
+            echo "The Docker Compose v2 plugin is missing on this runner." >&2
+            exit 1
+          }
+
+      # The matrix checks that the bundle loads, so there has to be one. Built
+      # here rather than committed: js/ is a build artefact.
+      - name: Set up Node
+        uses: https://github.com/actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+
+      - name: Build the frontend
+        run: |
+          set -euo pipefail
+          npm ci --no-audit --no-fund
+          npm run build
+
+      - name: Every supported Nextcloud
+        run: |
+          set -euo pipefail
+          ./dev matrix
+
+      # The matrix tears its own stack down, including on failure. This is the
+      # backstop for a killed job, and it names its own project so it can never
+      # touch anything else on the host.
+      - name: Clean up
+        if: always()
+        run: |
+          set -euo pipefail
+          docker compose --file docker/compose.yaml --project-name cairn-matrix \
+            down --volumes --remove-orphans >/dev/null 2>&1 || true

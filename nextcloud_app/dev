@@ -30,6 +30,30 @@ GENERATOR="${REPO_ROOT}/tool/generate_dev_health_data.py"
 # server tree into the volume, which on a cold cache is genuinely slow.
 INSTALL_TIMEOUT_SECONDS=300
 
+# One pinned image per Nextcloud major appinfo/info.xml claims to support.
+# Tag *and* digest, like every other image here — a matrix that resolved tags at
+# run time would silently start testing something else.
+#
+# When info.xml's min-version or max-version moves, this table moves with it.
+# The two are the same claim: one is what the app store enforces, the other is
+# what actually gets run.
+MATRIX_IMAGES=(
+	"32|nextcloud:32.0.14-apache@sha256:915ee67db2cdd703f22e718aa5ad13114db8a9ce8f8262c5c993894c8751f97a"
+	"33|nextcloud:33.0.8-apache@sha256:c81c841aef5d757147313a0e6465cb871eb279affcd732792698fb5d0a15dcdc"
+	"34|nextcloud:34.0.3-apache@sha256:368cd1c75bc4a32c2aee8a119cae31bcebff80c374782f404c440c3295726814"
+)
+
+# The interpreter appinfo/info.xml declares as the floor. None of the Nextcloud
+# images above ships it — they carry 8.3, 8.4 and 8.5 — so without this the
+# `<php min-version>` half of the compatibility claim would go untested while
+# looking covered.
+MATRIX_PHP_FLOOR="php:8.2-cli-alpine@sha256:6d3dcc922fa36d06d6eefba5697a0aee599cf2f306b3cc2700a6526bc8fd5c09"
+
+# The matrix runs its own stack on its own port, so it never collides with a
+# `dev up` instance you have open.
+MATRIX_PROJECT="cairn-matrix"
+MATRIX_PORT="18080"
+
 # Metric folders a valid Cairn tree contains at least one of.
 METRIC_SLUGS=(heart-rate steps sleep activity weight)
 
@@ -47,8 +71,17 @@ die() {
 	exit 1
 }
 
+# Set only by `matrix`, which runs its own throwaway stack. Everything else
+# uses the project name declared in compose.yaml, so a matrix run can never
+# stop, reseed or destroy the instance you are working in.
+COMPOSE_PROJECT=""
+
 compose() {
-	docker compose --file "${COMPOSE_FILE}" "$@"
+	if [[ -n "${COMPOSE_PROJECT}" ]]; then
+		docker compose --file "${COMPOSE_FILE}" --project-name "${COMPOSE_PROJECT}" "$@"
+	else
+		docker compose --file "${COMPOSE_FILE}" "$@"
+	fi
 }
 
 # occ, as the web-server user, without a TTY so this works from scripts and CI.
@@ -458,6 +491,180 @@ cmd_test() {
 		--cache-directory /tmp/.phpunit "$@"
 }
 
+# Everything the app must survive on one Nextcloud version, in order of how
+# early it would fail. Echoes one line per check; returns non-zero on the first
+# failure so the summary can say which step it was.
+matrix_probe() {
+	local base="http://localhost:${MATRIX_PORT}"
+	local auth
+	auth="$(admin_user):$(admin_password)"
+
+	# The header is what makes an API route reachable with basic auth:
+	# Nextcloud exempts declared API clients from the CSRF check that a browser
+	# session needs.
+	local api=(--silent --show-error --user "${auth}" --header "OCS-APIRequest: true")
+
+	if ! occ app:list --output=json 2>/dev/null | grep -q '"cairn"'; then
+		say "    app did not enable"
+		return 1
+	fi
+	say "    app enables"
+
+	local page
+	page="$(curl "${api[@]}" "${base}/index.php/apps/cairn/")" || return 1
+	for needle in 'id="cairn"' 'initial-state-cairn-hasRoot' 'cairn-main.mjs'; do
+		if ! grep -q "${needle}" <<<"${page}"; then
+			say "    page is missing ${needle}"
+			return 1
+		fi
+	done
+	say "    page renders, bundle and initial state present"
+
+	local bundle
+	bundle="$(grep -o '/custom_apps/cairn/js/cairn-main.mjs[^\"]*' <<<"${page}" | head -1)"
+	if [[ "$(curl "${api[@]}" --output /dev/null --write-out '%{http_code}' "${base}${bundle}")" != "200" ]]; then
+		say "    bundle is not served"
+		return 1
+	fi
+	say "    bundle is served"
+
+	local endpoint key body
+	for endpoint in "files|metrics" "steps?days=3|series" "heart-rate?days=3|series" \
+		"weight?days=7|series" "sleep?nights=1|nights" "activity?days=7|workouts"; do
+		key="${endpoint#*|}"
+		body="$(curl "${api[@]}" "${base}/index.php/apps/cairn/api/v1/${endpoint%|*}")" || return 1
+		if ! grep -q "\"${key}\"" <<<"${body}"; then
+			say "    /api/v1/${endpoint%|*} did not return ${key}: ${body:0:120}"
+			return 1
+		fi
+	done
+	say "    all six endpoints answer"
+
+	# Under this version's PHP, which is the point: the app claims 8.2 and each
+	# image ships a different interpreter.
+	compose exec -T nextcloud php /var/www/html/custom_apps/cairn/tests/read_only_guard.php >/dev/null || return 1
+	compose exec -T nextcloud php /var/www/html/custom_apps/cairn/tests/validate_info_xml.php >/dev/null || return 1
+	say "    read-only guard and info.xml pass on this PHP"
+
+	# A 200 can still hide a caught exception. The log is where those surface.
+	if compose exec -T nextcloud sh -c 'grep -c "custom_apps/cairn" /var/www/html/data/nextcloud.log 2>/dev/null || true' \
+		| tr -d "[:space:]" | grep -qvE "^0?$"; then
+		say "    the server log mentions this app — inspect it"
+		compose exec -T nextcloud sh -c 'grep "custom_apps/cairn" /var/www/html/data/nextcloud.log | tail -3' >&2 || true
+		return 1
+	fi
+	say "    server log is clean"
+}
+
+# Bring one version up, probe it, tear it down. Never leaves a stack running.
+matrix_one() {
+	local version="$1" image="$2" status=0
+	step "Nextcloud ${version}"
+
+	export CAIRN_NC_IMAGE="${image}" CAIRN_DEV_PORT="${MATRIX_PORT}"
+	COMPOSE_PROJECT="${MATRIX_PROJECT}"
+
+	compose down --volumes --remove-orphans >/dev/null 2>&1 || true
+	compose up --detach nextcloud >/dev/null 2>&1
+
+	if wait_for_install >/dev/null 2>&1; then
+		say "    php $(compose exec -T nextcloud php -r 'echo PHP_VERSION;' 2>/dev/null)"
+		disable_apcu >/dev/null 2>&1 || true
+		fix_custom_apps_owner >/dev/null 2>&1 || true
+		occ config:system:set loglevel --value=2 --type=integer >/dev/null 2>&1 || true
+		occ app:disable firstrunwizard >/dev/null 2>&1 || true
+		occ app:enable cairn >/dev/null 2>&1 || true
+		matrix_seed || status=1
+		if [[ "${status}" -eq 0 ]]; then
+			matrix_probe || status=1
+		fi
+	else
+		say "    Nextcloud never finished installing"
+		status=1
+	fi
+
+	compose down --volumes --remove-orphans >/dev/null 2>&1 || true
+	COMPOSE_PROJECT=""
+	unset CAIRN_NC_IMAGE CAIRN_DEV_PORT
+	return "${status}"
+}
+
+# The generated tree, never a real export: a compatibility run is not the place
+# for anybody's health history.
+matrix_seed() {
+	generate_fixture >/dev/null 2>&1 || return 1
+	local target
+	target="/var/www/html/data/$(admin_user)/files/Cairn"
+	compose exec -T nextcloud rm -rf "${target}" >/dev/null 2>&1
+	compose exec -T nextcloud mkdir -p "${target}" >/dev/null 2>&1
+	compose cp "${GENERATED_DIR}/." "nextcloud:${target}/" >/dev/null 2>&1 || return 1
+	compose exec -T nextcloud chown -R www-data:www-data "${target}" >/dev/null 2>&1
+	occ files:scan --path="/$(admin_user)/files/Cairn" --quiet >/dev/null 2>&1 || true
+}
+
+# Parse every file under the oldest PHP the app claims. A syntax check is not a
+# compatibility test, but it is the half that fails loudly and it is the half
+# the Nextcloud images cannot cover.
+matrix_php_floor() {
+	step "PHP floor (info.xml says $(php_min_version))"
+	local output
+	if ! output="$(docker run --rm --volume "${APP_ROOT}:/app:ro" --workdir /app \
+		"${MATRIX_PHP_FLOOR}" sh -c '
+			for f in $(find lib tests -name "*.php"); do
+				php -l "$f" >/dev/null || exit 1
+			done' 2>&1)"; then
+		say "    a file does not parse on the declared floor:"
+		printf '%s\n' "${output}" >&2
+		return 1
+	fi
+	say "    every file parses"
+}
+
+# What appinfo/info.xml declares, so the check and the claim cannot drift.
+php_min_version() {
+	sed -n -E 's/.*<php[^>]*min-version="([0-9.]+)".*/\1/p' "${APP_ROOT}/appinfo/info.xml" | head -1
+}
+
+cmd_matrix() {
+	require_docker
+	if [[ ! -f "${APP_ROOT}/js/cairn-main.mjs" ]]; then
+		die "the frontend bundle is not built." "Run 'nextcloud_app/dev build' first — the matrix checks that it loads."
+	fi
+
+	say "Checking every Nextcloud major appinfo/info.xml claims."
+	say "Runs as project '${MATRIX_PROJECT}' on port ${MATRIX_PORT}, so your own"
+	say "instance is left alone."
+
+	local results=() entry version image
+	if matrix_php_floor; then
+		results+=("php $(php_min_version)|ok")
+	else
+		results+=("php $(php_min_version)|FAILED")
+	fi
+
+	for entry in "${MATRIX_IMAGES[@]}"; do
+		version="${entry%%|*}"
+		image="${entry#*|}"
+		if matrix_one "${version}" "${image}"; then
+			results+=("Nextcloud ${version}|ok")
+		else
+			results+=("Nextcloud ${version}|FAILED")
+		fi
+	done
+
+	step "Summary"
+	local failed=0
+	for entry in "${results[@]}"; do
+		printf '  %-14s %s\n' "${entry%%|*}" "${entry#*|}"
+		[[ "${entry#*|}" == "ok" ]] || failed=1
+	done
+	if [[ "${failed}" -ne 0 ]]; then
+		die "at least one supported Nextcloud version does not work." "Fix it, or narrow appinfo/info.xml — the compatibility claim has to be true."
+	fi
+	say ""
+	say "info.xml's 32-34 claim holds."
+}
+
 cmd_check() {
 	container_running || die "the dev instance is not running." "Checks run inside the container: nextcloud_app/dev up"
 	step "Read-only guard"
@@ -506,6 +713,8 @@ Cairn Nextcloud app — development environment
   ./dev test [ARGS...]   Run the unit tests on the container's PHP.
   ./dev lint             Everything static: psalm, the PHP coding standard,
                          the frontend lint, the read-only guard and info.xml.
+  ./dev matrix           Run the app against every Nextcloud major info.xml
+                         claims. Uses its own project and port.
   ./dev check            Run the read-only guard and validate appinfo/info.xml.
   ./dev status           Is it running, and is the app enabled?
   ./dev occ ARGS...      Run an occ command, e.g. ./dev occ app:list
@@ -546,6 +755,7 @@ main() {
 		build) cmd_build ;;
 		watch) cmd_watch ;;
 		lint) cmd_lint ;;
+		matrix) cmd_matrix ;;
 		test) cmd_test "$@" ;;
 		status) cmd_status ;;
 		reset) cmd_reset ;;

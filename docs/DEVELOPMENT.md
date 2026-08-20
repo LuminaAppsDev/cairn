@@ -311,10 +311,36 @@ the format.
 
 ### 4.6 Version-tracking against Nextcloud majors
 
-`info.xml`'s `max-version` must move with each Nextcloud major or the app is
-disabled on server upgrade (DESIGN.md §7). Bump it only after checking the app
-still enables against the new major, and move `docker/compose.yaml`'s pinned
-image — tag **and** digest — at the same time.
+`info.xml`'s `<nextcloud min-version max-version>` is a promise to everyone
+installing from the app store, and a stale `max-version` means the app is
+silently disabled on their server after they upgrade (DESIGN.md §7). Check the
+promise rather than assert it:
+
+```bash
+nextcloud_app/dev matrix
+```
+
+It installs every claimed Nextcloud major in turn, enables the app, seeds
+generated data, and checks the page, the bundle and all six endpoints — plus the
+read-only guard and `info.xml` under **that version's PHP**, which differs across
+them (32 ships 8.3, 33 ships 8.4, 34 ships 8.5). It also parses every file under
+PHP 8.2, the floor `info.xml` declares and which none of the Nextcloud images
+ships — without that step, half the compatibility claim would go untested while
+looking covered.
+
+It runs as its own Compose project on its own port, so it never disturbs a
+`dev up` instance you have open, and tears each version down afterwards.
+
+**Three things move together.** `info.xml`'s version range, the
+`MATRIX_IMAGES` table in `nextcloud_app/dev`, and `docker/compose.yaml`'s
+default image are one claim expressed three times. Change one and change the
+others in the same commit, then run the matrix — the point of it is that the
+claim cannot quietly become false.
+
+CI runs the same command (`.forgejo/workflows/nextcloud-matrix.yml`) when the
+claim or the environment changes, on demand, and weekly. It is deliberately
+*not* on every push: three Nextcloud installs would queue every other job behind
+them on a single-runner host. Run it locally before changing read-path code.
 
 Reference: Nextcloud Developer Manual —
 <https://docs.nextcloud.com/server/latest/developer_manual/>.

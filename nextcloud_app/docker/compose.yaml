@@ -22,7 +22,12 @@ services:
   nextcloud:
     # Pinned by tag and digest. Bump both together, and only after checking the
     # app still enables — info.xml's max-version has to move with it.
-    image: nextcloud:34.0.3-apache@sha256:368cd1c75bc4a32c2aee8a119cae31bcebff80c374782f404c440c3295726814
+    #
+    # Overridable so `dev matrix` can run the same environment against every
+    # Nextcloud major the app claims to support. The default is what `dev up`
+    # gives you; the other versions are pinned in the `dev` script's own table,
+    # never resolved by tag at run time.
+    image: ${CAIRN_NC_IMAGE:-nextcloud:34.0.3-apache@sha256:368cd1c75bc4a32c2aee8a119cae31bcebff80c374782f404c440c3295726814}
     ports:
       # Bound to loopback explicitly. Compose's short syntax defaults to
       # 0.0.0.0, which would put a Nextcloud whose admin password is literally

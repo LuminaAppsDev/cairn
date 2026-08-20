@@ -400,17 +400,20 @@ because the on-disk format is the one genuinely expensive thing to change
 - **Scope:** read-only PHP + Vue app (§7) in its own subtree under
   **AGPL-3.0-or-later** (see `DEVELOPMENT.md` §5); roll-ups computed
   server-side; basic charts; version-tracked against Nextcloud majors.
-- **Done:** the subtree `nextcloud_app/` exists with a one-command Docker dev
-  environment (`nextcloud_app/dev up`), a synthetic health-data generator so a
-  fresh clone comes up populated without anyone's real export, and a skeleton
-  that locates, lists and decodes the `/Cairn/` shards read-only — with the
-  read-only property enforced statically rather than asserted.
-- **Remaining:** port the §4.3 read semantics to PHP (last-ingested-wins,
-  source-priority dedup, sleep-episode aggregation) behind a **shared
-  golden-fixture harness consumed by both the Dart and PHP readers** — the two
-  frontends must agree on the same bytes, and only a shared fixture proves it;
-  then the JSON API, the Vue dashboard and charts; then app-store packaging and
-  a Nextcloud-major compatibility matrix in CI.
+- **Done:** the subtree `nextcloud_app/` with a one-command Docker dev
+  environment (`dev up`) and a synthetic health-data generator, so a fresh clone
+  comes up populated without anyone's real export. The §4.3 read semantics are
+  ported to PHP as a server-free layer with no Nextcloud imports, held to the
+  same answers as the Flutter reader by **shared golden fixtures both suites
+  run** (`test/fixtures/parity/`) — the two frontends must agree on the same
+  bytes, and only a shared fixture proves it. On top of that: a read-only JSON
+  API, a Vue dashboard with hand-rolled SVG charts, English and German, psalm at
+  level 2 with no baseline, and a compatibility matrix (`dev matrix`) that
+  installs every claimed Nextcloud major in turn rather than trusting
+  `info.xml`. Read-only is enforced statically, not asserted.
+- **Remaining:** app-store packaging — `krankerl.toml`, a signing key, the
+  submission — and integration tests for the controllers, which are currently
+  covered end-to-end by the matrix rather than in isolation.
 - **Exit:** installs on a user Nextcloud, renders aggregates from `/Cairn/`,
   never writes.
 
