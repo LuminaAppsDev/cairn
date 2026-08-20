@@ -13,10 +13,11 @@ declare(strict_types=1);
  * build step before that is demonstrated would mean debugging two things at once.
  * The Vue dashboard replaces this template in a later phase (DESIGN.md §15).
  *
- * @var array{overview: ?\OCA\Cairn\Service\Overview} $_
+ * @var array{overview: ?\OCA\Cairn\Service\Overview, figures: ?\OCA\Cairn\Service\HeadlineFigures} $_
  * @var \OCP\IL10N $l
  */
 
+use OCA\Cairn\Service\HeadlineFigures;
 use OCA\Cairn\Service\MetricOverview;
 use OCA\Cairn\Service\Overview;
 
@@ -24,6 +25,18 @@ use OCA\Cairn\Service\Overview;
 
 /** @var ?Overview $overview */
 $overview = $_['overview'];
+/** @var ?HeadlineFigures $figures */
+$figures = $_['figures'];
+
+/** Milliseconds as `7 h 12 min`, or an em dash. */
+$duration = static function (?int $millis): string {
+	if ($millis === null) {
+		return '—';
+	}
+	$minutes = intdiv($millis, 60000);
+
+	return sprintf('%d h %02d min', intdiv($minutes, 60), $minutes % 60);
+};
 ?>
 <div id="cairn-app">
 	<div class="cairn-sheet">
@@ -64,6 +77,50 @@ $overview = $_['overview'];
 		</div>
 	</dl>
 
+<?php if ($figures !== null) { ?>
+	<h3 class="cairn-section">What the files say</h3>
+	<p class="cairn-section-note">
+		Read straight from the shards below by the same rules the phone app
+		applies &mdash; cumulative step snapshots resolved to the newest, sleep
+		recomputed from its stage segments, a corrected weight superseding the
+		value it replaced.
+	</p>
+	<dl class="cairn-figures">
+		<div>
+			<dt>Steps today</dt>
+			<dd class="cairn-figure"><?php p($figures->todaySteps === null
+				? 'no sync yet' : number_format($figures->todaySteps)); ?></dd>
+		</div>
+		<div>
+			<dt>Latest weight</dt>
+			<dd class="cairn-figure"><?php p($figures->latestWeightKg === null
+				? '—' : number_format($figures->latestWeightKg, 1) . ' kg'); ?></dd>
+			<dd class="cairn-figure-sub"><?php p($figures->latestWeightAt ?? ''); ?></dd>
+		</div>
+		<div>
+			<dt>Last night</dt>
+			<dd class="cairn-figure"><?php p($duration($figures->lastNightSleepMillis)); ?></dd>
+			<dd class="cairn-figure-sub"><?php
+				p($figures->lastNightOn === null ? '' : 'night of ' . $figures->lastNightOn
+					. ($figures->lastNightEfficiency === null ? ''
+						: sprintf(', %d%% efficiency', (int)round($figures->lastNightEfficiency * 100))));
+			?></dd>
+		</div>
+		<div>
+			<dt>Resting heart rate</dt>
+			<dd class="cairn-figure"><?php p($figures->restingHeartRate === null
+				? '—' : (int)round($figures->restingHeartRate) . ' bpm'); ?></dd>
+			<dd class="cairn-figure-sub">lowest daily minimum, last 7 days</dd>
+		</div>
+		<div>
+			<dt>Workouts</dt>
+			<dd class="cairn-figure"><?php p((string)$figures->workoutsLast7Days); ?></dd>
+			<dd class="cairn-figure-sub">last 7 days</dd>
+		</div>
+	</dl>
+<?php } ?>
+
+	<h3 class="cairn-section">Files on disk</h3>
 	<div class="cairn-table-wrap">
 		<table class="cairn-metrics">
 			<thead>

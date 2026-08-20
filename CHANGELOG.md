@@ -6,6 +6,36 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- **The seven dashboard queries, and the first real numbers off the files.**
+  `HealthQueryService` owns what a caller should not have to know: how far back
+  each question reads, and which resolution rule applies to what it finds. The
+  windows are deliberately not uniform. `todayStepTotal()` returns `null` rather
+  than `0` when nothing has synced, because "no data" and "you did not move" are
+  different answers and only one is a measurement — while `dailySteps()`
+  zero-fills, because there the number is a position on an axis and a missing
+  day must keep its slot. `latestScalar()` walks backwards and stops at the
+  first day with data instead of reading ninety days to answer "what do I
+  weigh".
+
+  `lastNNights(n)` reads **n + 2** dates where every other query reads `n`. A
+  night is filed under the date it began and usually begins the evening before,
+  so reading only today would find the tail of a night and report a sleep that
+  started at midnight. The asymmetry is inherited from the mobile reader and
+  reproduced deliberately; normalising it would look like a tidy-up and would
+  make the two frontends disagree.
+
+  The skeleton page now shows five figures computed by this layer from the
+  actual shards. They were cross-checked against an independent implementation
+  of the documented rules, run over a real 244-shard export: steps 60, last
+  night 6 h 16 min, resting heart rate 72 bpm, three workouts — all four agree.
+  That is evidence no unit test can give, because it exercises the rules against
+  data nobody wrote to make them pass.
+
+  `UserShardSource` is the only place below the controller that knows a user
+  exists. The pure `ShardSource` contract has no notion of one, which is what
+  keeps the read path runnable against a plain directory — and comparable with
+  the mobile reader, which only ever has a single user.
+
 - **The read-path semantics ported to PHP, as a server-free layer with 123
   tests.** `lib/Reading/` holds the rules from `DESIGN.md` §4.3 that every Cairn
   frontend must apply identically — strict JSON typing, timestamp handling,

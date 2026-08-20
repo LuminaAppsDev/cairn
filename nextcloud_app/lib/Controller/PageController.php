@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace OCA\Cairn\Controller;
 
 use OCA\Cairn\AppInfo\Application;
+use OCA\Cairn\Service\HeadlineFiguresService;
 use OCA\Cairn\Service\OverviewService;
 use OCP\AppFramework\Controller;
 use OCP\AppFramework\Http\Attribute\NoAdminRequired;
@@ -29,6 +30,7 @@ class PageController extends Controller {
 	public function __construct(
 		IRequest $request,
 		private readonly OverviewService $overviewService,
+		private readonly HeadlineFiguresService $figuresService,
 		private readonly IUserSession $userSession,
 	) {
 		parent::__construct(Application::APP_ID, $request);
@@ -42,10 +44,15 @@ class PageController extends Controller {
 	public function index(): TemplateResponse {
 		$user = $this->userSession->getUser();
 
+		$uid = $user?->getUID();
+
 		return new TemplateResponse(
 			Application::APP_ID,
 			'main',
-			['overview' => $user === null ? null : $this->overviewService->forUser($user->getUID())],
+			[
+				'overview' => $uid === null ? null : $this->overviewService->forUser($uid),
+				'figures' => $uid === null ? null : $this->figuresService->forUser($uid),
+			],
 		);
 	}
 }
