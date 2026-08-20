@@ -1,0 +1,18 @@
+{
+  "description": "A re-typed weight. Append-only files forbid rewriting the original, so both values sit on disk at the same instant and the later-ingested one wins. The stale 98.4 must never be shown.",
+  "now": "2026-08-20T12:00:00",
+  "timezone": "Europe/Berlin",
+  "queries": [
+    {
+      "id": "latest",
+      "name": "latestScalar",
+      "metric": "weight"
+    },
+    {
+      "id": "series",
+      "name": "scalarSeries",
+      "metric": "weight",
+      "days": 3
+    }
+  ]
+}

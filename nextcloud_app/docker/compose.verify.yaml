@@ -1,0 +1,34 @@
+# SPDX-FileCopyrightText: 2026 Max Fiedler
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# The same Nextcloud as compose.yaml, deliberately WITHOUT the bind mount of the
+# working tree.
+#
+# `dev verify-package` unpacks the release tarball into this instance and drives
+# it. With the ordinary compose file, custom_apps/cairn is the working tree, so
+# the check would exercise the code on disk while appearing to exercise the
+# artefact — and a file missing from the tarball would pass.
+#
+# Everything else matches compose.yaml. When the pinned image there moves, this
+# moves with it: `dev matrix` keeps the version claim honest, and this keeps the
+# artefact check running on the same server that claim is about.
+
+name: cairn-verify
+
+services:
+  nextcloud:
+    image: ${CAIRN_NC_IMAGE:-nextcloud:34.0.3-apache@sha256:368cd1c75bc4a32c2aee8a119cae31bcebff80c374782f404c440c3295726814}
+    ports:
+      # Loopback only, for the reason compose.yaml gives at length.
+      - "127.0.0.1:${CAIRN_DEV_PORT:-18080}:80"
+    environment:
+      SQLITE_DATABASE: nextcloud.db
+      NEXTCLOUD_ADMIN_USER: "${CAIRN_ADMIN_USER:-admin}"
+      NEXTCLOUD_ADMIN_PASSWORD: "${CAIRN_ADMIN_PASSWORD:-admin}"
+      NEXTCLOUD_TRUSTED_DOMAINS: "localhost 127.0.0.1"
+    volumes:
+      - nextcloud_html:/var/www/html
+      - ./php-dev.ini:/usr/local/etc/php/conf.d/zz-cairn-dev.ini:ro
+
+volumes:
+  nextcloud_html:

@@ -1,0 +1,43 @@
+{
+	"name": "luminaappsdev/cairn-nextcloud",
+	"description": "Read-only Nextcloud frontend for Cairn health files",
+	"type": "project",
+	"license": "AGPL-3.0-or-later",
+	"authors": [
+		{
+			"name": "Max Fiedler",
+			"email": "luminaapps@gmail.com"
+		}
+	],
+	"require": {
+		"php": ">=8.2"
+	},
+	"autoload": {
+		"psr-4": {
+			"OCA\\Cairn\\": "lib/"
+		}
+	},
+	"config": {
+		"sort-packages": true,
+		"platform": {
+			"php": "8.3.16"
+		}
+	},
+	"require-dev": {
+		"nextcloud/coding-standard": "^1.5",
+		"nextcloud/ocp": "^32.0",
+		"phpunit/phpunit": "^12.5",
+		"vimeo/psalm": "^6.16"
+	},
+	"autoload-dev": {
+		"psr-4": {
+			"OCA\\Cairn\\Tests\\": "tests/"
+		}
+	},
+	"scripts": {
+		"cs:check": "php-cs-fixer fix --dry-run --diff",
+		"cs:fix": "php-cs-fixer fix",
+		"psalm": "psalm --no-cache",
+		"test": "phpunit"
+	}
+}

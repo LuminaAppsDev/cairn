@@ -1,0 +1,11 @@
+# SPDX-FileCopyrightText: 2026 Max Fiedler
+# SPDX-License-Identifier: MIT
+#
+# Declaring the tag keeps `flutter test` from warning about it on every run, and
+# makes `flutter test -t parity` a way to run just the cross-frontend suite.
+tags:
+  parity:
+    # These fixtures are authored in Europe/Berlin, and Dart reads its timezone
+    # from the environment rather than taking it as a parameter. The suite
+    # asserts the offsets and tells you this if they are wrong.
+    skip: false

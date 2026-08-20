@@ -79,6 +79,8 @@ flowchart TD
 - **Provenance:** every reading carries a source (phone vs watch vs vendor app). Record it in the OMH `acquisition_provenance` block.
 - **Deduplication:** the same metric (e.g. steps) often arrives from multiple sources and double-counts. Apply a **source-priority policy per data type** (configurable; sensible defaults, e.g. prefer the wearable for heart rate). Dedup key: `(type, time-window, value, source)`.
 - **Correction resolution (read path):** an in-place edit in the source health app — the common case is a re-typed manual weight — is re-read within the trailing reconcile window and **appended** as a new datapoint; append-only forbids rewriting the original, so both versions coexist on disk. Readers resolve this with **last-ingested-wins**: among datapoints that share the same source *and* effective time-frame (a point instant for scalars, a `(start,end)` window for intervals), the one with the latest `header.creation_date_time` is shown and the rest are shadowed (kept as an audit trail). The same rule covers a source that re-reports a **cumulative total in a fixed window** rather than per-interval deltas — Samsung Health, for one, exposes the day's steps as a single whole-day record whose value grows through the day, so each refresh reads a fresh snapshot with the identical window; the newest is the current total (summing the snapshots would wildly over-count, keeping the first pins a stale value). The write path **compacts** these to the latest on ingest (§5.3), so they don't pile up; the read path resolves any that remain the same way. Genuinely distinct interval deltas keep distinct windows and are still summed. This covers *value* corrections/updates at an unchanged time-frame; edits that move the timestamp, and deletions, are not resolvable this way and wait on the change-token work below. **This is a property of the file format's read semantics, so every reader must apply it identically** — the mobile dashboard (path A) and the Nextcloud app (path B) alike — or the two frontends will disagree on the same files.
+- **Sleep totals (read path):** a night's *time asleep* is the duration of the **union** of asleep-stage intervals **minus** the union of wake intervals — a set difference, computed per episode. Both halves are load-bearing and both were learned the hard way. The union (rather than a sum) is needed because sources overlap their own segments: Samsung Health emits a whole-night `session` segment alongside the light/deep/rem breakdown of the same minutes, and summing those reports eleven hours of sleep for a seven-hour night. The subtraction is needed because that same whole-night `session` *also* spans the awake stretches inside it, so a union alone counts them as sleep — a real night with 26 awakenings reported 6 h 16 min at 100 % efficiency, where the correct answer is 5 h 30 min at 88 %. Stated as a set operation rather than a rule about which stages to ignore, it needs no special case for sources that emit a session marker and none for sources that do not. **`in_bed` is deliberately not treated as wakefulness** (some sources emit it across the entire time in bed, which would zero out the night); `awake` and `out_of_bed` are. Like every rule in this section this is a property of the format's read semantics, so **both frontends must implement it identically** — the shared fixtures in `test/fixtures/parity/` enforce that.
+- **Per-stage breakdown (read path):** a night's time-per-stage is a **partition** of the covered window — every instant is attributed to exactly one stage — not a tally per stage. A tally double-counts for the same reason the sleep total did: a whole-night `session` covers the very minutes the light/deep/rem segments describe, so the parts would sum to more than the night. Each stage claims only time no more *specific* stage has claimed, in the order `awake`, `out_of_bed`, `deep`, `rem`, `light`, `asleep_unspecified`, `session`, `in_bed`. Wakefulness deliberately comes first, so the breakdown cannot contradict the total. Two invariants follow and both are asserted in the tests and the shared fixtures: **the asleep stages sum to exactly the night's total sleep**, and every stage together sums to the time the source actually described. `session` therefore means what it honestly is — asleep, stage unrecorded — and on a source that describes every minute it claims nothing at all.
 - **Incremental sync:** with the `health` package this is **timestamp-window based** — track "last synced instant" per data type and query `[lastSync, now]`. Known limitation: this can miss *late-arriving or edited* historical records. For robust change tracking, the native APIs offer **Health Connect change tokens** and **HealthKit anchored object queries (`HKAnchoredObjectQuery`)**; reaching them requires a platform channel / native plugin. Decision: ship timestamp-window sync in v1, flag change-token sync as a v2 hardening task.
 
 ### 4.4 Background sync
@@ -391,13 +393,28 @@ because the on-disk format is the one genuinely expensive thing to change
   incl. screenshots, are ready); complete the store declarations/build for any
   other channel(s) pursued.
 
-### Phase 7 — Nextcloud web app (v1.5) ⬜
+### Phase 7 — Nextcloud web app (v1.5) 🚧
 
 - **Goal:** an optional, read-only second frontend with server-side
   aggregation.
 - **Scope:** read-only PHP + Vue app (§7) in its own subtree under
   **AGPL-3.0-or-later** (see `DEVELOPMENT.md` §5); roll-ups computed
   server-side; basic charts; version-tracked against Nextcloud majors.
+- **Done:** the subtree `nextcloud_app/` with a one-command Docker dev
+  environment (`dev up`) and a synthetic health-data generator, so a fresh clone
+  comes up populated without anyone's real export. The §4.3 read semantics are
+  ported to PHP as a server-free layer with no Nextcloud imports, held to the
+  same answers as the Flutter reader by **shared golden fixtures both suites
+  run** (`test/fixtures/parity/`) — the two frontends must agree on the same
+  bytes, and only a shared fixture proves it. On top of that: a read-only JSON
+  API, a Vue dashboard with hand-rolled SVG charts, English and German, psalm at
+  level 2 with no baseline, and a compatibility matrix (`dev matrix`) that
+  installs every claimed Nextcloud major in turn rather than trusting
+  `info.xml`. Read-only is enforced statically, not asserted.
+- **Remaining:** the app-store submission itself — requesting the signing
+  certificate Nextcloud counter-signs, registering the app id, and uploading a
+  release. `dev package` and `dev verify-package` build and prove the artefact;
+  what is left needs an account, not code.
 - **Exit:** installs on a user Nextcloud, renders aggregates from `/Cairn/`,
   never writes.
 

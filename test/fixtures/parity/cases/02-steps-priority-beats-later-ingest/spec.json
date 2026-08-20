@@ -1,0 +1,11 @@
+{
+  "description": "Two sources report the identical window. The wearable's name contains 'fit' so it outranks the vendor app, and must win even though the vendor line was written eight hours later. A reader that tie-breaks on ingest time before consulting priority reports 1150.",
+  "now": "2026-08-20T12:00:00",
+  "timezone": "Europe/Berlin",
+  "queries": [
+    {
+      "id": "today",
+      "name": "todayStepTotal"
+    }
+  ]
+}

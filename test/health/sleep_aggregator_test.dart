@@ -111,4 +111,117 @@ void main() {
     // Union of asleep intervals = the 480-min session, not 480 + 90 + 60.
     expect(episodes.single.totalSleep, const Duration(minutes: 480));
   });
+
+  test('wakefulness inside a session is not counted as sleep', () {
+    // The case that made a real night read as perfect sleep: Samsung emits a
+    // whole-night session *alongside* the awake segments, and session counts as
+    // asleep — so the union swallowed every awakening. Time asleep is time
+    // inside a sleep interval and not inside a wake interval.
+    final t = DateTime(2026, 6, 13, 23);
+    final episodes = aggregator.aggregate([
+      seg(SleepStage.session, t, 240),
+      seg(SleepStage.light, t, 60),
+      seg(SleepStage.awake, t.add(const Duration(minutes: 60)), 30),
+      seg(SleepStage.light, t.add(const Duration(minutes: 90)), 60),
+      seg(SleepStage.awake, t.add(const Duration(minutes: 150)), 30),
+      seg(SleepStage.rem, t.add(const Duration(minutes: 180)), 60),
+    ]);
+    // Four hours in bed, an hour of it awake.
+    expect(episodes.single.totalSleep, const Duration(minutes: 180));
+    expect(episodes.single.awakenings, 2);
+  });
+
+  test('awake time outside any sleep interval does not reduce it', () {
+    final t = DateTime(2026, 6, 13, 23);
+    final episodes = aggregator.aggregate([
+      seg(SleepStage.awake, t, 30),
+      seg(SleepStage.deep, t.add(const Duration(minutes: 30)), 120),
+    ]);
+    expect(episodes.single.totalSleep, const Duration(minutes: 120));
+  });
+
+  test('in-bed spanning the night does not erase it', () {
+    // in_bed is a position, not wakefulness. Some sources emit it across the
+    // whole time in bed, so subtracting it would zero out the night.
+    final t = DateTime(2026, 6, 13, 23);
+    final episodes = aggregator.aggregate([
+      seg(SleepStage.inBed, t, 240),
+      seg(SleepStage.session, t, 240),
+      seg(SleepStage.deep, t.add(const Duration(minutes: 30)), 180),
+    ]);
+    expect(episodes.single.totalSleep, const Duration(minutes: 240));
+  });
+
+  test('per-stage durations partition the night', () {
+    // A plain sum per stage double-counts, because the whole-night session
+    // covers the very minutes the light/deep/rem segments describe. Each stage
+    // claims only what no more specific stage already claimed, which leaves
+    // session meaning what it honestly is: asleep, stage unrecorded.
+    final t = DateTime(2026, 6, 13, 23);
+    final episodes = aggregator.aggregate([
+      seg(SleepStage.session, t, 240),
+      seg(SleepStage.light, t, 60),
+      seg(SleepStage.awake, t.add(const Duration(minutes: 60)), 30),
+      seg(SleepStage.deep, t.add(const Duration(minutes: 90)), 60),
+      seg(SleepStage.rem, t.add(const Duration(minutes: 150)), 30),
+    ]);
+
+    final stages = episodes.single.stageDurations;
+    expect(stages[SleepStage.light], const Duration(minutes: 60));
+    expect(stages[SleepStage.awake], const Duration(minutes: 30));
+    expect(stages[SleepStage.deep], const Duration(minutes: 60));
+    expect(stages[SleepStage.rem], const Duration(minutes: 30));
+    // The last hour is the only stretch no finer stage described.
+    expect(stages[SleepStage.session], const Duration(minutes: 60));
+    // Everything together is the whole four-hour window.
+    expect(
+      stages.values.fold(Duration.zero, (a, b) => a + b),
+      const Duration(minutes: 240),
+    );
+  });
+
+  test('sleep stages sum to total sleep', () {
+    // The invariant tying the breakdown to the headline figure: whatever a
+    // chart shows as sleep must add up to the number beside it.
+    final t = DateTime(2026, 6, 13, 23);
+    final episodes = aggregator.aggregate([
+      seg(SleepStage.session, t, 240),
+      seg(SleepStage.light, t, 60),
+      seg(SleepStage.awake, t.add(const Duration(minutes: 60)), 30),
+      seg(SleepStage.light, t.add(const Duration(minutes: 90)), 60),
+      seg(SleepStage.awake, t.add(const Duration(minutes: 150)), 30),
+      seg(SleepStage.rem, t.add(const Duration(minutes: 180)), 60),
+    ]);
+
+    final episode = episodes.single;
+    final asleep = episode.stageDurations.entries
+        .where((e) => e.key.isAsleep)
+        .fold(Duration.zero, (total, e) => total + e.value);
+
+    expect(asleep, episode.totalSleep);
+    expect(asleep, const Duration(minutes: 180));
+  });
+
+  test('overlapping same-stage segments are not double-counted', () {
+    final t = DateTime(2026, 6, 13, 23);
+    final episodes = aggregator.aggregate([
+      seg(SleepStage.deep, t, 120),
+      seg(SleepStage.deep, t.add(const Duration(minutes: 60)), 120),
+    ]);
+
+    expect(
+      episodes.single.stageDurations[SleepStage.deep],
+      const Duration(minutes: 180),
+    );
+    expect(episodes.single.totalSleep, const Duration(minutes: 180));
+  });
+
+  test('out-of-bed inside a session is subtracted', () {
+    final t = DateTime(2026, 6, 13, 23);
+    final episodes = aggregator.aggregate([
+      seg(SleepStage.session, t, 240),
+      seg(SleepStage.outOfBed, t.add(const Duration(minutes: 60)), 30),
+    ]);
+    expect(episodes.single.totalSleep, const Duration(minutes: 210));
+  });
 }

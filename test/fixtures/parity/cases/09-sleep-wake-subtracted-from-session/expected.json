@@ -1,0 +1,22 @@
+{
+  "nights": [
+    {
+      "night": "2026-08-20",
+      "start": "2026-08-20T01:00:00+02:00",
+      "end": "2026-08-20T05:00:00+02:00",
+      "totalSleepMs": 10800000,
+      "awakenings": 2,
+      "isMainSleep": true,
+      "timeInBedMs": 14400000,
+      "efficiency": 0.75,
+      "perStageMs": {
+        "awake": 3600000,
+        "light": 7200000,
+        "rem": 3600000
+      },
+      "sources": [
+        "com.sec.android.app.shealth"
+      ]
+    }
+  ]
+}

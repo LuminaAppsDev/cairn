@@ -1,0 +1,67 @@
+<?xml version="1.0"?>
+<!--
+  SPDX-FileCopyrightText: 2026 Max Fiedler
+  SPDX-License-Identifier: AGPL-3.0-or-later
+
+  This subtree is AGPL-3.0-or-later while the rest of the repository is MIT.
+  The reason is the bundled frontend: @nextcloud/vue and @nextcloud/vite-config
+  are AGPL-3.0-or-later, and @nextcloud/router, /l10n and /initial-state are
+  GPL-3.0-or-later. Those are compiled into the js/ bundle this app ships, which
+  is plain distribution of a combined work. See docs/DEVELOPMENT.md §5.
+-->
+<info xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:noNamespaceSchemaLocation="https://apps.nextcloud.com/schema/apps/info.xsd">
+	<id>cairn</id>
+	<name>Cairn</name>
+	<summary>Read-only view of your Cairn health files</summary>
+	<description><![CDATA[
+Cairn is a personal health-data aggregator. A phone app reads the platform health
+store (Apple HealthKit / Android Health Connect), normalises readings into open
+Open mHealth / IEEE 1752.1 JSON-Lines files, and syncs them into your own
+Nextcloud. Those files are the system of record — there is no central server and
+no proprietary database.
+
+This app is an optional second frontend over exactly those files. It reads
+`/Cairn/` from your own storage, aggregates server-side, and renders the result.
+
+It never writes. It creates no folders, stores nothing in the database, runs no
+background job, and registers no route other than GET. Deleting it loses nothing,
+because it owns nothing.
+	]]></description>
+	<version>0.1.0</version>
+	<licence>AGPL-3.0-or-later</licence>
+	<!--
+	  The published contact, not a personal one. Releases go out from the
+	  LuminaAppsDev account, and the app store shows this address to every
+	  self-hoster who installs the app — it should reach the project rather
+	  than a person. The author name matches what F-Droid already lists for
+	  the mobile app, so the two channels name the same maintainer.
+	-->
+	<author mail="luminaapps@gmail.com">Max Fiedler</author>
+	<namespace>Cairn</namespace>
+	<category>monitoring</category>
+	<category>dashboard</category>
+	<bugs>https://github.com/LuminaAppsDev/cairn/issues</bugs>
+	<repository type="git">https://github.com/LuminaAppsDev/cairn.git</repository>
+	<dependencies>
+		<php min-version="8.2"/>
+		<!--
+		  max-version must track Nextcloud majors or the app is disabled on
+		  server upgrade (DESIGN.md §7). Bump it only after testing against the
+		  new major — leaving it stale is the documented maintenance tax.
+		-->
+		<nextcloud min-version="32" max-version="34"/>
+	</dependencies>
+	<!--
+	  Declared here rather than registered in Application::register, so the
+	  navigation entry costs no PHP and cannot drift from the routes file.
+	-->
+	<navigations>
+		<navigation>
+			<id>cairn</id>
+			<name>Cairn</name>
+			<route>cairn.page.index</route>
+			<icon>app.svg</icon>
+		</navigation>
+	</navigations>
+</info>

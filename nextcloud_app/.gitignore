@@ -1,0 +1,18 @@
+# Build output and installed dependencies. None of this is committed: the
+# app-store tarball is produced by `composer install` and `npm run build`, not
+# from a checked-in bundle.
+/build/
+/js/
+/node_modules/
+/vendor/
+.php-cs-fixer.cache
+.phpunit.cache/
+
+# Development environment state.
+#
+# dev-data/ can hold a real health export and docker/.env records where one
+# lives, so neither may ever be committed. The repository root's .gitignore
+# repeats these, and .githooks/pre-commit refuses them outright — a leaked
+# signing key can be rotated, a leaked health history cannot.
+/dev-data/
+/docker/.env

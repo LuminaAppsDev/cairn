@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SPDX-FileCopyrightText: 2026 Max Fiedler
+  SPDX-License-Identifier: AGPL-3.0-or-later
+
+  A cairn: four stones stacked and tapering upward.
+
+  White on purpose. This is the icon Nextcloud puts in the header bar, on the
+  primary colour, and it applies no filter of its own — every first-party
+  app.svg is authored white (files/img/app.svg is literally fill="#fff").
+  `currentColor` does NOT work here: the file is loaded through an <img>, so
+  there is no inherited colour and it resolves to black.
+
+  img/app-dark.svg is the same artwork in black, for the light surfaces where
+  Nextcloud uses that variant instead (the apps list in settings, for one).
+  Keep the two identical apart from the fill.
+
+  The stones fill the viewBox nearly edge to edge so the icon carries the same
+  visual weight as the ones beside it; artwork floating inside its box reads as
+  faded next to Nextcloud's own icons rather than merely smaller.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" fill="#fff">
+	<rect x="1.4" y="11.5" width="13.2" height="2.8" rx="1.4"/>
+	<rect x="2.9" y="7.9" width="10.2" height="2.8" rx="1.4"/>
+	<rect x="4.4" y="4.3" width="7.2" height="2.8" rx="1.4"/>
+	<rect x="5.9" y="0.9" width="4.2" height="2.6" rx="1.3"/>
+</svg>

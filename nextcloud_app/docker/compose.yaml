@@ -1,0 +1,98 @@
+# SPDX-FileCopyrightText: 2026 Max Fiedler
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# A throwaway Nextcloud for developing the Cairn app against.
+#
+# ONE CONTAINER, ON PURPOSE. The app reads files and never touches the database,
+# so running Postgres alongside would add a service, a healthcheck and a startup
+# ordering problem in exchange for fidelity this app cannot observe. SQLite keeps
+# `reset` honest too: `down -v` really does return you to nothing.
+#
+# NO DOCKERFILE, ALSO ON PURPOSE. The official Nextcloud image has to start as
+# root to fix permissions before dropping to www-data, which collides with the
+# rule that every Dockerfile in this repository carries a USER instruction.
+# Consuming the stock image sidesteps that rather than making an exception to it.
+# The pinning rule still applies and is honoured below: tag *and* digest.
+#
+# Do not point anything you care about at this. The admin password is `admin`.
+
+name: cairn-dev
+
+services:
+  nextcloud:
+    # Pinned by tag and digest. Bump both together, and only after checking the
+    # app still enables — info.xml's max-version has to move with it.
+    #
+    # Overridable so `dev matrix` can run the same environment against every
+    # Nextcloud major the app claims to support. The default is what `dev up`
+    # gives you; the other versions are pinned in the `dev` script's own table,
+    # never resolved by tag at run time.
+    image: ${CAIRN_NC_IMAGE:-nextcloud:34.0.3-apache@sha256:368cd1c75bc4a32c2aee8a119cae31bcebff80c374782f404c440c3295726814}
+    ports:
+      # Bound to loopback explicitly. Compose's short syntax defaults to
+      # 0.0.0.0, which would put a Nextcloud whose admin password is literally
+      # "admin" — and whose volume may hold a real health export — on every
+      # interface of the machine. NEXTCLOUD_TRUSTED_DOMAINS is no defence: a
+      # spoofed Host header satisfies it. Change this only if you know why.
+      - "127.0.0.1:${CAIRN_DEV_PORT:-8080}:80"
+    environment:
+      # No DB service to wait for, and no credentials to invent.
+      SQLITE_DATABASE: nextcloud.db
+      NEXTCLOUD_ADMIN_USER: "${CAIRN_ADMIN_USER:-admin}"
+      NEXTCLOUD_ADMIN_PASSWORD: "${CAIRN_ADMIN_PASSWORD:-admin}"
+      # Both spellings, because people reach this by either.
+      NEXTCLOUD_TRUSTED_DOMAINS: "localhost 127.0.0.1"
+    volumes:
+      # The server's own tree. Anonymous to the host and destroyed by `reset`,
+      # which matters here: seeded health data lands inside it.
+      - nextcloud_html:/var/www/html
+      # The app itself, live from the working tree — edit a PHP file and reload
+      # the page, no rebuild and no copy step.
+      #
+      # Mounted read-only as a structural backstop to the read-only guarantee the
+      # code already makes (see tests/read_only_guard.php). Nothing in the app
+      # writes here, so nothing legitimate can notice.
+      - ../:/var/www/html/custom_apps/cairn:ro
+      # The cross-frontend parity fixtures. They live at the repository root
+      # rather than in this subtree because they belong to the file format, not
+      # to either reader — the Flutter suite runs the very same files. Mounted
+      # at a fixed path the PHP suite looks for; read-only, like everything else
+      # this container sees of the working tree.
+      - ../../test/fixtures/parity:/parity:ro
+      # Development PHP overrides — chiefly opcache revalidation, without which
+      # an edited file keeps serving its previous version for up to a minute.
+      - ./php-dev.ini:/usr/local/etc/php/conf.d/zz-cairn-dev.ini:ro
+
+  # Node, only when asked for. Same reasoning as the composer service below:
+  # behind the `tools` profile, mounted read-write because this is where the
+  # frontend bundle gets built, and running as the invoking user so nothing
+  # lands root-owned in your working tree.
+  node:
+    image: node:22.23-bookworm-slim@sha256:d649c27dae7ba0137b3cef5dd75baa422c08dc3d9e3fc0c23dfb172dc3cc6436
+    profiles: ["tools"]
+    working_dir: /app
+    user: "${CAIRN_UID:-1000}:${CAIRN_GID:-1000}"
+    environment:
+      HOME: /tmp
+      npm_config_cache: /tmp/.npm
+    volumes:
+      - ../:/app
+
+  # Composer, only when asked for. Behind the `tools` profile so `up` never
+  # starts it, and mounted read-write on purpose: this is the one place vendor/
+  # gets written, and it is NOT the server. The Nextcloud container keeps its
+  # read-only view of the same directory, so the app it runs still cannot alter
+  # itself. Runs as the invoking user so nothing lands root-owned in your tree.
+  composer:
+    image: composer:2.9@sha256:b09bccd91a78fe8a9ab4b33d707b862e8fe54fec17782e32683ad2a69c46867d
+    profiles: ["tools"]
+    working_dir: /app
+    user: "${CAIRN_UID:-1000}:${CAIRN_GID:-1000}"
+    environment:
+      COMPOSER_HOME: /tmp/.composer
+      COMPOSER_CACHE_DIR: /tmp/.composer/cache
+    volumes:
+      - ../:/app
+
+volumes:
+  nextcloud_html:

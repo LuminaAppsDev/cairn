@@ -1,0 +1,11 @@
+# flake8 defaults to a 79-character limit while black wraps at 88, so a
+# black-formatted file can only satisfy both by accident. Every Python file in
+# this repository is formatted with black, which is the canonical authority per
+# CLAUDE.md, so flake8 is aligned to it rather than fought.
+#
+# E203 is black's slice-colon spacing (`ham[lower + offset :]`), which black
+# emits and PEP 8 does not forbid; W503 prefers line breaks before binary
+# operators, which is the style black produces and PEP 8 now recommends.
+[flake8]
+max-line-length = 88
+extend-ignore = E203, W503

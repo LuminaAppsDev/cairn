@@ -91,3 +91,11 @@ lcov.info
 
 # FVM Version Cache
 .fvm/
+
+# Nextcloud app (PHP + Vue). Build output and dependencies are listed in
+# nextcloud_app/.gitignore, next to what produces them; these two are repeated
+# here because of what they are rather than where they live — dev-data/ can hold
+# a real health export and docker/.env records where one lives. The pre-commit
+# hook refuses both even if --force got past this file.
+nextcloud_app/dev-data/
+nextcloud_app/docker/.env

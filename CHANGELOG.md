@@ -6,6 +6,485 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- **Tests for the Nextcloud-facing seam — the half that had none.** The read
+  path was covered from the first commit; everything that touches the server was
+  covered only end-to-end, by the compatibility matrix and the packaged-app
+  check. Those prove the whole thing works and say nothing about *which* branch
+  handled a missing folder, a torn line or another user's session. Untested
+  classes went from 17 to 7, and the seven are a no-op bootstrap and plain data
+  holders.
+
+  The controllers are tested against the **real** stack — `QueryFactory`,
+  `NextcloudShardSource`, `DashboardAssembler`, `OverviewService` are all
+  production classes here, with doubles only for the two things that genuinely
+  cannot exist without a server: the filesystem and the session. That was forced
+  by making them `final` and turned out better than mocking them, because a
+  request in a test now travels the same path a real one does. Files are backed
+  by real in-memory streams, so `fopen()` and the 64 KiB line cap are exercised
+  rather than stubbed past.
+
+  What that pinned down, one branch at a time: a window outside the limits is
+  rejected rather than clamped, and the limits themselves are accepted; nights
+  are capped tighter than days because they cost more per unit; every endpoint
+  answers on an empty folder, because an empty folder is a normal state and not
+  an error; a request reads the session user's files and another user reads
+  nothing; `$day` is validated by `readShard` itself rather than by its caller;
+  an over-long line is skipped once rather than once per chunk; blank lines are
+  separators, not damage. And in the assembler, the two averaging rules that
+  change what a number *means* — the step average ignores days that never
+  reported, so a gap does not read as inactivity, and the heart-rate mean is
+  weighted by sample count, so a day with three readings does not outvote one
+  with three hundred.
+
+  `tests/bootstrap.php` loads the `OCP` interfaces from `nextcloud/ocp`, which
+  publishes them as PSR-4 sources but declares no autoload section, being
+  intended for static analysis. Pinned to the lowest Nextcloud the app claims,
+  for the same reason psalm analyses against it. `tests/stubs/` fills the one
+  gap that leaves: `IRootFolder` extends `OC\Hooks\Emitter`, which lives in the
+  server's private namespace and is not shipped. Adding it made psalm's
+  `MissingDependency` suppression unnecessary, so that is gone too — one fewer
+  place where an analyser was told to look away.
+
+  Two bugs in the test helpers themselves are worth recording, because both are
+  traps this codebase already documents. PHP coerced the year folder `"2026"`
+  into `int 2026` — the exact numeric-key coercion `StrictJson` exists to avoid,
+  met in a helper rather than in the reader. And the storage doubles were mocks
+  when they should have been stubs: the tests care what storage *returns*, never
+  how often it was asked, and a mock would fail whenever the reader was made
+  more efficient.
+
+- **App-store packaging: `dev package` and `dev verify-package`.** The release
+  tarball's contents come from an **allowlist**, not an exclude list, and that
+  is the point of it: an exclude list ships whatever nobody thought to exclude —
+  a stray `.env`, a signing key, an export left in the tree — while an allowlist
+  can only *omit* something, which fails visibly on first install. It carries no
+  `vendor/`, because the app has no runtime dependencies at all: `composer.json`
+  requires a PHP version and nothing else, and Nextcloud autoloads `OCA\Cairn`
+  from `lib/` itself. 140 KB, 68 files, byte-identical across builds — fixed
+  timestamps, owner and sort order, the same reasoning as the reproducible
+  F-Droid builds in `docs/RELEASE.md` §2.
+
+  `verify-package` is the half that matters, because packaging that has only
+  been inspected has never been tested. It unpacks the tarball into a **clean**
+  Nextcloud and drives the page, the bundle and all six endpoints, then asserts
+  no `tests/`, `src/`, `docker/` or `vendor/` came along. It uses a compose file
+  with **no bind mount of the working tree** — with the ordinary one,
+  `custom_apps/cairn` *is* the working tree, so the check would exercise the
+  code on disk while appearing to exercise the artefact, and a missing file
+  would pass. Verified to fail: dropping `templates` from the allowlist produces
+  a tarball that installs, enables, and then cannot render a page — reported as
+  exactly that.
+
+  Signing is wired up but inert until a certificate exists. With one present the
+  run writes `appinfo/signature.json` via `occ integrity:sign-app` and prints the
+  detached signature the upload form wants, deleting the key from the container
+  afterwards; without one it says so and produces an unsigned tarball, which
+  installs from disk but will not be accepted by the store. `krankerl` is the
+  usual tool here and is deliberately not used: it is another binary to install,
+  against a dev environment whose whole premise is that Docker is the only
+  prerequisite.
+
+- **A compatibility matrix, because `info.xml` was making a promise nobody had
+  checked.** The app declares `min-version="32" max-version="34"` — a promise to
+  everyone installing from the app store — and had only ever run on 34. A stale
+  `max-version` is the documented maintenance tax of a Nextcloud app
+  (`DESIGN.md` §7): get it wrong and the app is silently disabled on somebody
+  else's server after they upgrade.
+
+  `nextcloud_app/dev matrix` installs each claimed major in turn, enables the
+  app, seeds generated data, and checks the page, the bundle and all six
+  endpoints — plus the read-only guard and `info.xml` under **that version's
+  PHP**, which turns out to differ across all three: 32 ships 8.3.33, 33 ships
+  8.4.24, 34 ships 8.5.9. All three pass.
+
+  That spread exposed a gap the matrix would otherwise have hidden: `info.xml`
+  also declares a PHP floor of 8.2, and **none of the Nextcloud images ships
+  8.2**, so half the compatibility claim was untested while looking covered. The
+  matrix now parses every file under `php:8.2-cli-alpine` first. It passes, so
+  the floor is real rather than aspirational.
+
+  Verified to fail, not just to pass: narrowing `max-version` to 33 makes
+  Nextcloud 34 refuse the app, and the run reports `Nextcloud 34 FAILED` and
+  exits non-zero with the fix in its message. A check that cannot go red is
+  decoration.
+
+  It runs as its own Compose project on its own port and tears each version down
+  afterwards, so it cannot disturb — or be disturbed by — a `dev up` instance you
+  have open. Confirmed by running it with one open.
+
+- **`.forgejo/workflows/nextcloud-matrix.yml`**, running the same command CI
+  users run locally. Deliberately *not* on every push: three Nextcloud installs
+  would queue every other job behind them on a single-runner host. It fires when
+  the claim or the environment changes, on demand, and weekly as a net for a
+  change to `lib/` that broke an older version without touching `info.xml`.
+
+  `info.xml`'s version range, the `MATRIX_IMAGES` table in `dev`, and
+  `compose.yaml`'s default image are one claim written three times; the docs now
+  say so, because the failure mode is one of them moving alone.
+
+- **Static analysis and a coding standard for the PHP.** Every other language
+  in this repository had a real analyser — `dart analyze --fatal-infos`,
+  flake8/pylint/mypy, shellcheck — while the app subtree had only `php -l`,
+  which is a syntax check and would not notice a null dereference or a wrong
+  argument type. `psalm` now runs at level 2 and `nextcloud/coding-standard`
+  formats, both wired into `dev lint` and `nextcloud-ci.yml`.
+
+  There is deliberately **no psalm baseline**. A baseline records the mistakes
+  that existed when it was written and permits them for ever, which is the
+  opposite of what an analyser is for. The three suppressions in `psalm.xml` are
+  scoped and carry their reasons: `#[\Override]` is a PHP 8.3 attribute and
+  `info.xml` declares 8.2 (matching what Nextcloud 32 supports), so adding it
+  would trade an install for a compile-time check; `MissingDependency` is
+  confined to the one file holding an `IRootFolder`, because OCP's own interface
+  extends a class the published stubs do not ship; and
+  `PropertyNotSetInConstructor` is confined to `tests/`, where PHPUnit's
+  `setUp()` is the de-facto constructor.
+
+  The stubs are pinned to **Nextcloud 32**, the lowest version `info.xml`
+  claims, so calling an API added in 33 or 34 is a finding here rather than a
+  broken install for somebody on 32.
+
+  The first run found 59 issues, 13 of them substantive. `dailyHeartRate` built
+  per-day lists and reduced them three times, which is why `min()` could not be
+  shown to have anything to work on; it now accumulates the spread as readings
+  arrive, visiting each value once. `ManifestReader` tested one expression and
+  returned another — nothing guarantees the second read of a property sees what
+  the first did. `weight()` indexed `$series[count($series) - 1]`, which is
+  `$series[-1]` on an empty series; the `??` made it harmless rather than
+  correct. `folderChildren()` promised a `list` while returning the keyed array
+  the API hands back. The rest were implicit int/float coercions now made
+  visible, and ten classes nothing extends are now `final`.
+
+- **The dashboard: a read-only JSON API and a Vue frontend over it.** Six GET
+  endpoints — steps, heart rate, weight, sleep, activity, and what is on disk —
+  each scoped server-side to whoever is logged in. No route takes a user id, so
+  there is none to swap for somebody else's and no permission check that could
+  be forgotten. Windows are rejected rather than clamped (`days=0` and
+  `days=100000` both return 400): silently answering a different question than
+  the one asked turns a frontend bug into a puzzling chart instead of a visible
+  error.
+
+  Charts are hand-rolled inline SVG. A charting library would be a large
+  dependency, a Content-Security-Policy conversation and a second theming system
+  to reconcile with Nextcloud's, in exchange for five charts of two shapes.
+  Every colour is a Nextcloud custom property, so they follow a themed instance
+  and dark mode without being told. Each metric section carries its own loading,
+  error and empty state — one endpoint failing must not blank the others, and an
+  empty folder is a normal state that should not look like a broken page.
+
+  The sleep hypnogram draws one row per stage rather than overlaying them, which
+  is what makes the whole-night `session` overlap visible at a glance instead of
+  only in the numbers.
+
+  German is included, in the phone app's `du` voice and reusing its vocabulary
+  (Schritte, Puls, Schlaf, Gewicht) so the two frontends read as one product.
+  Numbers, dates and durations are formatted in the browser from ISO instants
+  and integer milliseconds — the server sends the unambiguous form, and only the
+  browser knows the viewer's locale. Verified end to end: `88,1 kg`,
+  `4.704 pro Tag`, `Mittwoch, 19. August`, and the plural form.
+
+- **`dev deps`, `dev build`, `dev watch` and `dev lint`.** Composer and npm run
+  in their own pinned containers, so Docker is still the only prerequisite. The
+  Node container is 22, not 20: `@nextcloud/eslint-config` imports
+  `findPackageJSON` from `node:module`, which does not exist before 22, so 20 is
+  simply not a toolchain this app builds on.
+
+- **A parity case for the sleep-total rule.** Samsung Health emits a
+  whole-night `session` segment alongside the fine-grained stages, including the
+  awake ones, and `session` counts as asleep — so a reader taking only the union
+  of asleep intervals swallows every awakening. The case pins the corrected
+  behaviour in both readers; the defect it was written to expose is fixed below.
+
+- **A cross-frontend parity suite, so the two readers cannot drift apart
+  silently.** `docs/DESIGN.md` §4.3 makes the read semantics a property of the
+  file format rather than of any one reader: the phone and the web app must give
+  the same answers for the same bytes, or the files stop being a single source
+  of truth. Two independent implementations of a dozen subtle rules do not stay
+  in agreement because everyone meant well.
+
+  `test/fixtures/parity/` holds eight cases — a miniature `/Cairn/` folder, the
+  questions to ask of it, and the answers both readers must give. `flutter test`
+  runs them through the Dart reader and `nextcloud_app/dev test` runs the same
+  files through the PHP one. **Both agreed on all eight on the first run**,
+  which is the evidence the port was actually faithful rather than merely
+  plausible. The cases are the divergence-prone rules: cumulative step snapshots
+  resolving to the newest, source priority beating a later ingest, a superseded
+  weight correction, all-or-nothing provenance, sleep segments deduplicating
+  with the stage excluded from the key, the 60-minute episode gap either side of
+  the boundary, and a shard full of malformed lines.
+
+  The suite is built to fail rather than to pass. Both runners fail if they find
+  no cases, because one that silently finds nothing reports all-clear while
+  proving nothing; both fail on a query name they do not implement, so adding a
+  query to a fixture forces the other frontend to implement it too. Verified by
+  changing one golden to the naive sum a wrong reader would produce and watching
+  both suites reject it, each quoting the case's own explanation of what a wrong
+  reader does.
+
+  Goldens are hand-written rather than generated from either reader. Generating
+  them would record what the code currently does; the point is to record what it
+  is supposed to do.
+
+- **`TZ: Europe/Berlin` in `ci.yml`.** The parity fixtures are authored in a
+  zone with daylight saving, because that is where the interesting failures
+  live, and Dart reads its timezone from the environment rather than taking it
+  as a parameter. This makes CI more deterministic, not less: the other 193
+  tests were verified to pass identically under CEST, Europe/Berlin and
+  Pacific/Kiritimati, so the only tests it affects are the ones that need it.
+  Under a deliberately wrong zone exactly five tests fail, all of them parity
+  cases. The suite also asserts the resulting UTC offsets on a winter and a
+  summer date, which catches the subtler failure of two hosts carrying different
+  `tzdata` — a name comparison would not.
+
+- **`.forgejo/workflows/nextcloud-ci.yml`**, the quality gate for the subtree:
+  the read-only guard, the `info.xml` schema check, and the unit and parity
+  suites. Separate from `ci.yml` because it is a different toolchain with a
+  different blast radius, and because Forgejo scopes concurrency groups per
+  repository rather than per workflow, so it needs its own group name or it
+  would cancel unrelated runs.
+
+  It verifies the PHP toolchain rather than installing one: `setup-php`
+  provisions through `sudo`/apt, and `docs/RELEASE.md` is explicit that this
+  host must not expose a passwordless sudo grant reachable from CI. The step
+  fails closed with the one-time host prep in its message.
+
+  Its `paths:` filter is an optimisation, never a correctness dependency. A
+  change to `lib/src/query/*.dart` that breaks parity does not touch
+  `nextcloud_app/` and so would not start this workflow — but the shared goldens
+  mean the always-on Flutter job catches it, which is the whole point of the
+  fixtures being shared.
+
+- **The seven dashboard queries, and the first real numbers off the files.**
+  `HealthQueryService` owns what a caller should not have to know: how far back
+  each question reads, and which resolution rule applies to what it finds. The
+  windows are deliberately not uniform. `todayStepTotal()` returns `null` rather
+  than `0` when nothing has synced, because "no data" and "you did not move" are
+  different answers and only one is a measurement — while `dailySteps()`
+  zero-fills, because there the number is a position on an axis and a missing
+  day must keep its slot. `latestScalar()` walks backwards and stops at the
+  first day with data instead of reading ninety days to answer "what do I
+  weigh".
+
+  `lastNNights(n)` reads **n + 2** dates where every other query reads `n`. A
+  night is filed under the date it began and usually begins the evening before,
+  so reading only today would find the tail of a night and report a sleep that
+  started at midnight. The asymmetry is inherited from the mobile reader and
+  reproduced deliberately; normalising it would look like a tidy-up and would
+  make the two frontends disagree.
+
+  The skeleton page now shows five figures computed by this layer from the
+  actual shards. They were cross-checked against an independent implementation
+  of the documented rules, run over a real 244-shard export: steps 60, last
+  night 6 h 16 min, resting heart rate 72 bpm, three workouts — all four agree.
+  That is evidence no unit test can give, because it exercises the rules against
+  data nobody wrote to make them pass.
+
+  `UserShardSource` is the only place below the controller that knows a user
+  exists. The pure `ShardSource` contract has no notion of one, which is what
+  keeps the read path runnable against a plain directory — and comparable with
+  the mobile reader, which only ever has a single user.
+
+- **The read-path semantics ported to PHP, as a server-free layer with 123
+  tests.** `lib/Reading/` holds the rules from `DESIGN.md` §4.3 that every Cairn
+  frontend must apply identically — strict JSON typing, timestamp handling,
+  last-ingested-wins, source-priority dedup and sleep-episode aggregation — and
+  imports no Nextcloud API at all. That is enforced by the read-only guard, not
+  just intended: the rules stay testable without a server, which is also what
+  will let them be compared against the mobile reader directly.
+
+  The tests are written against the cases where a plausible port silently
+  disagrees with the phone rather than against the happy path. Cumulative
+  whole-day step snapshots resolve to the newest, never their sum. Source
+  priority beats a later ingest, and ingest time breaks a tie only at equal
+  priority — reversed, a phone's later sync would displace the wearable's better
+  number. Provenance is all-or-nothing, so a `source_name` with no `modality`
+  yields *no* source. Sleep-stage segments deduplicate on their window with the
+  stage deliberately excluded from the key, so two sources disagreeing about the
+  same minutes collapse to one segment instead of inventing an awakening. Total
+  sleep is the union of asleep intervals, not their sum, because sources emit a
+  whole-night `session` overlapping its own sub-stages.
+
+  Three PHP-specific traps are closed and pinned by tests, because PHP's
+  defaults are the opposite of the mobile reader's: lines decode to `stdClass`
+  rather than associative arrays, since `json_decode(..., true)` makes `{}` and
+  `[]` indistinguishable; numbers are checked with `is_int() || is_float()`
+  rather than `is_numeric()`, which accepts the string `"62"`; and
+  `is_main_sleep` is compared with `===`, because PHP evaluates `"true" == true`
+  as true and would flip a night's main-sleep flag.
+
+  Timestamp parsing is gated by a strict ISO-8601 pattern before PHP's date
+  constructor sees it. Unguarded, that constructor is a natural-language parser
+  — `now`, `+1 day`, a bare `62` all produce valid dates — so an unvalidated
+  field would invent readings the phone never shows. Elapsed time is measured in
+  integer milliseconds from timestamps; a night spanning the October fall-back
+  is nine hours, not the eight the wall clock suggests.
+
+  One inherited quirk is reproduced deliberately and documented: main sleep is
+  decided per calendar date keyed on the episode's *onset*, so a morning nap
+  after a night that began before midnight is flagged main for its own date.
+  That is what the phone does with the same files, and "fixing" it here would
+  make the two frontends disagree.
+
+- **`nextcloud_app/dev refresh`, and the reason a dev instance needed it.**
+  Nextcloud serves app assets with `Cache-Control: max-age=15778463, immutable`,
+  which tells the browser never to revalidate them, and the only thing that
+  varies the URL is a `?v=<md5(appVersion)>-<cachebuster>` suffix the server
+  controls. Editing a stylesheet therefore changed nothing on screen until a
+  hard reload, in every browser under test. `refresh` bumps the cachebuster, and
+  `up` bumps it too so a restart always serves what is on disk. PHP and
+  templates never needed it — they are read on every request.
+
+  Setting the `debug` system config would drop the suffix entirely, which sounds
+  like the fix and is the opposite of one: with no query string and an
+  `immutable` header the browser has even less reason to look again.
+
+  Fixing it turned up a second, larger problem. The image configures APCu as
+  Nextcloud's local cache, and APCu memory is per-process: `occ` runs in the CLI
+  process and updates the database and *its* cache, while the Apache worker goes
+  on serving the value it cached earlier. Bumping the cachebuster took effect
+  only intermittently — six rapid bumps produced three distinct URLs — and the
+  same silent staleness applies to every `occ config:*` change, not just this
+  one. `up` now switches APCu off, after which six rapid bumps produce six
+  distinct URLs. That has to be done by emptying `config/apcu.config.php` *and*
+  then deleting the key: `occ config:system:delete memcache.local` reports
+  success while only editing `config.php`, the separate file re-supplies the
+  value on the next request, and Nextcloud writes its whole merged config view
+  back to `config.php` on any `set` — so each half alone leaves the value in
+  place. Nextcloud now warns that no memory cache is configured; on a throwaway
+  single-user container that is much the cheaper of the two problems.
+
+  `up` also chowns `custom_apps` to the web-server user, and disables the
+  first-run wizard. The first is a defect this compose file introduced:
+  bind-mounting the app at `custom_apps/cairn` makes Docker create the parent
+  directory itself, owned by root, before the image's entrypoint would have
+  created and chowned it — so Nextcloud had an apps path it was told was
+  writable and was not, and **Settings › Apps returned a 500 on every visit**.
+  Confirmed unrelated to this app by reproducing it with Cairn disabled. It is
+  worth fixing here precisely because the app still worked: the page it breaks
+  is the one a contributor opens to check their app is listed, and it points the
+  blame somewhere else entirely.
+
+- **The app page renders on an opaque, centred sheet, and the header icon is
+  white.** Three things were wrong once it was looked at in a browser rather
+  than in `curl` output.
+
+  Nextcloud's `#content` is transparent and shows the user's background image
+  straight through, so the page's muted text — `--color-text-maxcontrast`, used
+  for column headers and the explanatory note — was being read against a photo.
+  Real apps avoid this by rendering into an opaque app-content area; this page
+  now does the same with a single sheet on `--color-main-background`, which also
+  fixes it for dark mode and for Theming's custom backgrounds. Verified under an
+  emulated `prefers-color-scheme: dark`: the sheet turns near-black and the text
+  inverts, because not one literal colour appears in the stylesheet.
+
+  The sheet is centred rather than pinned to the left edge, and capped at
+  1040px. At a 430px viewport it still fits, and the shard table scrolls inside
+  its own box rather than making the page scroll sideways.
+
+  The navigation icon was black on the blue header because it was authored with
+  `fill="currentColor"` — which has nothing to inherit from when Nextcloud loads
+  it through an `<img>`, so it resolves to black. Nextcloud applies no colour
+  filter of its own (confirmed: `filter: none` on the icon of every app), and
+  every first-party `img/app.svg` is authored white; `files/img/app.svg` is
+  literally `fill="#fff"`. It is now white, with `img/app-dark.svg` added as the
+  dark-on-light variant that 25 of the bundled apps also ship.
+
+  The app *name* beside it was never actually bold: its computed `font-weight`
+  is 500, identical to Files, Photos and Dashboard, because Nextcloud renders it
+  from its own current-app button. What made it look heavier was the black icon
+  next to white text; matching the icon resolved the appearance without
+  touching the label.
+
+- **The Nextcloud web app subtree (`nextcloud_app/`), with a development
+  environment that needs only Docker.** `nextcloud_app/dev up` starts a pinned
+  Nextcloud, waits out its first-run install, enables the app, loads health data
+  and prints the URL. The app is bind-mounted from the working tree, so the edit
+  loop is *edit a PHP file, reload the page* — no build step and nothing to copy.
+
+  One container, not two: the app reads *files* and never touches the database,
+  so SQLite costs nothing observable and removes a service, a healthcheck and a
+  startup-ordering problem. It also makes `dev reset` honest — `down -v` really
+  does return you to nothing, which matters because seeded health data lives in
+  that volume.
+
+  No Dockerfile, deliberately. The official Nextcloud image must start as root
+  to fix permissions before dropping to `www-data`, which collides head-on with
+  this repo's rule that every Dockerfile carries a `USER` instruction. Consuming
+  the stock image from compose sidesteps that rather than making an exception to
+  it; the pinning rule still binds and is honoured by tag *and* digest.
+
+  The published port is bound to `127.0.0.1` explicitly. Compose's short port
+  syntax defaults to `0.0.0.0`, which would have put a Nextcloud whose admin
+  password is literally `admin` — and whose volume may hold a real health export
+  — on every interface of the machine; `NEXTCLOUD_TRUSTED_DOMAINS` is no defence
+  there, because a spoofed `Host` header satisfies it. Confirmed by checking that
+  the instance answers on `localhost` and refuses the connection on the host's
+  LAN address, with and without a spoofed header.
+
+  `app:enable` is verified rather than trusted: it can report success while
+  Nextcloud rejects the app for a version mismatch, so `up` re-reads `app:list`
+  and fails loudly if the app is absent. Earlier revisions of `DEVELOPMENT.md`
+  recommended `nextcloud-docker-dev`; that is a second repository to clone with
+  its own conventions, wanting the app inside *its* workspace, which is the
+  opposite of the one-command goal.
+
+- **`tool/generate_dev_health_data.py`**, so a fresh clone comes up populated
+  without anyone's real export. The only genuine `/Cairn/` folder is a person's
+  health history and can never be committed, which would otherwise leave a
+  first-time contributor with five blank screens and no way to tell a working
+  reader from a broken one.
+
+  It is not a random-noise generator. Each case where a plausible-looking reader
+  silently disagrees with the mobile app about the same bytes is planted by its
+  own named function, on a fixed date, with a printed explanation — cumulative
+  whole-day step snapshots that must resolve to the newest rather than the sum,
+  source priority outranking a *later* ingest timestamp, a superseded weight
+  correction, provenance that is all-or-nothing (a `source_name` with no
+  `modality` yields *no* source), sleep windows on both sides of the 60-minute
+  episode gap, segments deduplicated with the stage deliberately excluded from
+  the key, and seven kinds of malformed line. Output is deterministic for a
+  given seed, verified by generating twice and diffing.
+
+  The planted catalogue is the specification the PHP read-path port will be held
+  to, which is why it exists before the port rather than after.
+
+- **A read-only guarantee that is enforced rather than asserted.**
+  `nextcloud_app/tests/read_only_guard.php` statically refuses any mutating
+  filesystem call in `lib/`, any `fopen` in a mode other than read, and any
+  `OCP\Files\*` import outside the two classes allowed to touch storage — so no
+  writable handle can escape into code that might use it. It fails closed if it
+  scanned zero files, because a guard reporting all-clear while checking nothing
+  is worse than no guard; both behaviours were verified against a deliberately
+  bad file and an empty tree. `tests/validate_info_xml.php` validates
+  `appinfo/info.xml` against the app store's own schema and asserts the licence
+  and the absence of any declared write surface. Both are plain PHP — no
+  Composer, no PHPUnit, no server — so they run anywhere `php` does.
+
+  Read-only is the app's whole contract (`DESIGN.md` §7): a second writer turns a
+  folder of append-only shards into a folder of Nextcloud conflict copies. The
+  dev container additionally mounts the app `:ro`, verified by watching a `touch`
+  inside it fail.
+
+  Two hardening details in the reader itself. Lines are read with a 64 KiB cap
+  rather than an unbounded `fgets()`: "only the mobile app writes here" is a
+  design intention, not an enforced boundary — the folder is ordinary Nextcloud
+  storage the user can sync anything into — and one pathological line would
+  otherwise buffer into memory on every page load. An over-long line is consumed
+  without being held and counted once, not once per chunk; a planted 5 MB line
+  renders in 0.2 s at 12 MB RSS. The cap is passed as `MAX_LINE_BYTES + 1`
+  because `fgets($h, $n)` reads `$n - 1` bytes, so the constant means what it
+  says; verified at exactly 65535, 65536 and 65537 bytes. And `readShard()`
+  validates its own `$day` argument rather than trusting the caller: today it is
+  only ever reached from a pattern-matched directory listing, but the method is
+  one "show me this day" feature away from taking a request parameter, and a
+  `../` in it would then walk out of the metric folder.
+
+- **`.flake8`, aligning flake8 to black's 88 columns.** flake8 defaults to 79
+  while black wraps at 88, so a black-formatted file could only satisfy both by
+  accident — the existing `tool/*.py` pass only because they happen to stay
+  under 79. Black is the canonical authority per `CLAUDE.md`, so flake8 is
+  aligned to it rather than fought.
+
 - **A CI workflow that fires on every branch push**
   (`.forgejo/workflows/ci.yml`). Until now `release.yml` was the only
   workflow and it fires solely on a `vX.Y.Z` tag, so the first automated
@@ -73,6 +552,60 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- **The app store now publishes a project contact, not a personal one.**
+  `info.xml` carried a personal address, and the app store shows it to every
+  self-hoster who installs the app. Releases come from the `LuminaAppsDev`
+  account — which is already what `<bugs>` and `<repository>` point at, and what
+  F-Droid lists for the mobile app — so the contact is `luminaapps@gmail.com`
+  in both `info.xml` and `composer.json`. The author name is unchanged and still
+  matches the F-Droid listing, so the two channels name one maintainer.
+
+  `tests/validate_info_xml.php` now asserts the contact and that `<bugs>` and
+  `<repository>` point at the project's own repository. This failure is silent
+  and permanent — an address published in a release cannot be recalled from the
+  installs that already carry it — so it is checked rather than remembered.
+  Verified by putting the personal address and a fork URL back and watching each
+  be refused.
+
+  `docs/RELEASE.md` §6 also records which account opens the signing-certificate
+  request: ownership is verified against that account's public email, so it has
+  to be the same one.
+
+- **`docs/DEVELOPMENT.md` §5 gives the right reason for the AGPL subtree.** It
+  claimed the licence was an app-store requirement. It is not: the store's
+  `info.xsd` enumerates `MIT`, `Apache-2.0`, `BSD-*`, `MPL-2.0` and others, and
+  apps ship under those today. The plugin-linking question does not force it
+  either — that is unsettled, MIT is GPL-compatible regardless, and Cairn never
+  redistributes Nextcloud.
+
+  What actually binds is the frontend the app bundles: `@nextcloud/vue` and
+  `@nextcloud/vite-config` are AGPL-3.0-or-later, and `@nextcloud/router`,
+  `/l10n` and `/initial-state` are GPL-3.0-or-later, all compiled into the `js/`
+  bundle that ships — ordinary distribution of a combined work, no linking
+  theory required. The conclusion is unchanged and `info.xml` carries
+  `AGPL-3.0-or-later` (the SPDX form, valid since the schema's `min-version` 31,
+  rather than the deprecated `agpl`). The corollary is now written down: an MIT
+  web app is possible, but only by avoiding every `@nextcloud/*` package, and
+  that has to be decided before the frontend is written.
+
+- **The pre-commit hook refuses personal health data, not only signing secrets.**
+  It now rejects anything staged under `nextcloud_app/dev-data/`,
+  `nextcloud_app/docker/.env`, or any `.jsonl` outside `test/fixtures/` — the
+  export's actual payload, and the realistic way a stray shard copied "just to
+  look at" would leak. Both paths are gitignored already; the hook is the layer
+  that survives `git add -f`. A leaked signing key can be rotated; a leaked
+  health history cannot.
+
+  It also reads the staged list as `git -c core.quotePath=false diff --cached
+  --name-only -z`, which is load-bearing rather than tidiness. With Git's
+  defaults, a path containing any non-ASCII byte, a backslash or a quote arrives
+  C-escaped and wrapped in double quotes — `édata.jsonl` comes through as
+  `"\303\251data.jsonl"`. Both guards anchor their patterns at each end, so the
+  added quotes defeat them simultaneously and the file sails through. Confirmed
+  by staging exactly that filename against the previous version and watching it
+  pass; it is now caught. NUL delimiting additionally stops a path containing a
+  newline from being read as two paths.
+
 - **Simplified the F-Droid recipe's build steps** at the fdroiddata reviewer's
   request: the Flutter SDK goes on `PATH` instead of being referenced through a
   `FLUTTER_BIN` variable, the conditional `mv` guard became a plain
@@ -139,6 +672,88 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- **`wait_for_install` reported timeouts into `/dev/null`.** It ended in `die`,
+  and every caller runs it inside a conditional with output suppressed — so a
+  Nextcloud that never came up exited the script silently, its own explanation
+  discarded. It now returns non-zero and lets each caller decide; `up` still
+  dies with the same message. Found because the first `verify-package` run
+  failed with no output at all.
+
+- **The per-stage sleep breakdown double-counted the same minutes.** Time per
+  stage was a plain tally, so a whole-night `session` was added to the
+  light/deep/rem segments describing those very minutes — the parts summed to
+  more than the night. Nothing rendered them as durations yet, so it was latent
+  rather than visible, which is exactly the state in which a wrong number waits
+  for the first chart to show it.
+
+  The breakdown is now a **partition**: every instant is attributed to exactly
+  one stage, each claiming only time no more specific stage has claimed, in the
+  order `awake`, `out_of_bed`, `deep`, `rem`, `light`, `asleep_unspecified`,
+  `session`, `in_bed`. Wakefulness comes first deliberately, so the breakdown
+  cannot contradict the total.
+
+  Two invariants follow, and both are asserted in each reader's tests and in the
+  shared fixtures: the asleep stages sum to **exactly** the night's total sleep,
+  and every stage together sums to the time the source actually described.
+  Checked against a real export — 5 h 30 min of stages against 5 h 30 min of
+  total, on each of three nights. `session` now means what it honestly is,
+  asleep with the stage unrecorded, and on a source that describes every minute
+  it claims nothing at all: it disappeared from all three real nights.
+
+  `perStageMs` joined the parity encoding at the same time, so the breakdown is
+  a cross-frontend contract rather than something each reader decides for
+  itself. `DESIGN.md` §4.3 states the rule.
+
+- **Sleep totals counted time you were awake.** A night's time asleep was the
+  union of asleep-stage intervals. Samsung Health emits a whole-night `session`
+  segment alongside the fine-grained stages, `session` counts as asleep, and
+  that one segment spans the awake stretches inside it — so a real night with
+  **26 awakenings** reported 6 h 16 min asleep at **100 % efficiency**. Across
+  five nights of a real export, every efficiency figure was 100 %.
+
+  Time asleep is now the union of sleep intervals **minus** the union of wake
+  intervals: a set difference, not a heuristic about which stages to ignore, so
+  it needs no special case for sources that emit a session marker and none for
+  sources that do not. The same night now reads 5 h 30 min at 88 %, and the five
+  nights read 86–98 %, tracking their awakening counts. Two independent
+  corrections — subtracting the wake union, and ignoring `session` where finer
+  stages exist — agreed on the answer before either was written, which is what
+  gave confidence it was right.
+
+  `in_bed` is deliberately **not** treated as wakefulness: some sources emit it
+  across the entire time in bed, and subtracting it would zero out the night.
+  Being in bed is compatible with being asleep; `awake` and `out_of_bed` are not.
+
+  Both readers had the bug identically, so it was a defect in the read semantics
+  (`DESIGN.md` §4.3, now amended) rather than in either port — the shipped phone
+  app was showing the same wrong number. Fixed in the Flutter and PHP readers in
+  the same commit, with the shared golden updated alongside; the only test that
+  failed on either side was the parity case that had pinned the old behaviour.
+
+- **The Nextcloud sleep view can step through nights,** as the phone app's can.
+  Both buttons carry a word as well as an arrow, because the list runs newest
+  first and an arrow alone leaves the direction ambiguous. The heading shows the
+  onset date and the time range, which is what tells apart two nights filed under
+  the same date — a sleep beginning before midnight is filed under the day it
+  started, so an evening onset and the next night's early one share one.
+
+- **An edited PHP file kept serving its previous version for up to a minute.**
+  The Nextcloud image ships `opcache.revalidate_freq=60`, which is right for a
+  server and wrong for a working tree mounted live — and it made this
+  repository's own documentation false, since `dev up`'s output and both READMEs
+  claimed PHP changes need no step. `up` now mounts a small dev php.ini setting
+  it to 0, so a change is picked up on the next request. Found while debugging a
+  500 that had already been fixed in the file being served.
+
+- **`Settings › Apps` returned a 500 on every visit.** Bind-mounting the app at
+  `custom_apps/cairn` makes Docker create the parent directory itself, owned by
+  root, before the image's entrypoint would have created and chowned it — so
+  Nextcloud had an apps path it was told was writable and was not. Confirmed
+  unrelated to this app by reproducing it with Cairn disabled. Worth fixing
+  precisely because the app still worked: the page it breaks is the one a
+  contributor opens to check their app is listed, and it points the blame
+  elsewhere.
+
 - **The shared Flutter SDK install is now atomic** in both workflows. Each
   cloned straight into `$HOME/flutter-$VERSION`, guarded only by a check that
   `bin/flutter` was executable. A run killed mid-clone left that path
@@ -172,6 +787,18 @@ All notable changes to this project are documented in this file.
   publish steps create two `mktemp` files; with a single `trap` registered after
   both, a failing second `mktemp` aborts the step under `set -e` before the trap
   exists, orphaning the first file.
+
+### Security
+
+- **The pre-commit hook refused Android signing material but not the Nextcloud
+  app's private key.** App-store releases are signed with an OpenSSL keypair
+  conventionally kept at `~/.nextcloud/certificates/cairn.key`, and a copy left
+  in the working tree would have been committable. `*.key`, `*.pem` and `*.p8`
+  are now refused alongside the keystores. `.crt` is deliberately still allowed:
+  the counter-signed certificate is public and belongs in the repository, while
+  the key beside it never does. Found by testing the hook against the file the
+  new packaging step is about to make people create, rather than after somebody
+  created one.
 
 ## 0.2.3 — 2026-08-19
 

@@ -1,20 +1,75 @@
 #!/usr/bin/env bash
 #
-# Refuse to commit signing secrets, even if `git add -f` bypassed .gitignore.
+# Refuse to commit things that must never enter version control, even if
+# `git add -f` bypassed .gitignore.
 # Activated repo-wide via: git config core.hooksPath .githooks
 set -euo pipefail
 
-secrets=$(
-	git diff --cached --name-only \
-		| grep -E '(^|/)key\.properties$|\.(keystore|jks|p12|pfx)$' || true
-)
+# `-z` and `core.quotePath=false` are load-bearing, not tidiness. With Git's
+# defaults, `diff --cached --name-only` renders any path containing a non-ASCII
+# byte, a backslash or a quote in C-escaped form wrapped in double quotes —
+# `édata.jsonl` arrives as `"\303\251data.jsonl"`. Both guards below anchor
+# their patterns (`^nextcloud_app/`, `\.jsonl$`), so the added quotes defeat
+# them at both ends at once and the file sails through. A health export with an
+# umlaut in a filename is not a contrived case, and this hook exists precisely
+# because that leak cannot be undone. NUL delimiting also keeps a path
+# containing a newline from being read as two paths.
+mapfile -d '' -t staged < <(git -c core.quotePath=false diff --cached --name-only -z)
 
-if [ -n "${secrets}" ]; then
-	echo "ERROR: refusing to commit signing secrets:" >&2
-	while IFS= read -r path; do
+secrets=()
+health=()
+
+for path in "${staged[@]}"; do
+	[[ -n "${path}" ]] || continue
+
+	# Android signing material, plus the OpenSSL private keys the Nextcloud
+	# app store's code signing uses. `.crt` is deliberately absent: the app
+	# certificate is public and belongs in the repository, while the `.key`
+	# beside it must never be.
+	if [[ "${path}" =~ (^|/)key\.properties$ ]] \
+		|| [[ "${path}" =~ \.(keystore|jks|p12|pfx|key|pem|p8)$ ]]; then
+		secrets+=("${path}")
+		continue
+	fi
+
+	# Personal health data. The Nextcloud app's dev environment reads a real
+	# Cairn export, and docker/.env records where it lives. Both are gitignored,
+	# but this is the layer that survives `git add -f` — and unlike a leaked
+	# key, a leaked health history cannot be rotated.
+	#
+	# Shard files are matched by their .jsonl extension anywhere outside
+	# test/fixtures/, because they are the export's actual payload and a stray
+	# one copied "just to look at" is the realistic way this leaks.
+	if [[ "${path}" =~ ^nextcloud_app/dev-data/ ]] \
+		|| [[ "${path}" == "nextcloud_app/docker/.env" ]] \
+		|| { [[ "${path}" =~ \.jsonl$ ]] && [[ ! "${path}" =~ ^test/fixtures/ ]]; }; then
+		health+=("${path}")
+	fi
+done
+
+fail() {
+	local heading="$1" advice="$2"
+	shift 2
+	echo "ERROR: ${heading}" >&2
+	local path
+	for path in "$@"; do
 		echo "  - ${path}" >&2
-	done <<<"${secrets}"
-	echo "These must stay out of version control (see .gitignore)." >&2
-	echo "Move them outside the repo, or fix .gitignore, then re-stage." >&2
+	done
+	echo "${advice}" >&2
 	exit 1
+}
+
+if [[ ${#secrets[@]} -gt 0 ]]; then
+	fail "refusing to commit signing secrets:" \
+		"These must stay out of version control (see .gitignore).
+Move them outside the repo, or fix .gitignore, then re-stage." \
+		"${secrets[@]}"
+fi
+
+if [[ ${#health[@]} -gt 0 ]]; then
+	fail "refusing to commit personal health data:" \
+		"The Cairn export stays outside this repository (see .gitignore).
+Seeded data belongs in the dev environment's Docker volume, which
+'nextcloud_app/dev reset' erases. Test fixtures go under test/fixtures/." \
+		"${health[@]}"
 fi
