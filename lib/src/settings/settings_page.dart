@@ -119,7 +119,13 @@ class _SettingsPageState extends State<SettingsPage> {
   String _statusFor(RefreshResult result, AppLocalizations l10n) {
     switch (result.status) {
       case RefreshStatus.readFailed:
-        return l10n.refreshReadFailed;
+        // A partial read failure still synced; keep its conflict warning.
+        final report = result.report;
+        if (report == null || !report.hasConflicts) {
+          return l10n.refreshReadFailed;
+        }
+        final conflicts = l10n.settingsSyncConflicts(report.conflicts.length);
+        return '${l10n.refreshReadFailed} · $conflicts';
       case RefreshStatus.healthUnavailable:
         return l10n.refreshHealthUnavailable;
       case RefreshStatus.syncFailed:

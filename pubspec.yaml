@@ -23,7 +23,9 @@ dependencies:
   # App-token storage in Keychain / Android Keystore (BSD-3-Clause).
   flutter_secure_storage: ^10.3.1
   # Single wrapper over Apple HealthKit + Android Health Connect (MIT).
-  health: ^13.3.0
+  # Vendored with a read-error patch; see third_party/health/CAIRN_PATCHES.md.
+  health:
+    path: third_party/health
   # Permissive HTTP client (BSD-3-Clause). We implement WebDAV + Nextcloud
   # Login Flow v2 on top of it instead of the AGPL-licensed `nextcloud` Dart
   # client, which would otherwise relicense the whole app to AGPL.

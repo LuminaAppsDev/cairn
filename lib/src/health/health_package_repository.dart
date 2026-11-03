@@ -10,8 +10,9 @@ import 'package:flutter/services.dart';
 /// Cairn only reads. Authorisation is requested once and resolved per-metric so
 /// partial grants degrade gracefully (§4.2): a metric counts as granted when
 /// the OS says so, or — on iOS, which hides read status — optimistically, with
-/// presence proven by reading. A read the OS denies yields an empty list rather
-/// than throwing, so one denied type never breaks a batch. Competing
+/// presence proven by reading. A read the store fails — denied included —
+/// throws [HealthReadException] rather than yielding an empty list, which
+/// would pass for "no data"; ingest isolates it per metric. Competing
 /// same-window readings are collapsed by source priority (§4.3).
 final class HealthPackageRepository implements HealthRepository {
   /// Creates a repository. [gateway] and [deduplicator] are injectable; the
@@ -62,8 +63,15 @@ final class HealthPackageRepository implements HealthRepository {
         end: end,
       );
       return _dedup.deduplicate(samples);
-    } on PlatformException {
-      return <HealthSample>[];
+    } on PlatformException catch (error, stack) {
+      // Never degrade to an empty list: ingest would take it for "no data"
+      // and advance the anchor past readings it never got. A denial counts
+      // too — partial grants are filtered out before any read, so one here is
+      // a mid-run revocation or a background-read restriction.
+      Error.throwWithStackTrace(
+        HealthReadException(metric, code: error.code, message: error.message),
+        stack,
+      );
     }
   }
 

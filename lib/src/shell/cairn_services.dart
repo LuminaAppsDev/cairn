@@ -27,7 +27,9 @@ enum RefreshStatus {
   /// Data was read and (if connected) synced successfully.
   ok,
 
-  /// Reading from the OS health store failed; nothing was saved.
+  /// Reading from the OS health store failed — entirely, or for at least one
+  /// metric, in which case everything else read was saved (and synced). A
+  /// failed metric keeps its anchor, so the next refresh retries it.
   readFailed,
 
   /// The OS health store is not available at all (Android: Health Connect is
@@ -54,8 +56,9 @@ class RefreshResult {
   /// `null` for an unexpected error, which is reported generically.
   final NextcloudSyncException? cause;
 
-  /// The push report when [status] is [RefreshStatus.ok] and a sync ran;
-  /// `null` when not connected to Nextcloud (read happened, nothing uploaded).
+  /// The push report when a sync ran — [status] [RefreshStatus.ok], or
+  /// [RefreshStatus.readFailed] after a partial read failure; `null` when not
+  /// connected to Nextcloud (read happened, nothing uploaded) or nothing ran.
   final SyncReport? report;
 }
 
@@ -173,11 +176,12 @@ final class CairnServices {
     // is an Error. Letting one escape would complete this future with an error,
     // so every caller's `await refresh()` would throw before it could clear its
     // spinner — the UI would hang with no message at all.
+    final List<IngestResult> ingested;
     try {
       final granted = await repository.requestAuthorization(
         HealthMetric.values.toSet(),
       );
-      await HealthIngestService(
+      ingested = await HealthIngestService(
         repository: repository,
         store: store,
       ).ingest(granted);
@@ -205,6 +209,12 @@ final class CairnServices {
       debugPrint('Sync failed: $error');
       reportIfBug(error, stack, whileDoing: 'pushing to Nextcloud');
       return const RefreshResult(RefreshStatus.syncFailed);
+    }
+    // A metric whose read failed kept its anchor, so the next refresh retries
+    // it; everything else is saved (and synced) — but the user should know.
+    if (ingested.any((result) => result.readFailed)) {
+      // Keep the push report: its conflict warning still matters.
+      return RefreshResult(RefreshStatus.readFailed, report: report);
     }
     // report == null → not connected (read succeeded, nothing uploaded).
     return RefreshResult(RefreshStatus.ok, report: report);

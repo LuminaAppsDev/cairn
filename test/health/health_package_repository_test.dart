@@ -13,12 +13,12 @@ class _FakeGateway implements HealthGateway {
   _FakeGateway({
     this.permissions = const {},
     this.samples = const {},
-    this.denyRead = const {},
+    this.failRead = const {},
   });
 
   final Map<HealthMetric, bool?> permissions;
   final Map<HealthMetric, List<HealthSample>> samples;
-  final Set<HealthMetric> denyRead;
+  final Set<HealthMetric> failRead;
 
   /// Whether the store answers as present; `false` mimics a device without
   /// Health Connect.
@@ -56,8 +56,11 @@ class _FakeGateway implements HealthGateway {
     required DateTime start,
     required DateTime end,
   }) async {
-    if (denyRead.contains(metric)) {
-      throw PlatformException(code: 'denied');
+    if (failRead.contains(metric)) {
+      throw PlatformException(
+        code: 'HEALTH_READ_FAILED',
+        message: 'SecurityException: read denied',
+      );
     }
     return samples[metric] ?? const [];
   }
@@ -133,17 +136,22 @@ void main() {
     expect(samples.single.source.name, 'Galaxy Watch');
   });
 
-  test('a denied read degrades to an empty list, never throws', () async {
-    final gateway = _FakeGateway(denyRead: {HealthMetric.heartRate});
+  test('a failed read throws HealthReadException, never an empty list', () {
+    // An empty list would read as "no data" and let ingest advance the anchor
+    // past readings it never got.
+    final gateway = _FakeGateway(failRead: {HealthMetric.heartRate});
     final repo = HealthPackageRepository(gateway: gateway);
 
-    final samples = await repo.readSamples(
-      metric: HealthMetric.heartRate,
-      start: t,
-      end: t,
+    expect(
+      repo.readSamples(metric: HealthMetric.heartRate, start: t, end: t),
+      throwsA(
+        isA<HealthReadException>()
+            .having((e) => e.metric, 'metric', HealthMetric.heartRate)
+            .having((e) => e.code, 'code', 'HEALTH_READ_FAILED')
+            // Kept for the log line: it tells a rate limit from a denial.
+            .having((e) => e.message, 'message', contains('SecurityException')),
+      ),
     );
-
-    expect(samples, isEmpty);
   });
 
   group('when the health store is not available', () {

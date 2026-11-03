@@ -25,6 +25,10 @@ abstract interface class HealthRepository {
 
   /// Reads samples of [metric] recorded within the half-open window
   /// `[start, end)`.
+  ///
+  /// An empty list means the store holds no data in the window. A read the
+  /// store fails throws [HealthReadException] instead — never an empty list,
+  /// which callers would mistake for "nothing there" and skip past for good.
   Future<List<HealthSample>> readSamples({
     required HealthMetric metric,
     required DateTime start,
@@ -46,4 +50,32 @@ class HealthStoreUnavailableException implements Exception {
   String toString() =>
       'HealthStoreUnavailableException: '
       'the OS health store is not available on this device';
+}
+
+/// Thrown when the OS health store fails a read of [metric] — a rate limit, a
+/// permission revoked mid-run, a background read without the background
+/// permission, or HealthKit's database being locked.
+///
+/// Distinct from an *empty* read: the data may well be there, so the sync
+/// anchor must stay put and a later run must retry the window.
+class HealthReadException implements Exception {
+  /// Creates the exception for a failed read of [metric].
+  const HealthReadException(this.metric, {this.code, this.message});
+
+  /// The metric whose read failed.
+  final HealthMetric metric;
+
+  /// The platform's error code, for logs (e.g. `HEALTH_READ_FAILED`).
+  final String? code;
+
+  /// The platform's description, for logs only — on Android the native
+  /// exception's class and message, which tell a rate limit from a revoked
+  /// permission. Never shown in the UI, and must never carry record contents
+  /// (re-check on plugin upgrades: third_party/health/CAIRN_PATCHES.md).
+  final String? message;
+
+  @override
+  String toString() =>
+      'HealthReadException: reading ${metric.name} failed '
+      '(${code ?? '?'}${message == null ? '' : ': $message'})';
 }

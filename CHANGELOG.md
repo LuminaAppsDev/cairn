@@ -25,6 +25,15 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- **The `health` plugin is vendored at `third_party/health`, with a small
+  patch.** Upstream's Android reader returns an empty list when a read fails,
+  or when the type's permission is missing at read time. The latest release,
+  13.3.2, still does. Callers can't tell that from "no data", so the patch
+  reports both as errors. It is the copied 13.3.1 release plus those two hunks
+  and a one-time `dart format` of four files. `CAIRN_PATCHES.md` next to it
+  records the upstream hash, the hunks, and how to upgrade. The copy is a path dependency, so F-Droid's `pub get
+  --enforce-lockfile` builds it from this repository with no extra host.
+
 - **Phase 7 is complete: the Nextcloud web app is published on the app store.**
   `docs/DESIGN.md` §15 records the exit criteria as met — it installs on a
   user's own Nextcloud, renders aggregates from `/Cairn/`, and never writes.
@@ -75,6 +84,33 @@ All notable changes to this project are documented in this file.
   evidence if the ruamel version matches theirs.
 
 ### Fixed
+
+- **A failed health read was treated as "no data", and its span was never read
+  again.** Two layers turned a failed read into an empty list. The `health`
+  plugin's Android reader caught every exception, and Cairn's own repository
+  mapped every `PlatformException` to `[]`, which on iOS covers HealthKit's
+  locked-device error. Ingest then moved the anchor past readings it never
+  got. Anything older than the 14-day reconcile window was gone for good: a
+  Health Connect rate limit during a catch-up, a permission revoked mid-run, or
+  a background read the store refused.
+
+  A failed read now throws `HealthReadException`. The failing metric keeps its
+  anchor at the last finished slice, so the next refresh retries from there.
+  The remaining metrics still ingest and sync, and the refresh reports
+  `readFailed` so the user sees it. Its push report is kept, so the
+  conflict-copy warning still shows. A type that keeps failing now says so on
+  every refresh instead of silently skipping data. A first run whose read fails
+  pins its 30-day window start. Otherwise the retry would compute a start that
+  slides forward with the clock, and the oldest days would drop out unread.
+  Telling a failure that keeps recurring apart from a passing one is recorded
+  in `docs/DESIGN.md` §14.
+
+  The same review found a case that silently skipped workouts. The plugin's
+  workout read also reads the distance, calories and steps records inside each
+  workout, so a grant missing any of them failed the whole read, which then
+  came back empty. Activity now counts as granted only when all of those are
+  granted, and steps is requested with it. A partial grant is skipped up front
+  with its anchor kept, rather than read into an error on every refresh.
 
 - **Opening the app after a long break crashed it, every time.** Ingest read
   each metric from its sync anchor to now in one call, and the health plugin

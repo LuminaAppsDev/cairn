@@ -10,13 +10,17 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// Records read windows and returns canned samples per metric.
 class _FakeRepository implements HealthRepository {
-  _FakeRepository(this.samples, {this.failAtRead});
+  _FakeRepository(this.samples, {this.failAtRead, this.failure});
 
   final Map<HealthMetric, List<HealthSample>> samples;
   final List<({HealthMetric metric, DateTime start, DateTime end})> reads = [];
 
-  /// 1-based read that throws, standing in for the process dying mid-ingest.
+  /// 1-based read that throws [failure] — by default a `StateError`, standing
+  /// in for the process dying mid-ingest.
   final int? failAtRead;
+
+  /// What the [failAtRead] read throws instead, e.g. a [HealthReadException].
+  final Exception? failure;
 
   @override
   Future<bool> isAvailable() async => true;
@@ -33,7 +37,11 @@ class _FakeRepository implements HealthRepository {
     required DateTime end,
   }) async {
     reads.add((metric: metric, start: start, end: end));
-    if (reads.length == failAtRead) throw StateError('simulated crash');
+    if (reads.length == failAtRead) {
+      final failure = this.failure;
+      if (failure != null) throw failure;
+      throw StateError('simulated crash');
+    }
     // Behave like the real store: match on a sample's start time within the
     // half-open window, as Health Connect's read filter does, so window and
     // slice-boundary logic is actually exercised.
@@ -445,6 +453,27 @@ void main() {
     expect(values, containsAll(<double>[14, 7050]));
   });
 
+  test('a first run whose read fails keeps its window start', () async {
+    // Without the pinned start, the retry would compute its own
+    // `now - initialLookback`, and the oldest days would slide out unread.
+    final now = DateTime(2026, 6, 14, 12);
+    final repo = _FakeRepository(
+      {HealthMetric.steps: const []},
+      failAtRead: 1,
+      failure: const HealthReadException(HealthMetric.steps),
+    );
+    final results = await HealthIngestService(
+      repository: repo,
+      store: store,
+      clock: () => now,
+    ).ingest({HealthMetric.steps});
+
+    expect(results.single.readFailed, isTrue);
+    final pinned = await store.lastSyncAnchor(HealthMetric.steps);
+    final firstRunStart = now.subtract(const Duration(days: 30));
+    expect(pinned!.isAtSameMomentAs(firstRunStart), isTrue);
+  });
+
   group('a long sync gap', () {
     final now = DateTime(2026, 6, 14, 12);
     final anchor = now.subtract(const Duration(days: 60));
@@ -531,6 +560,47 @@ void main() {
       expect(afterResume, hasLength(daily.length));
       final finished = await store.lastSyncAnchor(HealthMetric.heartRate);
       expect(finished!.isAtSameMomentAs(now), isTrue);
+    });
+
+    test('a failed read holds that metric, and the rest still run', () async {
+      // Heart rate's third read (mid catch-up) fails; weight comes after it.
+      await store.setSyncAnchor(HealthMetric.heartRate, anchor);
+      final weighIn = now.subtract(const Duration(hours: 1));
+      final repo = _FakeRepository(
+        {
+          HealthMetric.heartRate: daily,
+          HealthMetric.weight: [
+            ScalarSample(
+              metric: HealthMetric.weight,
+              value: 70,
+              unit: 'kg',
+              start: weighIn,
+              end: weighIn,
+              source: source,
+            ),
+          ],
+        },
+        failAtRead: 3,
+        failure: const HealthReadException(HealthMetric.heartRate),
+      );
+      final results = await HealthIngestService(
+        repository: repo,
+        store: store,
+        clock: () => now,
+      ).ingest({HealthMetric.heartRate, HealthMetric.weight});
+
+      final heartRate = results.first;
+      expect(heartRate.readFailed, isTrue);
+      expect(heartRate.dataPointCount, 14);
+      // Held at the last finished slice — not walked past the failed one.
+      final held = await store.lastSyncAnchor(HealthMetric.heartRate);
+      expect(held!.isAtSameMomentAs(repo.reads[1].end), isTrue);
+
+      final weight = results.last;
+      expect(weight.readFailed, isFalse);
+      expect(weight.dataPointCount, 1);
+      final weightAnchor = await store.lastSyncAnchor(HealthMetric.weight);
+      expect(weightAnchor!.isAtSameMomentAs(now), isTrue);
     });
 
     // Episode integrity itself is covered by the sleep tests above; this pins

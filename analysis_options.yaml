@@ -7,6 +7,8 @@ analyzer:
   # are regenerated on `flutter pub get`; exclude them from the strict lints.
   exclude:
     - lib/l10n/app_localizations*.dart
+    # Vendored upstream code keeps its own style; see its CAIRN_PATCHES.md.
+    - third_party/**
   language:
     strict-casts: true
     strict-inference: true

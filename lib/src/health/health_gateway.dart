@@ -30,7 +30,9 @@ abstract interface class HealthGateway {
 
   /// Reads samples of [metric] whose start time is in `[start, end)` (Health
   /// Connect's own read filter; HealthKit via `.strictStartDate`), converted
-  /// to Cairn's [HealthSample] model. May throw if the OS denies the read.
+  /// to Cairn's [HealthSample] model. Throws a `PlatformException` when the
+  /// store fails the read (on Android only with the vendored plugin's patch —
+  /// third_party/health/CAIRN_PATCHES.md); an empty list means no data.
   Future<List<HealthSample>> readSamples({
     required HealthMetric metric,
     required DateTime start,
@@ -64,7 +66,7 @@ final class HealthPackageGateway implements HealthGateway {
 
   @override
   Future<bool?> hasReadPermission(HealthMetric metric) =>
-      _health.hasPermissions(_readTypesFor(metric));
+      _health.hasPermissions(_requiredTypesFor(metric));
 
   @override
   Future<List<HealthSample>> readSamples({
@@ -92,17 +94,32 @@ final class HealthPackageGateway implements HealthGateway {
   };
 
   // Authorisation must also cover the records the plugin reads alongside a
-  // workout (distance + calories); without them the WORKOUT read fails with a
-  // SecurityException for those record types.
+  // workout (distance, calories, steps); without them the WORKOUT read fails
+  // with a SecurityException for those record types.
   List<HealthDataType> _authTypesFor(HealthMetric metric) => switch (metric) {
     HealthMetric.activity => const [
-      HealthDataType.WORKOUT,
-      HealthDataType.DISTANCE_DELTA,
-      HealthDataType.TOTAL_CALORIES_BURNED,
+      ..._workoutReadTypes,
       HealthDataType.ACTIVE_ENERGY_BURNED,
     ],
     _ => _readTypesFor(metric),
   };
+
+  // A metric counts as granted only if every type its read touches is: a
+  // partial workout grant is then skipped (anchor kept) up front, rather than
+  // read into a failure on every refresh. Android only — the extra types are
+  // the Android reader's, and iOS can't answer for Android-only ones.
+  List<HealthDataType> _requiredTypesFor(HealthMetric metric) =>
+      metric == HealthMetric.activity && !_isIos
+      ? _workoutReadTypes
+      : _readTypesFor(metric);
+
+  // Everything the plugin's Android reader reads for one workout.
+  static const List<HealthDataType> _workoutReadTypes = [
+    HealthDataType.WORKOUT,
+    HealthDataType.DISTANCE_DELTA,
+    HealthDataType.TOTAL_CALORIES_BURNED,
+    HealthDataType.STEPS,
+  ];
 
   HealthSample? _toSample(HealthMetric metric, HealthDataPoint point) {
     final source = HealthSource(
