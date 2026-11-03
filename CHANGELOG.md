@@ -58,6 +58,16 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- **flutter_secure_storage 11.2.0, up from 10.3.4** (darwin 0.4.3). v11
+  drops the ciphers and the EncryptedSharedPreferences backend deprecated in
+  v10, and data still stored with them becomes unreadable. Cairn's stored app
+  token is not affected: every release shipped 10.3.1 with default options,
+  which already write RSA-OAEP + AES-GCM to the default `FlutterSecureStorage`
+  file, and v11 keeps those defaults, that file name and key prefix. The
+  Keychain defaults (account name, `unlocked`, not synchronizable) are also
+  unchanged. Tink moves from 1.21.0 to 1.23.0 in `verification-metadata.xml`;
+  nothing else requests 1.21.0, so its pin was removed.
+
 - **The vendored `health` plugin is rebased onto upstream 13.3.2.** Patches
   1–3 carry over unchanged, because upstream left both patched Kotlin files
   alone; patch 4's formatting re-applies to `health_plugin.dart`, which

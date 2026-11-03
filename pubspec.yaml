@@ -21,7 +21,7 @@ dependencies:
   flutter_localizations:
     sdk: flutter
   # App-token storage in Keychain / Android Keystore (BSD-3-Clause).
-  flutter_secure_storage: ^10.3.1
+  flutter_secure_storage: ^11.2.0
   # Single wrapper over Apple HealthKit + Android Health Connect (MIT).
   # Vendored with a read-error patch; see third_party/health/CAIRN_PATCHES.md.
   health:
