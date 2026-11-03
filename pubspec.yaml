@@ -45,6 +45,10 @@ dependencies:
   # Opportunistic background sync via Android WorkManager / iOS BGTaskScheduler
   # (MIT; federated workmanager_android + workmanager_apple).
   workmanager: ^0.9.0+3
+  # Pinned: 0.9.0+3 through 0.9.3 skip the Kotlin plugin on AGP 9 without
+  # checking `android.builtInKotlin` (false here, per the Flutter template), so
+  # the plugin class never compiles and the APK build fails. 0.10.x checks it.
+  workmanager_android: 0.9.0+2
   # Parses the WebDAV PROPFIND multistatus XML response (MIT).
   xml: ^6.5.0
 

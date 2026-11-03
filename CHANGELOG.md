@@ -58,6 +58,19 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- **Dependencies upgraded within their existing constraints.** fl_chart
+  1.3.0, flutter_secure_storage 10.3.4, path_provider 2.1.6, url_launcher
+  6.3.3, uuid 4.6.0, very_good_analysis 10.3.0, plus their transitive
+  packages. Two of those cross a major version: equatable 3.0.0 (via fl_chart)
+  and package_config 3.0.0. Regenerating `verification-metadata.xml` with
+  `--refresh-dependencies` added no pins. `pubspec.yaml` now pins
+  `workmanager_android` to 0.9.0+2, so workmanager stays at 0.9.0+3: 0.9.0+3
+  through 0.9.3 skip the Kotlin plugin on AGP 9 without checking
+  `android.builtInKotlin`,
+  which the Flutter template sets to `false`, so its plugin class is never
+  compiled and the APK build fails. 0.10.x checks the flag. Major bumps (flutter_secure_storage 11, workmanager 0.10, xml 7,
+  very_good_analysis 11) and the Flutter SDK move to 3.47 follow separately.
+
 - **The `health` plugin is vendored at `third_party/health`, with a small
   patch.** Upstream's Android reader returns an empty list when a read fails,
   or when the type's permission is missing at read time. The latest release,
