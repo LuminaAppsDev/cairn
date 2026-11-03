@@ -17,11 +17,15 @@ class _FakeGateway implements HealthGateway {
     this.permissions = const {},
     this.samples = const {},
     this.failRead = const {},
+    this.readError,
   });
 
   final Map<HealthMetric, bool?> permissions;
   final Map<HealthMetric, List<HealthSample>> samples;
   final Set<HealthMetric> failRead;
+
+  /// What a [failRead] read throws, if not the default denial.
+  final PlatformException? readError;
 
   /// Whether the store answers as present; `false` mimics a device without
   /// Health Connect.
@@ -85,10 +89,11 @@ class _FakeGateway implements HealthGateway {
     required DateTime end,
   }) async {
     if (failRead.contains(metric)) {
-      throw PlatformException(
-        code: 'HEALTH_READ_FAILED',
-        message: 'SecurityException: read denied',
-      );
+      throw readError ??
+          PlatformException(
+            code: 'HEALTH_READ_FAILED',
+            message: 'SecurityException: read denied',
+          );
     }
     return samples[metric] ?? const [];
   }
@@ -180,6 +185,99 @@ void main() {
             .having((e) => e.message, 'message', contains('SecurityException')),
       ),
     );
+  });
+
+  group('a failed read is classified', () {
+    PlatformException failed(String? exception, Object? platformError) =>
+        PlatformException(
+          code: 'HEALTH_READ_FAILED',
+          details: {'exception': exception, 'platformError': platformError},
+        );
+
+    final cases = <String, (PlatformException, HealthReadFailure)>{
+      'a rate limit (platform code 7)': (
+        failed('IllegalStateException', 7),
+        HealthReadFailure.rateLimited,
+      ),
+      'a sync in progress (platform code 8)': (
+        failed('IllegalStateException', 8),
+        HealthReadFailure.transient,
+      ),
+      'an invalid request (platform code 3)': (
+        failed('IllegalArgumentException', 3),
+        HealthReadFailure.unexpected,
+      ),
+      'an unsupported operation (platform code 9)': (
+        failed('IllegalStateException', 9),
+        HealthReadFailure.unexpected,
+      ),
+      'an internal error (platform code 2)': (
+        failed('IllegalStateException', 2),
+        HealthReadFailure.transient,
+      ),
+      'a binder failure without a code': (
+        failed('RemoteException', null),
+        HealthReadFailure.transient,
+      ),
+      'a dead binder without a code': (
+        failed('DeadObjectException', null),
+        HealthReadFailure.transient,
+      ),
+      'an I/O failure without a code': (
+        failed('IOException', null),
+        HealthReadFailure.transient,
+      ),
+      'a withdrawn permission without a code': (
+        failed('SecurityException', null),
+        HealthReadFailure.transient,
+      ),
+      'a converter fault': (
+        failed('NullPointerException', null),
+        HealthReadFailure.unexpected,
+      ),
+      'a read without details': (
+        PlatformException(code: 'HEALTH_READ_FAILED'),
+        HealthReadFailure.unexpected,
+      ),
+      'a read with malformed details': (
+        PlatformException(code: 'HEALTH_READ_FAILED', details: 'oops'),
+        HealthReadFailure.unexpected,
+      ),
+      'a revocation mid-run (patch 2)': (
+        PlatformException(code: 'HEALTH_READ_NOT_AUTHORIZED'),
+        HealthReadFailure.transient,
+      ),
+      'a HealthKit error (iOS)': (
+        PlatformException(code: 'HEALTH_ERROR'),
+        HealthReadFailure.transient,
+      ),
+      'a code the read path never sends': (
+        PlatformException(code: 'INVALID_TYPE'),
+        HealthReadFailure.unexpected,
+      ),
+    };
+
+    for (final MapEntry(key: name, value: (error, expected)) in cases.entries) {
+      test('$name as ${expected.name}', () {
+        final repo = HealthPackageRepository(
+          gateway: _FakeGateway(
+            failRead: {HealthMetric.steps},
+            readError: error,
+          ),
+        );
+
+        expect(
+          repo.readSamples(metric: HealthMetric.steps, start: t, end: t),
+          throwsA(
+            isA<HealthReadException>().having(
+              (e) => e.failure,
+              'failure',
+              expected,
+            ),
+          ),
+        );
+      });
+    }
   });
 
   group('when the health store is not available', () {

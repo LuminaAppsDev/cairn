@@ -8,6 +8,7 @@ import 'package:cairn/src/onboarding/setup_guide_page.dart';
 import 'package:cairn/src/profile/profile.dart';
 import 'package:cairn/src/settings/locale_controller.dart';
 import 'package:cairn/src/shell/cairn_services.dart';
+import 'package:cairn/src/shell/refresh_feedback.dart';
 import 'package:cairn/src/shell/sync_error_feedback.dart';
 import 'package:flutter/material.dart';
 
@@ -195,12 +196,11 @@ class _SettingsPageState extends State<SettingsPage>
       case RefreshStatus.readFailed:
         // A read failure can still come with an upload: keep its conflict
         // warning.
+        final failed = result.readFailedMessage(l10n);
         final report = result.report;
-        if (report == null || !report.hasConflicts) {
-          return l10n.refreshReadFailed;
-        }
+        if (report == null || !report.hasConflicts) return failed;
         final conflicts = l10n.settingsSyncConflicts(report.conflicts.length);
-        return '${l10n.refreshReadFailed} · $conflicts';
+        return '$failed · $conflicts';
       case RefreshStatus.healthUnavailable:
         return l10n.refreshHealthUnavailable;
       case RefreshStatus.syncFailed:

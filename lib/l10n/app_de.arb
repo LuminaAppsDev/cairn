@@ -134,6 +134,7 @@
   "settingsHelpGuideSubtitle": "Gesundheits-App, Wearable und Berechtigungen einrichten",
 
   "refreshReadFailed": "Gesundheitsdaten konnten nicht gelesen oder gespeichert werden.",
+  "refreshReadFailedFor": "Lesen oder Speichern fehlgeschlagen: {metrics}.",
   "refreshSyncFailed": "Lokal gespeichert; Synchronisierung fehlgeschlagen: {detail}",
   "refreshSyncFailedGeneric": "Lokal gespeichert; Synchronisierung fehlgeschlagen.",
   "refreshHealthUnavailable": "Health Connect ist auf diesem Gerät nicht verfügbar.",

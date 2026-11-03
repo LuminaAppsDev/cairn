@@ -311,6 +311,11 @@
 
   "refreshReadFailed": "Could not read or save health data.",
   "@refreshReadFailed": { "description": "Snackbar when reading from the OS health store, or saving what was read on the device, fails." },
+  "refreshReadFailedFor": "Could not read or save: {metrics}.",
+  "@refreshReadFailedFor": {
+    "description": "Snackbar when some metrics could not be read from the OS health store or saved on the device; the rest were. {metrics} is a comma-separated list of the metric screen titles, e.g. 'Heart rate, Steps'.",
+    "placeholders": { "metrics": { "type": "String", "example": "Heart rate, Steps" } }
+  },
   "refreshSyncFailed": "Saved locally; sync failed: {detail}",
   "@refreshSyncFailed": {
     "description": "Snackbar when data was saved locally but a typed sync error occurred; detail is a controlled, non-sensitive message.",

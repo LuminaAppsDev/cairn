@@ -48,11 +48,17 @@ enum RefreshStatus {
 }
 
 /// The result of a refresh: a [status], the typed [cause] when the push failed,
-/// and the [report] of the push when one ran.
+/// the [report] of the push when one ran, and the [failedMetrics] of a read
+/// that failed for some.
 @immutable
 class RefreshResult {
   /// Creates a refresh result.
-  const RefreshResult(this.status, {this.cause, this.report});
+  const RefreshResult(
+    this.status, {
+    this.cause,
+    this.report,
+    this.failedMetrics = const {},
+  });
 
   /// The high-level outcome.
   final RefreshStatus status;
@@ -68,6 +74,12 @@ class RefreshResult {
   /// but the upload went through); `null` when not connected to Nextcloud,
   /// when the upload failed, or when none ran (Health Connect missing).
   final SyncReport? report;
+
+  /// The metrics that weren't read or saved, when [status] is
+  /// [RefreshStatus.readFailed] — failed, or never reached by a run that
+  /// ended early. Empty when the read step failed as a whole (nothing to
+  /// name), and for every other status.
+  final Set<HealthMetric> failedMetrics;
 }
 
 /// The app's shared, app-lifetime services, built once and owned by the shell.
@@ -280,30 +292,38 @@ final class CairnServices {
     }
     if (read.status == RefreshStatus.readFailed) {
       // Keep any push report: its conflict warning still matters.
-      return RefreshResult(RefreshStatus.readFailed, report: push.report);
+      return RefreshResult(
+        RefreshStatus.readFailed,
+        report: push.report,
+        failedMetrics: read.failed,
+      );
     }
     return push; // ok with its report (null → not connected)
   }
 
   // Maps the read step onto an outcome — ok, readFailed or healthUnavailable —
-  // and whether any metric was saved. Never throws: `on Object`, not
-  // `on Exception`, because the health plugin signals a missing Health Connect
-  // with an UnsupportedError (an Error), and an escape would leave every
-  // caller's spinner hanging.
-  Future<({RefreshStatus status, bool savedAny})> _readStep({
-    required bool background,
-  }) async {
+  // whether any metric was saved, and which failed. Never throws: `on Object`,
+  // not `on Exception`, because the health plugin signals a missing Health
+  // Connect with an UnsupportedError (an Error), and an escape would leave
+  // every caller's spinner hanging.
+  Future<({RefreshStatus status, bool savedAny, Set<HealthMetric> failed})>
+  _readStep({required bool background}) async {
+    const none = <HealthMetric>{};
     final List<IngestResult> ingested;
     try {
       ingested = await _ingest(background: background);
     } on HealthStoreUnavailableException {
-      return (status: RefreshStatus.healthUnavailable, savedAny: false);
+      return (
+        status: RefreshStatus.healthUnavailable,
+        savedAny: false,
+        failed: none,
+      );
     } on Object catch (error, stack) {
       // Logged by type only: the text could, in principle, carry sensitive
       // data. A bug still reaches Flutter's error reporting in full.
       debugPrint('Health read failed: ${error.runtimeType}');
       reportIfBug(error, stack, whileDoing: 'reading the OS health store');
-      return (status: RefreshStatus.readFailed, savedAny: false);
+      return (status: RefreshStatus.readFailed, savedAny: false, failed: none);
     }
     // New local data is on disk → refresh the screens even if the upload fails
     // (unless the shell was torn down mid-refresh: no screens, no notifier).
@@ -311,23 +331,40 @@ final class CairnServices {
     final failed = ingested.where((result) => result.failed).toList();
     _reportBugs(failed);
     final savedAny = ingested.any((result) => !result.failed);
+    final failedMetrics = {for (final result in failed) result.metric};
     if (failed.any((r) => r.error is HealthStoreUnavailableException)) {
-      return (status: RefreshStatus.healthUnavailable, savedAny: savedAny);
+      return (
+        status: RefreshStatus.healthUnavailable,
+        savedAny: savedAny,
+        failed: failedMetrics,
+      );
     }
     // A metric that failed kept its anchor, so the next refresh retries it.
     final status = failed.isEmpty ? RefreshStatus.ok : RefreshStatus.readFailed;
-    return (status: status, savedAny: savedAny);
+    return (status: status, savedAny: savedAny, failed: failedMetrics);
   }
 
   // Reports each distinct bug among [failed] once — a shared fault failing
-  // every metric the same way is one bug, not one per metric. (An expected
-  // Exception passes silently; see reportIfBug.)
+  // every metric the same way is one bug, not one per metric. An expected
+  // Exception passes silently (see reportIfBug), except a read the plugin
+  // failed through a fault of its own: that one holds its metric every run
+  // until a fix ships.
   void _reportBugs(List<IngestResult> failed) {
     final seen = <String>{};
     for (final result in failed) {
       final error = result.error!;
-      if (!seen.add('${error.runtimeType}|$error')) continue;
-      reportIfBug(
+      // A failed read's text names its metric; the fault is the same
+      // whichever metric hit it.
+      final key = error is HealthReadException
+          ? 'read|${error.code}|${error.message}'
+          : '${error.runtimeType}|$error';
+      if (!seen.add(key)) continue;
+      final report =
+          error is HealthReadException &&
+              error.failure == HealthReadFailure.unexpected
+          ? reportBug
+          : reportIfBug;
+      report(
         error,
         result.stackTrace ?? StackTrace.empty,
         whileDoing: 'ingesting ${result.metric.name}',

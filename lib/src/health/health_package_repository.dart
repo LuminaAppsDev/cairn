@@ -70,10 +70,58 @@ final class HealthPackageRepository implements HealthRepository {
       // too — partial grants are filtered out before any read, so one here is
       // a mid-run revocation or a background-read restriction.
       Error.throwWithStackTrace(
-        HealthReadException(metric, code: error.code, message: error.message),
+        HealthReadException(
+          metric,
+          code: error.code,
+          message: error.message,
+          failure: _classify(error),
+        ),
         stack,
       );
     }
+  }
+
+  // Health Connect's platform error codes (android.health.connect.
+  // HealthConnectException), carried by the plugin patch.
+  static const _invalidArgument = 3;
+  static const _rateLimitExceeded = 7;
+  static const _unsupportedOperation = 9;
+
+  // Native exceptions a sound plugin meets without a platform code: the
+  // binder failing, a permission withdrawn.
+  static const _transientNative = {
+    'IOException',
+    'RemoteException',
+    'DeadObjectException',
+    'SecurityException',
+  };
+
+  // Tells the store's passing trouble from a rate limit and from a fault in
+  // the plugin or in Cairn's request (third_party/health/CAIRN_PATCHES.md,
+  // patch 1). An unrecognised failure counts as a fault: misjudged, it costs
+  // one bug report in the log, never data, as the metric is held either way.
+  static HealthReadFailure _classify(PlatformException error) {
+    switch (error.code) {
+      case 'HEALTH_READ_NOT_AUTHORIZED': // patch 2: revoked mid-run
+      case 'HEALTH_ERROR': // iOS: HealthKit's own, e.g. a locked database
+        return HealthReadFailure.transient;
+      case 'HEALTH_READ_FAILED':
+        final details = error.details;
+        if (details is! Map<Object?, Object?>) {
+          return HealthReadFailure.unexpected;
+        }
+        return switch (details['platformError']) {
+          _rateLimitExceeded => HealthReadFailure.rateLimited,
+          _invalidArgument ||
+          _unsupportedOperation => HealthReadFailure.unexpected,
+          int() => HealthReadFailure.transient,
+          _ =>
+            _transientNative.contains(details['exception'])
+                ? HealthReadFailure.transient
+                : HealthReadFailure.unexpected,
+        };
+    }
+    return HealthReadFailure.unexpected;
   }
 
   @override

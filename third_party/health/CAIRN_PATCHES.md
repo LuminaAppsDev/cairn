@@ -22,8 +22,26 @@ outer `catch` of `getData`:
 -                result.success(emptyList<Map<String, Any?>>()) // Return empty list instead of null
 +                // Cairn patch: report the failure instead of an empty list, which
 +                // callers cannot tell apart from "no data" (see CAIRN_PATCHES.md).
-+                result.error("HEALTH_READ_FAILED", "${e.javaClass.simpleName}: ${e.message}", null)
++                // (…)
++                val platformError =
++                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
++                        generateSequence<Throwable>(e) { it.cause }
++                            .take(8) // a cause cycle must not hang the reply
++                            .filterIsInstance<HealthConnectException>()
++                            .firstOrNull()
++                            ?.errorCode
++                    } else {
++                        null
++                    }
++                result.error(
++                    "HEALTH_READ_FAILED",
++                    "${e.javaClass.simpleName}: ${e.message}",
++                    mapOf("exception" to e.javaClass.simpleName, "platformError" to platformError),
++                )
 ```
+
+Plus the imports `android.health.connect.HealthConnectException` and
+`android.os.Build`.
 
 Upstream swallows every exception a Health Connect read throws: a rate limit,
 a revoked permission, or a background read without the background permission.
@@ -32,8 +50,25 @@ data in this window", so its ingest moved the sync anchor past data it never
 read, and anything older than the reconcile window was never read again.
 
 The error message is the exception's class name and message, and it ends up in
-Cairn's logs. The exceptions that can reach it carry framework text, never
-record values. Re-check that on every upgrade.
+Cairn's logs (logcat). Health Connect's own exceptions carry framework text. A
+fault in the plugin's record converter could quote a record value in its
+message, but upstream's `Log.e` stack trace just above already writes that
+same text to logcat, so Cairn's log adds no new exposure. Re-check on every
+upgrade.
+
+The details let Cairn classify the failure (`HealthPackageRepository`): a rate
+limit ends the run, and a plugin fault is reported as a bug. They hold the
+exception's class name and, on Android 14+, the platform's
+`HealthConnectException.errorCode`. On the platform path, the client's
+`ExceptionConverterKt` keeps only four codes apart as distinct Kotlin classes:
+3 → `IllegalArgumentException`, 4 → `IOException`, 5 → `SecurityException`
+and 6 → `RemoteException`. Every other code becomes an
+`IllegalStateException`, among them 7, the rate limit. So the class alone
+can't tell a rate limit from, say, a sync in progress. The code is taken from
+the first `HealthConnectException` in the cause chain, which today is the
+direct cause. The version check keeps the platform class unloaded below API 34,
+since the plugin's own minSdk is 26. There the code is always null, but Cairn's
+minSdk is 34.
 
 With this patch the failure arrives in Dart as a `PlatformException`.
 `HealthPackageRepository` turns it into a `HealthReadException`, and the anchor

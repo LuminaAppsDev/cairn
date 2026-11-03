@@ -1,6 +1,8 @@
 package cachet.plugins.health
 
 import android.content.Context
+import android.health.connect.HealthConnectException
+import android.os.Build
 import android.os.Handler
 import android.util.Log
 import androidx.health.connect.client.HealthConnectClient
@@ -142,7 +144,24 @@ class HealthDataReader(
                 Log.e("FLUTTER_HEALTH::ERROR", Log.getStackTraceString(e))
                 // Cairn patch: report the failure instead of an empty list, which
                 // callers cannot tell apart from "no data" (see CAIRN_PATCHES.md).
-                result.error("HEALTH_READ_FAILED", "${e.javaClass.simpleName}: ${e.message}", null)
+                // The details let Cairn classify it: the client converts several
+                // platform error codes (a rate limit among them) into one Kotlin
+                // exception class, so the platform code rides along.
+                val platformError =
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                        generateSequence<Throwable>(e) { it.cause }
+                            .take(8) // a cause cycle must not hang the reply
+                            .filterIsInstance<HealthConnectException>()
+                            .firstOrNull()
+                            ?.errorCode
+                    } else {
+                        null
+                    }
+                result.error(
+                    "HEALTH_READ_FAILED",
+                    "${e.javaClass.simpleName}: ${e.message}",
+                    mapOf("exception" to e.javaClass.simpleName, "platformError" to platformError),
+                )
             }
         }
     }

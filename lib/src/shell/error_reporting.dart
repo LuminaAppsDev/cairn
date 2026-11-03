@@ -25,6 +25,19 @@ void reportIfBug(
   required String whileDoing,
 }) {
   if (error is Exception) return;
+  reportBug(error, stack, whileDoing: whileDoing);
+}
+
+/// Hands [error] to Flutter's error machinery as a bug, whatever its type —
+/// for an `Exception` the caller knows to be one, such as a health read the
+/// plugin failed through a fault of its own. Reach as for [reportIfBug]. Its
+/// text can quote a native message, and a plugin fault's message could quote a
+/// record value: keep this local-only if crash reporting is ever wired in.
+void reportBug(
+  Object error,
+  StackTrace stack, {
+  required String whileDoing,
+}) {
   FlutterError.reportError(
     FlutterErrorDetails(
       exception: error,

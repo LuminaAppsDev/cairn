@@ -31,9 +31,10 @@ class IngestResult {
 
   /// Why ingesting [metric] stopped early, if it did: a [HealthReadException]
   /// when the store failed a read, a [HealthStoreUnavailableException] or a
-  /// [FileSystemException] (both of which also end the run), or else some
-  /// other local failure or a bug. Its anchor stays at the last finished
-  /// span, so a later run retries from there.
+  /// [FileSystemException], or else some other local failure or a bug. For a
+  /// metric the run never reached, it is the failure that ended the run. Its
+  /// anchor stays at the last finished span, so a later run retries from
+  /// there.
   final Object? error;
 
   /// Where [error] was thrown.
@@ -129,29 +130,47 @@ final class HealthIngestService {
   ///
   /// A metric that fails — a read the store failed, a bug — is reported with
   /// [IngestResult.error] and keeps its anchor at the last finished span; the
-  /// remaining metrics still run. Two failures end the run after their metric,
-  /// as they aren't that metric's own: the store gone
-  /// ([HealthStoreUnavailableException]), and local storage failing
-  /// ([FileSystemException], e.g. a full disk), where every further write
-  /// would only leave another torn shard. Never throws.
-  /// Returns the per-metric count of **newly written** datapoints.
+  /// remaining metrics still run. Three failures end the run after their
+  /// metric, as they aren't that metric's own: the store gone
+  /// ([HealthStoreUnavailableException]), its read quota spent (a
+  /// [HealthReadFailure.rateLimited] read, where each further read would only
+  /// spend more), and local storage failing ([FileSystemException], e.g. a
+  /// full disk), where every further write would only leave another torn
+  /// shard. The metrics the run never reached fail with the same error, their
+  /// anchors untouched. Never throws.
+  /// Returns one result per metric, with its count of **newly written**
+  /// datapoints.
   Future<List<IngestResult>> ingest(Set<HealthMetric> metrics) async {
     // Whole seconds: source dedup keys competing readings on whole seconds,
     // so a boundary mid-second could split a pair across two reads.
     final now = _wholeSeconds(_now());
     final reconcileStart = now.subtract(reconcileLookback);
     final results = <IngestResult>[];
+    IngestResult? ended;
     for (final metric in metrics) {
+      if (ended != null) {
+        results.add(
+          IngestResult(
+            metric: metric,
+            dataPointCount: 0,
+            error: ended.error,
+            stackTrace: ended.stackTrace,
+          ),
+        );
+        continue;
+      }
       final result = await _ingestMetric(metric, now, reconcileStart);
       results.add(result);
-      final error = result.error;
-      if (error is HealthStoreUnavailableException ||
-          error is FileSystemException) {
-        break;
-      }
+      if (_endsRun(result.error)) ended = result;
     }
     return results;
   }
+
+  static bool _endsRun(Object? error) =>
+      error is HealthStoreUnavailableException ||
+      error is FileSystemException ||
+      (error is HealthReadException &&
+          error.failure == HealthReadFailure.rateLimited);
 
   Future<IngestResult> _ingestMetric(
     HealthMetric metric,

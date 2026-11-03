@@ -63,6 +63,8 @@ class _PartlyFailingRepository implements HealthRepository {
     this.grantsReads = true,
     this.failsWithBug = false,
     this.bugInEveryRead = false,
+    this.readFailure = HealthReadFailure.transient,
+    this.failsEveryRead = false,
   });
 
   /// The metric whose read fails (`null`: none).
@@ -80,6 +82,12 @@ class _PartlyFailingRepository implements HealthRepository {
 
   /// Whether every read fails with the same bug — a shared fault.
   final bool bugInEveryRead;
+
+  /// How [failing]'s failed read is classified.
+  final HealthReadFailure readFailure;
+
+  /// Whether every read fails like [failing]'s — a shared plugin fault.
+  final bool failsEveryRead;
 
   final List<HealthMetric> reads = [];
   int backgroundRequests = 0;
@@ -103,9 +111,9 @@ class _PartlyFailingRepository implements HealthRepository {
   }) async {
     reads.add(metric);
     if (bugInEveryRead) throw StateError('shared bug');
-    if (metric == failing) {
+    if (metric == failing || failsEveryRead) {
       if (failsWithBug) throw StateError('bug while reading ${metric.name}');
-      throw HealthReadException(metric);
+      throw HealthReadException(metric, failure: readFailure);
     }
     return const [];
   }
@@ -304,6 +312,56 @@ void main() {
     expect(advanced!.isAfter(aMonthAgo), isTrue);
     // An anticipated failure, not a bug.
     expect(reported, isEmpty);
+    expect(result.failedMetrics, {HealthMetric.heartRate});
+  });
+
+  test('a plugin fault in one metric is reported as a bug', () async {
+    // It fails the same way every run until a fix ships.
+    final services = servicesOver(
+      _PartlyFailingRepository(
+        HealthMetric.heartRate,
+        readFailure: HealthReadFailure.unexpected,
+      ),
+    );
+    addTearDown(services.dispose);
+
+    final result = await services.refresh();
+
+    expect(result.status, RefreshStatus.readFailed);
+    expect(reported.single.exception, isA<HealthReadException>());
+    expect(result.failedMetrics, {HealthMetric.heartRate});
+  });
+
+  test('a plugin fault failing every metric is reported once', () async {
+    final services = servicesOver(
+      _PartlyFailingRepository(
+        null,
+        failsEveryRead: true,
+        readFailure: HealthReadFailure.unexpected,
+      ),
+    );
+    addTearDown(services.dispose);
+
+    final result = await services.refresh();
+
+    expect(reported, hasLength(1));
+    expect(result.failedMetrics, HealthMetric.values.toSet());
+  });
+
+  test('a rate limit names the metrics it left unread', () async {
+    final repo = _PartlyFailingRepository(
+      HealthMetric.values.first,
+      readFailure: HealthReadFailure.rateLimited,
+    );
+    final services = servicesOver(repo);
+    addTearDown(services.dispose);
+
+    final result = await services.refresh();
+
+    expect(result.status, RefreshStatus.readFailed);
+    expect(repo.reads, [HealthMetric.values.first]);
+    expect(result.failedMetrics, HealthMetric.values.toSet());
+    expect(reported, isEmpty);
   });
 
   test('a bug in one metric is reported, and the rest still run', () async {
@@ -340,6 +398,7 @@ void main() {
 
     expect(result.status, RefreshStatus.readFailed);
     expect(target.puts, isNotEmpty);
+    expect(result.failedMetrics, isEmpty); // nothing to name
   });
 
   test('no upload while Health Connect is missing', () async {

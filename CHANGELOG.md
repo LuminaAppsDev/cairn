@@ -100,6 +100,32 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- **Ingest failures are now classified, and a stuck metric is named.**
+  Before, every failed read counted as the same retry-later failure. A plugin
+  fault, such as a record the plugin's converter can't handle, was never
+  reported as a bug, even though it fails the same way every run. After a
+  Health Connect rate limit, the remaining metrics still read and spent more
+  of the quota. And the message named no metric, so a metric stuck every run
+  went unnoticed.
+
+  The vendored plugin now passes the native exception's class and Health
+  Connect's platform error code with a failed read. The client folds several
+  codes, the rate limit among them, into one Kotlin class, so the class alone
+  can't tell them apart. `HealthReadException.failure` sorts each failure into
+  one of three kinds:
+  - **Transient:** the store's own trouble, retried next refresh.
+  - **Rate limited:** ends the run after its metric, like a missing store.
+  - **Unexpected:** a plugin fault, or a request Cairn got wrong. Reported as
+    a bug in the log. Anything unrecognised also counts as unexpected; a
+    misjudged one costs only a log entry.
+
+  A failing metric is still held, never skipped, so once a fix ships nothing
+  is lost. `ingest` now returns one result per metric: those a run-ending
+  failure left unread carry its error. The snackbar and Settings name the
+  metrics that weren't read or saved, for example "Could not read or save:
+  Heart rate, Steps." / "Lesen oder Speichern fehlgeschlagen: Puls,
+  Schritte."
+
 - **One failure anywhere in ingest abandoned the whole refresh.** Only a
   failed *read* was isolated per metric. Any other error in one metric ended
   the refresh early, for example a bug in mapping or a bad record. The metrics

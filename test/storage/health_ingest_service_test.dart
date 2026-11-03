@@ -729,9 +729,40 @@ void main() {
         clock: () => now,
       ).ingest({HealthMetric.steps, HealthMetric.weight});
 
-      expect(results.single.error, isA<FileSystemException>());
+      // Weight was never reached: it fails with the same error.
+      expect(results.map((r) => r.error), [
+        isA<FileSystemException>(),
+        same(results.first.error),
+      ]);
       final held = await store.lastSyncAnchor(HealthMetric.steps);
       expect(held!.isAtSameMomentAs(before!), isTrue);
+      expect(await store.lastSyncAnchor(HealthMetric.weight), isNull);
+    });
+
+    test('a rate limit ends the run after its metric', () async {
+      // Each further read would only spend more of the spent quota.
+      final repo = _FakeRepository(
+        samples,
+        failAtRead: 1,
+        failure: const HealthReadException(
+          HealthMetric.steps,
+          failure: HealthReadFailure.rateLimited,
+        ),
+      );
+
+      final results = await HealthIngestService(
+        repository: repo,
+        store: store,
+        clock: () => now,
+      ).ingest({HealthMetric.steps, HealthMetric.weight});
+
+      expect(repo.reads.map((r) => r.metric), [HealthMetric.steps]);
+      expect(results.map((r) => r.metric), [
+        HealthMetric.steps,
+        HealthMetric.weight,
+      ]);
+      expect(results.last.error, same(results.first.error));
+      expect(results.last.dataPointCount, 0);
       expect(await store.lastSyncAnchor(HealthMetric.weight), isNull);
     });
 
@@ -749,7 +780,11 @@ void main() {
         clock: () => now,
       ).ingest({HealthMetric.steps, HealthMetric.weight});
 
-      expect(results.single.error, isA<HealthStoreUnavailableException>());
+      expect(results.map((r) => r.error), [
+        isA<HealthStoreUnavailableException>(),
+        same(results.first.error),
+      ]);
+      expect(repo.reads, hasLength(1));
     });
   });
 }
