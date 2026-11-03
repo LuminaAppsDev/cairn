@@ -1,12 +1,17 @@
-import 'package:cairn/src/health/background_read_status.dart';
 import 'package:cairn/src/health/health_gateway.dart';
 import 'package:cairn/src/health/health_metric.dart';
+import 'package:cairn/src/health/read_access_status.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:health/health.dart';
 
 /// Records which types the gateway asks the plugin about.
 class _RecordingHealth extends Fake implements Health {
-  _RecordingHealth({this.backgroundAvailable = true, this.backgroundGranted});
+  _RecordingHealth({
+    this.backgroundAvailable = true,
+    this.backgroundGranted,
+    this.historyAvailable = true,
+    this.historyGranted = false,
+  });
 
   final List<List<HealthDataType>> asked = [];
   List<HealthDataType> requested = const [];
@@ -14,6 +19,12 @@ class _RecordingHealth extends Fake implements Health {
   final bool backgroundAvailable;
   final bool? backgroundGranted;
   int backgroundRequests = 0;
+
+  final bool historyAvailable;
+  final bool historyGranted;
+
+  /// Plugin calls in order — the read sheet, then the history sheet.
+  final List<String> sheets = [];
 
   @override
   Future<bool> isHealthDataInBackgroundAvailable() async => backgroundAvailable;
@@ -25,6 +36,18 @@ class _RecordingHealth extends Fake implements Health {
   @override
   Future<bool> requestHealthDataInBackgroundAuthorization() async {
     backgroundRequests++;
+    return true;
+  }
+
+  @override
+  Future<bool> isHealthDataHistoryAvailable() async => historyAvailable;
+
+  @override
+  Future<bool> isHealthDataHistoryAuthorized() async => historyGranted;
+
+  @override
+  Future<bool> requestHealthDataHistoryAuthorization() async {
+    sheets.add('history');
     return true;
   }
 
@@ -43,6 +66,7 @@ class _RecordingHealth extends Fake implements Health {
     List<HealthDataAccess>? permissions,
   }) async {
     requested = types;
+    sheets.add('reads');
     return true;
   }
 }
@@ -94,7 +118,7 @@ void main() {
   });
 
   group('background reads', () {
-    Future<BackgroundReadStatus> statusOn(
+    Future<ReadAccessStatus> statusOn(
       _RecordingHealth health, {
       bool isIos = false,
     }) => HealthPackageGateway(
@@ -105,15 +129,15 @@ void main() {
     test('Android maps the plugin onto the status', () async {
       expect(
         await statusOn(_RecordingHealth(backgroundAvailable: false)),
-        BackgroundReadStatus.unavailable,
+        ReadAccessStatus.unavailable,
       );
       expect(
         await statusOn(_RecordingHealth(backgroundGranted: false)),
-        BackgroundReadStatus.missing,
+        ReadAccessStatus.missing,
       );
       expect(
         await statusOn(_RecordingHealth(backgroundGranted: true)),
-        BackgroundReadStatus.granted,
+        ReadAccessStatus.granted,
       );
     });
 
@@ -123,7 +147,7 @@ void main() {
 
       expect(
         await gateway.backgroundReadStatus(),
-        BackgroundReadStatus.notApplicable,
+        ReadAccessStatus.notApplicable,
       );
       await gateway.requestBackgroundRead();
       expect(health.backgroundRequests, 0);
@@ -137,6 +161,65 @@ void main() {
       ).requestBackgroundRead();
 
       expect(health.backgroundRequests, 1);
+    });
+  });
+
+  group('history reads', () {
+    Future<ReadAccessStatus> statusOn(_RecordingHealth health) =>
+        HealthPackageGateway(health: health, isIos: false).historyReadStatus();
+
+    Future<List<String>> sheetsForReadRequest(
+      _RecordingHealth health, {
+      bool isIos = false,
+    }) async {
+      await HealthPackageGateway(
+        health: health,
+        isIos: isIos,
+      ).requestReadAuthorization({HealthMetric.heartRate});
+      return health.sheets;
+    }
+
+    test('Android maps the plugin onto the status', () async {
+      expect(
+        await statusOn(_RecordingHealth(historyAvailable: false)),
+        ReadAccessStatus.unavailable,
+      );
+      expect(await statusOn(_RecordingHealth()), ReadAccessStatus.missing);
+      expect(
+        await statusOn(_RecordingHealth(historyGranted: true)),
+        ReadAccessStatus.granted,
+      );
+    });
+
+    test('the read request asks for it too, before any read', () async {
+      // A re-grant after a full revoke restarts Health Connect's 30-day
+      // window; history must be in place before the catch-up reads.
+      expect(await sheetsForReadRequest(_RecordingHealth()), [
+        'reads',
+        'history',
+      ]);
+    });
+
+    test('but not once granted, nor where it is unavailable', () async {
+      expect(
+        await sheetsForReadRequest(_RecordingHealth(historyGranted: true)),
+        ['reads'],
+      );
+      expect(
+        await sheetsForReadRequest(_RecordingHealth(historyAvailable: false)),
+        ['reads'],
+      );
+    });
+
+    test('iOS has no such permission to ask for', () async {
+      final health = _RecordingHealth();
+      final gateway = HealthPackageGateway(health: health, isIos: true);
+
+      expect(
+        await gateway.historyReadStatus(),
+        ReadAccessStatus.notApplicable,
+      );
+      expect(await sheetsForReadRequest(health, isIos: true), ['reads']);
     });
   });
 }

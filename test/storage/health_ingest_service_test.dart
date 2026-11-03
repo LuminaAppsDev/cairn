@@ -1,10 +1,10 @@
 import 'dart:io';
 
-import 'package:cairn/src/health/background_read_status.dart';
 import 'package:cairn/src/health/health_metric.dart';
 import 'package:cairn/src/health/health_repository.dart';
 import 'package:cairn/src/health/health_sample.dart';
 import 'package:cairn/src/health/health_source.dart';
+import 'package:cairn/src/health/read_access_status.dart';
 import 'package:cairn/src/storage/health_ingest_service.dart';
 import 'package:cairn/src/storage/jsonl_omh_file_store.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -27,12 +27,20 @@ class _FakeRepository implements HealthRepository {
   Future<bool> isAvailable() async => true;
 
   @override
-  Future<BackgroundReadStatus> backgroundReadStatus() async =>
-      BackgroundReadStatus.notApplicable;
+  Future<ReadAccessStatus> backgroundReadStatus() async =>
+      ReadAccessStatus.notApplicable;
 
   @override
-  Future<BackgroundReadStatus> requestBackgroundRead() async =>
-      BackgroundReadStatus.notApplicable;
+  Future<ReadAccessStatus> requestBackgroundRead() async =>
+      ReadAccessStatus.notApplicable;
+
+  @override
+  Future<ReadAccessStatus> historyReadStatus() async =>
+      ReadAccessStatus.notApplicable;
+
+  @override
+  Future<ReadAccessStatus> requestHistoryRead() async =>
+      ReadAccessStatus.notApplicable;
 
   @override
   Future<Set<HealthMetric>> requestAuthorization(

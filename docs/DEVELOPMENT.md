@@ -97,7 +97,10 @@ requirements:
   Cairn never requests WRITE (DESIGN.md §2). `READ_HEALTH_DATA_IN_BACKGROUND`
   is asked for once per device — after the first foreground refresh in which
   reads are granted and it is still missing — and again on demand from
-  Settings; without it background sync only uploads. Backup and device
+  Settings; without it background sync only uploads.
+  `READ_HEALTH_DATA_HISTORY` is requested together with the reads on every
+  refresh, and from Settings. Without it, Health Connect silently clamps reads
+  to 30 days before the first grant (DESIGN.md §4.2). Backup and device
   transfer are off (`allowBackup="false"` plus `data_extraction_rules.xml`), so
   a reinstall starts clean. The `health` package is vendored at
   `third_party/health` with a patch, so bumping it means re-vendoring per

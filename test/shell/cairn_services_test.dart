@@ -2,10 +2,10 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:cairn/src/health/background_read_prompt.dart';
-import 'package:cairn/src/health/background_read_status.dart';
 import 'package:cairn/src/health/health_metric.dart';
 import 'package:cairn/src/health/health_repository.dart';
 import 'package:cairn/src/health/health_sample.dart';
+import 'package:cairn/src/health/read_access_status.dart';
 import 'package:cairn/src/profile/profile.dart';
 import 'package:cairn/src/profile/profile_store.dart';
 import 'package:cairn/src/profile/profile_sync.dart';
@@ -37,10 +37,16 @@ class _FailingRepository implements HealthRepository {
   Future<bool> isAvailable() async => false;
 
   @override
-  Future<BackgroundReadStatus> backgroundReadStatus() async => fail();
+  Future<ReadAccessStatus> backgroundReadStatus() async => fail();
 
   @override
-  Future<BackgroundReadStatus> requestBackgroundRead() async => fail();
+  Future<ReadAccessStatus> requestBackgroundRead() async => fail();
+
+  @override
+  Future<ReadAccessStatus> historyReadStatus() async => fail();
+
+  @override
+  Future<ReadAccessStatus> requestHistoryRead() async => fail();
 
   @override
   Future<Set<HealthMetric>> requestAuthorization(
@@ -59,7 +65,7 @@ class _FailingRepository implements HealthRepository {
 class _PartlyFailingRepository implements HealthRepository {
   _PartlyFailingRepository(
     this.failing, {
-    this.background = BackgroundReadStatus.notApplicable,
+    this.background = ReadAccessStatus.notApplicable,
     this.grantsReads = true,
     this.failsWithBug = false,
     this.bugInEveryRead = false,
@@ -71,7 +77,7 @@ class _PartlyFailingRepository implements HealthRepository {
   final HealthMetric? failing;
 
   /// The background-read status reported; asking leaves it as is (declined).
-  BackgroundReadStatus background;
+  ReadAccessStatus background;
 
   /// Whether any read permission is granted.
   final bool grantsReads;
@@ -119,14 +125,30 @@ class _PartlyFailingRepository implements HealthRepository {
   }
 
   @override
-  Future<BackgroundReadStatus> backgroundReadStatus() async => background;
+  Future<ReadAccessStatus> backgroundReadStatus() async {
+    if (failsBackgroundCheck) throw Exception('binder failure');
+    return background;
+  }
 
   @override
-  Future<BackgroundReadStatus> requestBackgroundRead() async {
+  Future<ReadAccessStatus> requestBackgroundRead() async {
     backgroundRequests++;
     readsBeforeAsk ??= reads.length;
     return background;
   }
+
+  /// The history-read status; [requestHistoryRead] grants it.
+  ReadAccessStatus history = ReadAccessStatus.notApplicable;
+
+  /// Whether the background-read status check fails.
+  bool failsBackgroundCheck = false;
+
+  @override
+  Future<ReadAccessStatus> historyReadStatus() async => history;
+
+  @override
+  Future<ReadAccessStatus> requestHistoryRead() async =>
+      history = ReadAccessStatus.granted;
 }
 
 class _StubAuth implements NextcloudAuth {
@@ -544,7 +566,7 @@ void main() {
     test('a background run without the permission only uploads', () async {
       final repo = _PartlyFailingRepository(
         null,
-        background: BackgroundReadStatus.missing,
+        background: ReadAccessStatus.missing,
       );
       final target = _RecordingTarget();
       final services = servicesOver(repo, target: target);
@@ -562,7 +584,7 @@ void main() {
     test('a background run with the permission reads', () async {
       final repo = _PartlyFailingRepository(
         null,
-        background: BackgroundReadStatus.granted,
+        background: ReadAccessStatus.granted,
       );
       final services = servicesOver(repo);
       addTearDown(services.dispose);
@@ -575,36 +597,36 @@ void main() {
     test('a foreground refresh asks once per device, never again', () async {
       final repo = _PartlyFailingRepository(
         null,
-        background: BackgroundReadStatus.missing,
+        background: ReadAccessStatus.missing,
       );
       final first = servicesOver(repo);
       addTearDown(first.dispose);
       await first.refresh();
-      await first.checkBackgroundRead();
+      await first.checkReadAccess();
       await first.refresh();
-      await first.checkBackgroundRead();
+      await first.checkReadAccess();
       // A later launch on the same device remembers it asked (and was
       // declined: the status is still missing).
       final relaunched = servicesOver(repo);
       addTearDown(relaunched.dispose);
       await relaunched.refresh();
-      await relaunched.checkBackgroundRead();
+      await relaunched.checkReadAccess();
 
       expect(repo.backgroundRequests, 1);
     });
 
     test('no ask where there is nothing to ask for', () async {
       for (final status in [
-        BackgroundReadStatus.granted,
-        BackgroundReadStatus.unavailable,
-        BackgroundReadStatus.notApplicable,
+        ReadAccessStatus.granted,
+        ReadAccessStatus.unavailable,
+        ReadAccessStatus.notApplicable,
       ]) {
         final repo = _PartlyFailingRepository(null, background: status);
         final services = servicesOver(repo);
         addTearDown(services.dispose);
 
         await services.refresh();
-        await services.checkBackgroundRead();
+        await services.checkReadAccess();
 
         expect(repo.backgroundRequests, 0, reason: '$status');
       }
@@ -614,7 +636,7 @@ void main() {
       // An open permission sheet must not hold up reading and uploading.
       final repo = _PartlyFailingRepository(
         null,
-        background: BackgroundReadStatus.missing,
+        background: ReadAccessStatus.missing,
       );
       final services = servicesOver(repo);
       addTearDown(services.dispose);
@@ -622,10 +644,10 @@ void main() {
       await services.refresh();
       // The ask runs after the refresh has returned, not inside it.
       expect(repo.backgroundRequests, 0);
-      await services.checkBackgroundRead();
+      await services.checkReadAccess();
 
       expect(repo.readsBeforeAsk, greaterThan(0));
-      expect(services.backgroundRead.value, BackgroundReadStatus.missing);
+      expect(services.backgroundRead.value, ReadAccessStatus.missing);
     });
 
     test(
@@ -633,27 +655,27 @@ void main() {
       () async {
         final repo = _PartlyFailingRepository(
           null,
-          background: BackgroundReadStatus.granted,
+          background: ReadAccessStatus.granted,
         );
         final services = servicesOver(repo);
         addTearDown(services.dispose);
         await services.refresh();
-        await services.checkBackgroundRead();
+        await services.checkReadAccess();
 
         // Revoked on purpose in Health Connect later: not nagged about it.
-        repo.background = BackgroundReadStatus.missing;
+        repo.background = ReadAccessStatus.missing;
         await services.refresh();
-        await services.checkBackgroundRead();
+        await services.checkReadAccess();
 
         expect(repo.backgroundRequests, 0);
-        expect(services.backgroundRead.value, BackgroundReadStatus.missing);
+        expect(services.backgroundRead.value, ReadAccessStatus.missing);
       },
     );
 
     test('a background run where Health Connect cannot read there', () async {
       final repo = _PartlyFailingRepository(
         null,
-        background: BackgroundReadStatus.unavailable,
+        background: ReadAccessStatus.unavailable,
       );
       final services = servicesOver(repo);
       addTearDown(services.dispose);
@@ -666,16 +688,53 @@ void main() {
     test('no ask while no read is granted at all', () async {
       final repo = _PartlyFailingRepository(
         null,
-        background: BackgroundReadStatus.missing,
+        background: ReadAccessStatus.missing,
         grantsReads: false,
       );
       final services = servicesOver(repo);
       addTearDown(services.dispose);
 
       await services.refresh();
-      await services.checkBackgroundRead();
+      await services.checkReadAccess();
 
       expect(repo.backgroundRequests, 0);
+    });
+  });
+
+  group('history reads', () {
+    test('a refresh publishes the status for Settings', () async {
+      final repo = _PartlyFailingRepository(null)
+        ..history = ReadAccessStatus.missing;
+      final services = servicesOver(repo);
+      addTearDown(services.dispose);
+
+      await services.refresh();
+      await services.checkReadAccess();
+
+      expect(services.historyRead.value, ReadAccessStatus.missing);
+    });
+
+    test('a failed background check still updates history', () async {
+      final repo = _PartlyFailingRepository(null)
+        ..history = ReadAccessStatus.missing
+        ..failsBackgroundCheck = true;
+      final services = servicesOver(repo);
+      addTearDown(services.dispose);
+
+      await services.checkReadAccess();
+
+      expect(services.historyRead.value, ReadAccessStatus.missing);
+      expect(services.backgroundRead.value, isNull);
+    });
+
+    test('asking publishes the status it left behind', () async {
+      final repo = _PartlyFailingRepository(null)
+        ..history = ReadAccessStatus.missing;
+      final services = servicesOver(repo);
+      addTearDown(services.dispose);
+
+      expect(await services.askForHistoryRead(), ReadAccessStatus.granted);
+      expect(services.historyRead.value, ReadAccessStatus.granted);
     });
   });
 

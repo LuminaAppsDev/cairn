@@ -1,10 +1,10 @@
 import 'dart:async';
 
 import 'package:cairn/src/health/background_read_prompt.dart';
-import 'package:cairn/src/health/background_read_status.dart';
 import 'package:cairn/src/health/health_metric.dart';
 import 'package:cairn/src/health/health_package_repository.dart';
 import 'package:cairn/src/health/health_repository.dart';
+import 'package:cairn/src/health/read_access_status.dart';
 import 'package:cairn/src/profile/profile.dart';
 import 'package:cairn/src/profile/profile_store.dart';
 import 'package:cairn/src/profile/profile_sync.dart';
@@ -173,11 +173,16 @@ final class CairnServices {
   final ValueNotifier<int> dataRevision = ValueNotifier(0);
 
   /// Whether background sync may read the health store; `null` until first
-  /// checked. Foreground refreshes, [checkBackgroundRead] and
+  /// checked. Foreground refreshes, [checkReadAccess] and
   /// [askForBackgroundRead] keep it current; Settings shows it.
-  final ValueNotifier<BackgroundReadStatus?> backgroundRead = ValueNotifier(
+  final ValueNotifier<ReadAccessStatus?> backgroundRead = ValueNotifier(
     null,
   );
+
+  /// Whether data older than 30 days before the first grant may be read;
+  /// `null` until first checked. Kept current like [backgroundRead], by
+  /// [checkReadAccess] and [askForHistoryRead]; Settings shows it.
+  final ValueNotifier<ReadAccessStatus?> historyRead = ValueNotifier(null);
 
   Future<RefreshResult>? _refreshInFlight;
 
@@ -202,7 +207,7 @@ final class CairnServices {
         // Only now — data read and uploaded, the lock released, this refresh's
         // caller answered — so an open permission sheet holds up nothing.
         if (_readsGranted && !_disposed) {
-          unawaited(_checkBackgroundRead(askOnce: true));
+          unawaited(_checkReadAccess(askOnce: true));
         }
       },
     );
@@ -228,25 +233,41 @@ final class CairnServices {
   /// Whether the last refresh had any read permission granted.
   bool _readsGranted = false;
 
-  /// Re-reads [backgroundRead] (Settings: on open and on resume). Completes
-  /// after any check or ask already under way.
-  Future<void> checkBackgroundRead() => _checkBackgroundRead();
+  /// Re-reads [backgroundRead] and [historyRead] (Settings: on open and on
+  /// resume). Completes after any check or ask already under way.
+  Future<void> checkReadAccess() => _checkReadAccess();
 
   /// Asks for background reads on demand (the Settings button) and returns
   /// the status afterwards — also published on [backgroundRead] — or `null`
   /// if the request failed.
-  Future<BackgroundReadStatus?> askForBackgroundRead() =>
-      _oneCheckAtATime(() async {
-        try {
-          final status = await repository.requestBackgroundRead();
-          if (!_disposed) backgroundRead.value = status;
-          return status;
-        } on Object catch (error, stack) {
-          debugPrint('Background-read request failed: $error');
-          reportIfBug(error, stack, whileDoing: 'asking for background reads');
-          return null;
-        }
-      });
+  Future<ReadAccessStatus?> askForBackgroundRead() => _askFor(
+    repository.requestBackgroundRead,
+    backgroundRead,
+    'background reads',
+  );
+
+  /// Asks for history reads on demand (the Settings button), like
+  /// [askForBackgroundRead], publishing on [historyRead].
+  Future<ReadAccessStatus?> askForHistoryRead() =>
+      _askFor(repository.requestHistoryRead, historyRead, 'history reads');
+
+  // Asks through [request] and publishes the outcome on [published]. Shares
+  // the check queue, so an ask and a check never publish over each other.
+  Future<ReadAccessStatus?> _askFor(
+    Future<ReadAccessStatus> Function() request,
+    ValueNotifier<ReadAccessStatus?> published,
+    String what,
+  ) => _oneCheckAtATime(() async {
+    try {
+      final status = await request();
+      if (!_disposed) published.value = status;
+      return status;
+    } on Object catch (error, stack) {
+      debugPrint('Asking for $what failed: $error');
+      reportIfBug(error, stack, whileDoing: 'asking for $what');
+      return null;
+    }
+  });
 
   // Checks and asks run one at a time: overlapping, a slower earlier one could
   // publish a stale status over a newer one, or two could both ask before
@@ -398,8 +419,7 @@ final class CairnServices {
   // fail) skips that and returns nothing, so the refresh only uploads.
   Future<List<IngestResult>> _ingest({required bool background}) async {
     _readsGranted = false;
-    if (background &&
-        !(await repository.backgroundReadStatus()).allowsBackgroundReads) {
+    if (background && !(await repository.backgroundReadStatus()).allowed) {
       return const [];
     }
     final granted = await repository.requestAuthorization(
@@ -412,21 +432,23 @@ final class CairnServices {
     ).ingest(granted);
   }
 
-  // Updates [backgroundRead]. With [askOnce], also asks on its own — at most
-  // once per device, and only while background reads are missing; Settings
-  // can ask again. A grant found already in place is remembered too, so that
-  // revoking it later on purpose isn't answered with a prompt. Optional, so a
-  // failure never fails anything: the status just stays as it was.
-  Future<void> _checkBackgroundRead({bool askOnce = false}) =>
-      _oneCheckAtATime(() => _checkBackgroundReadNow(askOnce: askOnce));
+  // Updates [backgroundRead] and [historyRead]. With [askOnce], also asks for
+  // background reads on its own — at most once per device, and only while
+  // they are missing; Settings can ask again. A grant found already in place
+  // is remembered too, so that revoking it later on purpose isn't answered
+  // with a prompt. (History needs no such ask: the read-permission request
+  // already asks for it, before the reads.) Optional, so a failure never
+  // fails anything: the status just stays as it was.
+  Future<void> _checkReadAccess({bool askOnce = false}) =>
+      _oneCheckAtATime(() => _checkReadAccessNow(askOnce: askOnce));
 
-  Future<void> _checkBackgroundReadNow({required bool askOnce}) async {
+  Future<void> _checkReadAccessNow({required bool askOnce}) async {
     try {
       var status = await repository.backgroundReadStatus();
       if (askOnce && !await backgroundReadPrompt.wasAsked()) {
-        if (status == BackgroundReadStatus.granted) {
+        if (status == ReadAccessStatus.granted) {
           await backgroundReadPrompt.markAsked();
-        } else if (status == BackgroundReadStatus.missing) {
+        } else if (status == ReadAccessStatus.missing) {
           // Recorded first, so a crash during the sheet can't become a loop.
           await backgroundReadPrompt.markAsked();
           status = await repository.requestBackgroundRead();
@@ -437,6 +459,15 @@ final class CairnServices {
       debugPrint('Background-read check failed: $error');
       reportIfBug(error, stack, whileDoing: 'checking background reads');
     }
+    // Apart from the background check, so one failing leaves the other's
+    // row current.
+    try {
+      final history = await repository.historyReadStatus();
+      if (!_disposed) historyRead.value = history;
+    } on Object catch (error, stack) {
+      debugPrint('History-read check failed: $error');
+      reportIfBug(error, stack, whileDoing: 'checking history reads');
+    }
   }
 
   /// Releases the shared HTTP client and the notifiers.
@@ -445,6 +476,7 @@ final class CairnServices {
     profile.dispose();
     dataRevision.dispose();
     backgroundRead.dispose();
+    historyRead.dispose();
     client.close();
   }
 }

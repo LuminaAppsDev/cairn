@@ -6,6 +6,24 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- **Cairn asks for Health Connect's history permission along with the
+  reads.** Without `READ_HEALTH_DATA_HISTORY`, Health Connect serves only data
+  from 30 days before Cairn's first grant on. It clamps every read to that
+  date without an error, so a catch-up over an older gap read as empty and
+  moved its anchor past the data for good. That first grant resets once Cairn
+  holds no health permission at all, for example after Android revokes
+  permissions of an unused app. Both facts were verified in the AOSP source.
+
+  The read-permission request now also asks for history while it's missing,
+  in the same flow and before any read, so a re-grant brings it back before
+  the catch-up runs. Health Connect shows nothing when everything is already
+  granted, and stops asking after two declines. Settings has an "Older data"
+  row on Android that shows whether it's allowed, missing or unsupported, and
+  offers **Allow**. The Settings rows for background reads and history share
+  one status type, `ReadAccessStatus`, which replaces `BackgroundReadStatus`.
+  Patch 3 of the vendored plugin now also guards the two history status
+  checks, which would otherwise crash the process on a binder failure.
+
 - **Background sync asks for Health Connect's background-read permission.**
   Cairn declared `READ_HEALTH_DATA_IN_BACKGROUND` but never requested it, so
   background sync could never read. It now asks once on its own, on the first

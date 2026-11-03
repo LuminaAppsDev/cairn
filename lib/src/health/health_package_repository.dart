@@ -1,8 +1,8 @@
-import 'package:cairn/src/health/background_read_status.dart';
 import 'package:cairn/src/health/health_gateway.dart';
 import 'package:cairn/src/health/health_metric.dart';
 import 'package:cairn/src/health/health_repository.dart';
 import 'package:cairn/src/health/health_sample.dart';
+import 'package:cairn/src/health/read_access_status.dart';
 import 'package:cairn/src/health/source_dedup.dart';
 import 'package:flutter/services.dart';
 
@@ -125,18 +125,33 @@ final class HealthPackageRepository implements HealthRepository {
   }
 
   @override
-  Future<BackgroundReadStatus> backgroundReadStatus() async {
+  Future<ReadAccessStatus> backgroundReadStatus() async {
     await _requireAvailable();
     await _ensureConfigured();
     return _gateway.backgroundReadStatus();
   }
 
   @override
-  Future<BackgroundReadStatus> requestBackgroundRead() async {
+  Future<ReadAccessStatus> requestBackgroundRead() async {
     await _requireAvailable();
     await _ensureConfigured();
     await _oneSheetAtATime(_gateway.requestBackgroundRead);
     return _gateway.backgroundReadStatus();
+  }
+
+  @override
+  Future<ReadAccessStatus> historyReadStatus() async {
+    await _requireAvailable();
+    await _ensureConfigured();
+    return _gateway.historyReadStatus();
+  }
+
+  @override
+  Future<ReadAccessStatus> requestHistoryRead() async {
+    await _requireAvailable();
+    await _ensureConfigured();
+    await _oneSheetAtATime(_gateway.requestHistoryRead);
+    return _gateway.historyReadStatus();
   }
 
   // The plugin keeps a single pending result for any permission sheet: a

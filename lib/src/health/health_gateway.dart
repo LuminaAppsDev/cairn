@@ -1,9 +1,9 @@
 import 'dart:io';
 
-import 'package:cairn/src/health/background_read_status.dart';
 import 'package:cairn/src/health/health_metric.dart';
 import 'package:cairn/src/health/health_sample.dart';
 import 'package:cairn/src/health/health_source.dart';
+import 'package:cairn/src/health/read_access_status.dart';
 import 'package:health/health.dart';
 
 /// A thin, mockable seam over the `health` package (DESIGN.md §13).
@@ -22,7 +22,8 @@ abstract interface class HealthGateway {
   /// Initialises the underlying plugin; must run before any other operation.
   Future<void> configure();
 
-  /// Shows the OS permission dialog for the read types backing [metrics].
+  /// Shows the OS permission dialog for the read types backing [metrics] —
+  /// and, on Android, for history reads while those are missing.
   Future<void> requestReadAuthorization(Set<HealthMetric> metrics);
 
   /// Whether READ access is granted for [metric]. Returns `null` on iOS, which
@@ -30,10 +31,16 @@ abstract interface class HealthGateway {
   Future<bool?> hasReadPermission(HealthMetric metric);
 
   /// Whether the store may be read from the background.
-  Future<BackgroundReadStatus> backgroundReadStatus();
+  Future<ReadAccessStatus> backgroundReadStatus();
 
   /// Shows the OS dialog for background reads (Android); a no-op on iOS.
   Future<void> requestBackgroundRead();
+
+  /// Whether data older than 30 days before the first grant may be read.
+  Future<ReadAccessStatus> historyReadStatus();
+
+  /// Shows the OS dialog for history reads (Android); a no-op on iOS.
+  Future<void> requestHistoryRead();
 
   /// Reads samples of [metric] whose start time is in `[start, end)` (Health
   /// Connect's own read filter; HealthKit via `.strictStartDate`), converted
@@ -69,6 +76,13 @@ final class HealthPackageGateway implements HealthGateway {
   Future<void> requestReadAuthorization(Set<HealthMetric> metrics) async {
     final types = metrics.expand(_authTypesFor).toList();
     await _health.requestAuthorization(types);
+    // In the same flow, before any read: without history, Health Connect
+    // silently clamps a read to 30 days before the first grant, and a re-grant
+    // after every permission was revoked counts as a new first grant. A
+    // catch-up over an older gap would then read nothing and move past it.
+    if (await historyReadStatus() == ReadAccessStatus.missing) {
+      await requestHistoryRead();
+    }
   }
 
   @override
@@ -76,20 +90,37 @@ final class HealthPackageGateway implements HealthGateway {
       _health.hasPermissions(_requiredTypesFor(metric));
 
   @override
-  Future<BackgroundReadStatus> backgroundReadStatus() async {
-    if (_isIos) return BackgroundReadStatus.notApplicable;
+  Future<ReadAccessStatus> backgroundReadStatus() async {
+    if (_isIos) return ReadAccessStatus.notApplicable;
     if (!await _health.isHealthDataInBackgroundAvailable()) {
-      return BackgroundReadStatus.unavailable;
+      return ReadAccessStatus.unavailable;
     }
     return await _health.isHealthDataInBackgroundAuthorized()
-        ? BackgroundReadStatus.granted
-        : BackgroundReadStatus.missing;
+        ? ReadAccessStatus.granted
+        : ReadAccessStatus.missing;
   }
 
   @override
   Future<void> requestBackgroundRead() async {
     if (_isIos) return;
     await _health.requestHealthDataInBackgroundAuthorization();
+  }
+
+  @override
+  Future<ReadAccessStatus> historyReadStatus() async {
+    if (_isIos) return ReadAccessStatus.notApplicable;
+    if (!await _health.isHealthDataHistoryAvailable()) {
+      return ReadAccessStatus.unavailable;
+    }
+    return await _health.isHealthDataHistoryAuthorized()
+        ? ReadAccessStatus.granted
+        : ReadAccessStatus.missing;
+  }
+
+  @override
+  Future<void> requestHistoryRead() async {
+    if (_isIos) return;
+    await _health.requestHealthDataHistoryAuthorization();
   }
 
   @override

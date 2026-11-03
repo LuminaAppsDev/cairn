@@ -101,15 +101,20 @@ is revoked mid-run, for example during a long catch-up. A type that isn't in
 ### 3. Don't crash on a failed background-read status check
 
 `android/src/main/kotlin/cachet/plugins/health/HealthDataOperations.kt`,
-`isHealthDataInBackgroundAvailable` and `isHealthDataInBackgroundAuthorized`:
-upstream runs the Health Connect call inside `scope.launch` with no `catch`.
-Cairn calls both on every background run and every foreground refresh, so a
-binder failure (for example while Health Connect updates) would go uncaught
-on the main thread and crash the process. Each body is now wrapped in
+`isHealthDataInBackgroundAvailable`, `isHealthDataInBackgroundAuthorized`,
+`isHealthDataHistoryAvailable` and `isHealthDataHistoryAuthorized`: upstream
+runs the Health Connect call inside `scope.launch` with no `catch`. Cairn
+calls the background pair on every background run and every foreground
+refresh, and the history pair with every read-permission request. A binder
+failure, for example while Health Connect updates, would go uncaught on the
+main thread and crash the process. Each body is now wrapped in
 `try`/`catch`, which replies `result.error("HEALTH_STATUS_FAILED", …)`. The
 plugin's Dart side maps that to `false`, so a failed check reads as "not
 granted" and fails closed: the background run skips reading instead of
-risking a read without the permission.
+risking a read without the permission. For history, a failed availability
+check skips the ask for this refresh. A failed grant check leads to an ask,
+which Health Connect answers without showing anything if the permission is
+already held.
 
 ### 4. Formatting (no behaviour change)
 

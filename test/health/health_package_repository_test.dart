@@ -1,12 +1,12 @@
 import 'dart:async';
 
-import 'package:cairn/src/health/background_read_status.dart';
 import 'package:cairn/src/health/health_gateway.dart';
 import 'package:cairn/src/health/health_metric.dart';
 import 'package:cairn/src/health/health_package_repository.dart';
 import 'package:cairn/src/health/health_repository.dart';
 import 'package:cairn/src/health/health_sample.dart';
 import 'package:cairn/src/health/health_source.dart';
+import 'package:cairn/src/health/read_access_status.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -40,8 +40,11 @@ class _FakeGateway implements HealthGateway {
 
   /// The background-read status; granting it is what [requestBackgroundRead]
   /// does unless [background] stays put (declined).
-  BackgroundReadStatus background = BackgroundReadStatus.missing;
+  ReadAccessStatus background = ReadAccessStatus.missing;
   bool grantsBackground = true;
+
+  /// The history-read status; [requestHistoryRead] grants it.
+  ReadAccessStatus history = ReadAccessStatus.missing;
 
   /// When set, the read-permission sheet stays open until it completes.
   Completer<void>? readSheet;
@@ -68,14 +71,25 @@ class _FakeGateway implements HealthGateway {
   }
 
   @override
-  Future<BackgroundReadStatus> backgroundReadStatus() async => background;
+  Future<ReadAccessStatus> backgroundReadStatus() async => background;
 
   @override
   Future<void> requestBackgroundRead() async {
     sheetEvents
       ..add('background open')
       ..add('background closed');
-    if (grantsBackground) background = BackgroundReadStatus.granted;
+    if (grantsBackground) background = ReadAccessStatus.granted;
+  }
+
+  @override
+  Future<ReadAccessStatus> historyReadStatus() async => history;
+
+  @override
+  Future<void> requestHistoryRead() async {
+    sheetEvents
+      ..add('history open')
+      ..add('history closed');
+    history = ReadAccessStatus.granted;
   }
 
   @override
@@ -337,15 +351,41 @@ void main() {
     expect(gateway.configureCalls, 2);
   });
 
+  group('history reads', () {
+    test('report the gateway status once the store is up', () async {
+      final gateway = _FakeGateway()..history = ReadAccessStatus.unavailable;
+      final repo = HealthPackageRepository(gateway: gateway);
+
+      expect(await repo.historyReadStatus(), ReadAccessStatus.unavailable);
+      expect(gateway.configureCalls, 1);
+    });
+
+    test('a request returns the status it left behind', () async {
+      final repo = HealthPackageRepository(gateway: _FakeGateway());
+
+      expect(await repo.requestHistoryRead(), ReadAccessStatus.granted);
+    });
+
+    test('without a health store, fail with the typed exception', () {
+      final repo = HealthPackageRepository(
+        gateway: _FakeGateway()..available = false,
+      );
+
+      expect(
+        repo.historyReadStatus(),
+        throwsA(isA<HealthStoreUnavailableException>()),
+      );
+    });
+  });
+
   group('background reads', () {
     test('report the gateway status once the store is up', () async {
-      final gateway = _FakeGateway()
-        ..background = BackgroundReadStatus.unavailable;
+      final gateway = _FakeGateway()..background = ReadAccessStatus.unavailable;
       final repo = HealthPackageRepository(gateway: gateway);
 
       expect(
         await repo.backgroundReadStatus(),
-        BackgroundReadStatus.unavailable,
+        ReadAccessStatus.unavailable,
       );
       expect(gateway.configureCalls, 1);
     });
@@ -355,7 +395,7 @@ void main() {
 
       expect(
         await repo.requestBackgroundRead(),
-        BackgroundReadStatus.granted,
+        ReadAccessStatus.granted,
       );
     });
 

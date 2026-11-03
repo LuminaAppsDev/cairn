@@ -2,8 +2,8 @@ import 'dart:async';
 
 import 'package:cairn/l10n/app_localizations.dart';
 import 'package:cairn/src/dashboard/connect_nextcloud_page.dart';
-import 'package:cairn/src/health/background_read_status.dart';
 import 'package:cairn/src/health/health_connect_settings.dart';
+import 'package:cairn/src/health/read_access_status.dart';
 import 'package:cairn/src/onboarding/setup_guide_page.dart';
 import 'package:cairn/src/profile/profile.dart';
 import 'package:cairn/src/settings/locale_controller.dart';
@@ -42,7 +42,7 @@ class _SettingsPageState extends State<SettingsPage>
   Profile _profile = Profile.empty();
   bool _syncing = false;
   DateTime? _lastSyncedAt; // when this device last completed a push, if ever
-  bool _askingBackground = false; // a background-read request is in flight
+  bool _askingAccess = false; // a read-access request is in flight
   bool _sheetShown = false; // the app left the foreground during that request
 
   @override
@@ -50,7 +50,7 @@ class _SettingsPageState extends State<SettingsPage>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     unawaited(_load());
-    unawaited(widget.services.checkBackgroundRead());
+    unawaited(widget.services.checkReadAccess());
   }
 
   @override
@@ -60,71 +60,74 @@ class _SettingsPageState extends State<SettingsPage>
     super.dispose();
   }
 
-  // Back from Health Connect (or anywhere): background access may have
-  // changed there, so the row re-reads it.
+  // Back from Health Connect (or anywhere): read access may have changed
+  // there, so the rows re-read it.
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      unawaited(widget.services.checkBackgroundRead());
-    } else if (_askingBackground) {
+      unawaited(widget.services.checkReadAccess());
+    } else if (_askingAccess) {
       // Health Connect's sheet covers the app while it asks.
       _sheetShown = true;
     }
   }
 
-  // Asks for background reads. Health Connect stops showing its sheet after
-  // repeated denials; if no sheet came up and they are still missing, this
-  // opens Health Connect's settings, the one place left to grant them (under
-  // Cairn → Additional access). A sheet the user saw and declined is
-  // respected.
-  Future<void> _allowBackgroundReads() async {
+  // Asks for an additional read access through [ask]. Health Connect stops
+  // showing its sheet after repeated denials; if no sheet came up and the
+  // access is still missing, this opens Health Connect's settings, the one
+  // place left to grant it (under Cairn → Additional access). A sheet the
+  // user saw and declined is respected.
+  Future<void> _allow(Future<ReadAccessStatus?> Function() ask) async {
     setState(() {
-      _askingBackground = true;
+      _askingAccess = true;
       _sheetShown = false;
     });
     try {
-      final status = await widget.services.askForBackgroundRead();
-      if (status == BackgroundReadStatus.missing && !_sheetShown) {
+      final status = await ask();
+      if (status == ReadAccessStatus.missing && !_sheetShown) {
         await openHealthConnectPermissions();
       }
     } finally {
-      if (mounted) setState(() => _askingBackground = false);
+      if (mounted) setState(() => _askingAccess = false);
     }
   }
 
-  // Android only: hidden on iOS, which has no separate background-read
-  // permission, and while the status is unknown (never checked, or the check
-  // failed) rather than claiming one.
-  Widget _backgroundRow(BackgroundReadStatus? status, AppLocalizations l10n) {
-    if (status == null || status == BackgroundReadStatus.notApplicable) {
+  // One additional read access (background, history). Android only: hidden on
+  // iOS, which has no such permissions, and while the status is unknown
+  // (never checked, or the check failed) rather than claiming one.
+  Widget _accessRow(
+    ReadAccessStatus? status, {
+    required String title,
+    required String granted,
+    required String missing,
+    required String unavailable,
+    required Future<ReadAccessStatus?> Function() ask,
+    required AppLocalizations l10n,
+  }) {
+    if (status == null || status == ReadAccessStatus.notApplicable) {
       return const SizedBox.shrink();
     }
     return Padding(
       padding: const EdgeInsets.only(top: 8),
       child: Card(
         child: ListTile(
-          title: Text(l10n.settingsBackgroundSync),
-          subtitle: Text(_backgroundReadText(status, l10n)),
-          trailing: status == BackgroundReadStatus.missing
+          title: Text(title),
+          subtitle: Text(switch (status) {
+            ReadAccessStatus.granted ||
+            ReadAccessStatus.notApplicable => granted,
+            ReadAccessStatus.missing => missing,
+            ReadAccessStatus.unavailable => unavailable,
+          }),
+          trailing: status == ReadAccessStatus.missing
               ? TextButton(
-                  onPressed: _askingBackground ? null : _allowBackgroundReads,
-                  child: Text(l10n.settingsBackgroundSyncAllow),
+                  onPressed: _askingAccess ? null : () => _allow(ask),
+                  child: Text(l10n.settingsAllow),
                 )
               : null,
         ),
       ),
     );
   }
-
-  String _backgroundReadText(
-    BackgroundReadStatus status,
-    AppLocalizations l10n,
-  ) => switch (status) {
-    BackgroundReadStatus.granted ||
-    BackgroundReadStatus.notApplicable => l10n.settingsBackgroundSyncOn,
-    BackgroundReadStatus.missing => l10n.settingsBackgroundSyncOff,
-    BackgroundReadStatus.unavailable => l10n.settingsBackgroundSyncUnavailable,
-  };
 
   Future<void> _load() async {
     final credentials = await widget.services.coordinator.currentCredentials();
@@ -338,9 +341,29 @@ class _SettingsPageState extends State<SettingsPage>
               ),
             ),
           ),
-          ValueListenableBuilder<BackgroundReadStatus?>(
+          ValueListenableBuilder<ReadAccessStatus?>(
             valueListenable: widget.services.backgroundRead,
-            builder: (context, status, _) => _backgroundRow(status, l10n),
+            builder: (context, status, _) => _accessRow(
+              status,
+              title: l10n.settingsBackgroundSync,
+              granted: l10n.settingsBackgroundSyncOn,
+              missing: l10n.settingsBackgroundSyncOff,
+              unavailable: l10n.settingsBackgroundSyncUnavailable,
+              ask: widget.services.askForBackgroundRead,
+              l10n: l10n,
+            ),
+          ),
+          ValueListenableBuilder<ReadAccessStatus?>(
+            valueListenable: widget.services.historyRead,
+            builder: (context, status, _) => _accessRow(
+              status,
+              title: l10n.settingsHistory,
+              granted: l10n.settingsHistoryOn,
+              missing: l10n.settingsHistoryOff,
+              unavailable: l10n.settingsHistoryUnavailable,
+              ask: widget.services.askForHistoryRead,
+              l10n: l10n,
+            ),
           ),
           const SizedBox(height: 24),
           Text(l10n.settingsProfile, style: theme.textTheme.titleMedium),

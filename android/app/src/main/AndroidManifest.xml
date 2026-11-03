@@ -17,6 +17,10 @@
          closed (DESIGN.md §4.4); the user grants it separately in Health
          Connect. Without it, background reads return nothing. -->
     <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND"/>
+    <!-- Lets a catch-up read data older than 30 days before Cairn's first grant
+         (DESIGN.md §4.2); requested together with the reads. Without it, Health
+         Connect silently clamps every read to that date. -->
+    <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_HISTORY"/>
     <!-- WebDAV sync to the user's Nextcloud + Login Flow v2 (DESIGN.md §6). -->
     <uses-permission android:name="android.permission.INTERNET"/>
 

@@ -1,6 +1,6 @@
-import 'package:cairn/src/health/background_read_status.dart';
 import 'package:cairn/src/health/health_metric.dart';
 import 'package:cairn/src/health/health_sample.dart';
+import 'package:cairn/src/health/read_access_status.dart';
 
 /// Read-only access to the OS health store (Apple HealthKit / Android Health
 /// Connect).
@@ -18,6 +18,8 @@ abstract interface class HealthRepository {
   Future<bool> isAvailable();
 
   /// Requests read authorisation for [metrics] and returns the subset granted.
+  /// On Android this also asks for history reads while they are missing (see
+  /// [historyReadStatus]), before any read can need them.
   ///
   /// Callers must handle partial grants gracefully and must not depend on a
   /// single boolean: iOS deliberately hides read-authorisation status, so
@@ -38,12 +40,22 @@ abstract interface class HealthRepository {
 
   /// Whether the store may be read while the app is in the background — what
   /// a background sync checks before it tries.
-  Future<BackgroundReadStatus> backgroundReadStatus();
+  Future<ReadAccessStatus> backgroundReadStatus();
 
   /// Asks for background reads (Health Connect's sheet on Android) and returns
   /// the status afterwards. Only meaningful while it is
-  /// [BackgroundReadStatus.missing].
-  Future<BackgroundReadStatus> requestBackgroundRead();
+  /// [ReadAccessStatus.missing].
+  Future<ReadAccessStatus> requestBackgroundRead();
+
+  /// Whether data older than 30 days before the first grant may be read. On
+  /// Android, Health Connect otherwise clamps every read to that date without
+  /// an error, so older data reads as absent.
+  Future<ReadAccessStatus> historyReadStatus();
+
+  /// Asks for history reads (Health Connect's sheet on Android) and returns
+  /// the status afterwards. Only meaningful while it is
+  /// [ReadAccessStatus.missing].
+  Future<ReadAccessStatus> requestHistoryRead();
 }
 
 /// Thrown when the OS health store cannot be reached at all — on Android, when
