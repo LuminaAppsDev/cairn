@@ -33,9 +33,10 @@ enum RefreshStatus {
   /// Data was read and (if connected) synced successfully.
   ok,
 
-  /// Reading from the OS health store failed — entirely, or for at least one
-  /// metric, in which case everything else read was saved (and synced). A
-  /// failed metric keeps its anchor, so the next refresh retries it.
+  /// Reading from the OS health store, or saving what was read, failed —
+  /// entirely, or for at least one metric, in which case everything else was
+  /// saved (and synced). A failed metric keeps its anchor, so the next refresh
+  /// retries it.
   readFailed,
 
   /// The OS health store is not available at all (Android: Health Connect is
@@ -62,9 +63,10 @@ class RefreshResult {
   /// `null` for an unexpected error, which is reported generically.
   final NextcloudSyncException? cause;
 
-  /// The push report when a sync ran — [status] [RefreshStatus.ok], or
-  /// [RefreshStatus.readFailed] after a partial read failure; `null` when not
-  /// connected to Nextcloud (read happened, nothing uploaded) or nothing ran.
+  /// The push report when an upload ran — [status] [RefreshStatus.ok], or
+  /// [RefreshStatus.readFailed] (some or all metrics failed to read or save,
+  /// but the upload went through); `null` when not connected to Nextcloud,
+  /// when the upload failed, or when none ran (Health Connect missing).
   final SyncReport? report;
 }
 
@@ -261,29 +263,86 @@ final class CairnServices {
   }
 
   Future<RefreshResult> _runRefresh({required bool background}) async {
-    // Both catch blocks below are `on Object`, not `on Exception`: the health
-    // plugin signals a missing Health Connect with an UnsupportedError, which
-    // is an Error. Letting one escape would complete this future with an error,
-    // so every caller's `await refresh()` would throw before it could clear its
-    // spinner — the UI would hang with no message at all.
+    final read = await _readStep(background: background);
+    // Health Connect missing: nothing more to do until the user acts on the
+    // device — and no reason to spend a push on unchanged files.
+    if (read.status == RefreshStatus.healthUnavailable) {
+      return const RefreshResult(RefreshStatus.healthUnavailable);
+    }
+    // Otherwise the upload runs whatever the read did: files already on disk
+    // from earlier runs still go up, and so does whatever this one saved.
+    final push = await _pushStep();
+    // A failed upload says "saved locally": shown first when something was —
+    // else a read or save that saved nothing at all is the truer news.
+    if (push.status == RefreshStatus.syncFailed &&
+        (read.savedAny || read.status == RefreshStatus.ok)) {
+      return push;
+    }
+    if (read.status == RefreshStatus.readFailed) {
+      // Keep any push report: its conflict warning still matters.
+      return RefreshResult(RefreshStatus.readFailed, report: push.report);
+    }
+    return push; // ok with its report (null → not connected)
+  }
+
+  // Maps the read step onto an outcome — ok, readFailed or healthUnavailable —
+  // and whether any metric was saved. Never throws: `on Object`, not
+  // `on Exception`, because the health plugin signals a missing Health Connect
+  // with an UnsupportedError (an Error), and an escape would leave every
+  // caller's spinner hanging.
+  Future<({RefreshStatus status, bool savedAny})> _readStep({
+    required bool background,
+  }) async {
     final List<IngestResult> ingested;
     try {
       ingested = await _ingest(background: background);
     } on HealthStoreUnavailableException {
-      return const RefreshResult(RefreshStatus.healthUnavailable);
+      return (status: RefreshStatus.healthUnavailable, savedAny: false);
     } on Object catch (error, stack) {
-      // Don't surface a raw exception string to the UI — it could, in
-      // principle, carry sensitive data. Log it for diagnosis instead.
-      debugPrint('Health read failed: $error');
+      // Logged by type only: the text could, in principle, carry sensitive
+      // data. A bug still reaches Flutter's error reporting in full.
+      debugPrint('Health read failed: ${error.runtimeType}');
       reportIfBug(error, stack, whileDoing: 'reading the OS health store');
-      return const RefreshResult(RefreshStatus.readFailed);
+      return (status: RefreshStatus.readFailed, savedAny: false);
     }
     // New local data is on disk → refresh the screens even if the upload fails
     // (unless the shell was torn down mid-refresh: no screens, no notifier).
     if (!_disposed) dataRevision.value++;
-    SyncReport? report;
+    final failed = ingested.where((result) => result.failed).toList();
+    _reportBugs(failed);
+    final savedAny = ingested.any((result) => !result.failed);
+    if (failed.any((r) => r.error is HealthStoreUnavailableException)) {
+      return (status: RefreshStatus.healthUnavailable, savedAny: savedAny);
+    }
+    // A metric that failed kept its anchor, so the next refresh retries it.
+    final status = failed.isEmpty ? RefreshStatus.ok : RefreshStatus.readFailed;
+    return (status: status, savedAny: savedAny);
+  }
+
+  // Reports each distinct bug among [failed] once — a shared fault failing
+  // every metric the same way is one bug, not one per metric. (An expected
+  // Exception passes silently; see reportIfBug.)
+  void _reportBugs(List<IngestResult> failed) {
+    final seen = <String>{};
+    for (final result in failed) {
+      final error = result.error!;
+      if (!seen.add('${error.runtimeType}|$error')) continue;
+      reportIfBug(
+        error,
+        result.stackTrace ?? StackTrace.empty,
+        whileDoing: 'ingesting ${result.metric.name}',
+      );
+    }
+  }
+
+  // The upload: ok with the push report (null when not connected), or
+  // syncFailed with its cause. Never throws.
+  Future<RefreshResult> _pushStep() async {
     try {
-      if (await coordinator.isConnected()) report = await coordinator.syncNow();
+      final report = await coordinator.isConnected()
+          ? await coordinator.syncNow()
+          : null;
+      return RefreshResult(RefreshStatus.ok, report: report);
     } on NextcloudSyncException catch (error) {
       // The typed kind travels to the UI, which translates it; the English
       // message stays in the log.
@@ -291,23 +350,15 @@ final class CairnServices {
       return RefreshResult(RefreshStatus.syncFailed, cause: error);
     } on Object catch (error, stack) {
       // Unexpected/untyped error → generic message; never echo the raw cause.
-      debugPrint('Sync failed: $error');
+      debugPrint('Sync failed: ${error.runtimeType}');
       reportIfBug(error, stack, whileDoing: 'pushing to Nextcloud');
       return const RefreshResult(RefreshStatus.syncFailed);
     }
-    // A metric whose read failed kept its anchor, so the next refresh retries
-    // it; everything else is saved (and synced) — but the user should know.
-    if (ingested.any((result) => result.readFailed)) {
-      // Keep the push report: its conflict warning still matters.
-      return RefreshResult(RefreshStatus.readFailed, report: report);
-    }
-    // report == null → not connected (read succeeded, nothing uploaded).
-    return RefreshResult(RefreshStatus.ok, report: report);
   }
 
-  // The read half of a refresh. A background run that may not read the health
-  // store (Android's separate background permission — without it a read may
-  // fail) skips it and only uploads.
+  // Reads the health store into the cache. A background run that may not read
+  // it (Android's separate background permission — without it a read may
+  // fail) skips that and returns nothing, so the refresh only uploads.
   Future<List<IngestResult>> _ingest({required bool background}) async {
     _readsGranted = false;
     if (background &&

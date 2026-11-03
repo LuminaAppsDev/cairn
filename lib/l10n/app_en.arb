@@ -309,8 +309,8 @@
   "settingsHelpGuideSubtitle": "Set up your health app, wearable and permissions",
   "@settingsHelpGuideSubtitle": { "description": "Subtitle of the setup-guide tile." },
 
-  "refreshReadFailed": "Could not read health data.",
-  "@refreshReadFailed": { "description": "Snackbar when reading from the OS health store fails." },
+  "refreshReadFailed": "Could not read or save health data.",
+  "@refreshReadFailed": { "description": "Snackbar when reading from the OS health store, or saving what was read on the device, fails." },
   "refreshSyncFailed": "Saved locally; sync failed: {detail}",
   "@refreshSyncFailed": {
     "description": "Snackbar when data was saved locally but a typed sync error occurred; detail is a controlled, non-sensitive message.",

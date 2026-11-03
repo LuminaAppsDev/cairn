@@ -100,6 +100,27 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- **One failure anywhere in ingest abandoned the whole refresh.** Only a
+  failed *read* was isolated per metric. Any other error in one metric ended
+  the refresh early, for example a bug in mapping or a bad record. The metrics
+  after it weren't ingested, the screens didn't reload, and nothing was
+  uploaded, not even files already on disk from earlier runs.
+
+  Now a metric's own failure stops only that metric. `IngestResult` carries
+  the error and its stack, the anchor holds, the next refresh retries it, and
+  the rest still ingest. Each distinct bug is reported once, even when a
+  shared fault fails every metric. Two failures that aren't one metric's own
+  end the run after it: Health Connect missing, and a local storage error
+  (`FileSystemException`, e.g. a full disk), where every further write would
+  only tear another shard. An append after a torn tail now starts on a fresh
+  line, so the first new record can't be glued onto the fragment and lost.
+
+  The upload now runs even when reading failed, so earlier files still go up.
+  The one exception is a missing Health Connect, which gets an immediate
+  answer and no pointless push. The upload failure's message says "saved
+  locally", so it is shown only if something was saved; otherwise the read
+  failure wins. That message now reads "Could not read or save health data."
+
 - **Background sync read Health Connect without permission.** Health
   Connect's reference says a background read without
   `READ_HEALTH_DATA_IN_BACKGROUND` "may result in an error". Since failed reads

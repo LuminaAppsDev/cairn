@@ -193,7 +193,8 @@ class _SettingsPageState extends State<SettingsPage>
   String _statusFor(RefreshResult result, AppLocalizations l10n) {
     switch (result.status) {
       case RefreshStatus.readFailed:
-        // A partial read failure still synced; keep its conflict warning.
+        // A read failure can still come with an upload: keep its conflict
+        // warning.
         final report = result.report;
         if (report == null || !report.hasConflicts) {
           return l10n.refreshReadFailed;

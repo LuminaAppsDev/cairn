@@ -61,6 +61,8 @@ class _PartlyFailingRepository implements HealthRepository {
     this.failing, {
     this.background = BackgroundReadStatus.notApplicable,
     this.grantsReads = true,
+    this.failsWithBug = false,
+    this.bugInEveryRead = false,
   });
 
   /// The metric whose read fails (`null`: none).
@@ -71,6 +73,13 @@ class _PartlyFailingRepository implements HealthRepository {
 
   /// Whether any read permission is granted.
   final bool grantsReads;
+
+  /// Whether [failing]'s read fails with a bug (a `StateError`) rather than a
+  /// failed read.
+  final bool failsWithBug;
+
+  /// Whether every read fails with the same bug — a shared fault.
+  final bool bugInEveryRead;
 
   final List<HealthMetric> reads = [];
   int backgroundRequests = 0;
@@ -93,7 +102,11 @@ class _PartlyFailingRepository implements HealthRepository {
     required DateTime end,
   }) async {
     reads.add(metric);
-    if (metric == failing) throw HealthReadException(metric);
+    if (bugInEveryRead) throw StateError('shared bug');
+    if (metric == failing) {
+      if (failsWithBug) throw StateError('bug while reading ${metric.name}');
+      throw HealthReadException(metric);
+    }
     return const [];
   }
 
@@ -135,6 +148,11 @@ class _ConnectedTokenStore implements SecureTokenStore {
 
 /// Records what a push uploads.
 class _RecordingTarget implements NextcloudSyncTarget {
+  _RecordingTarget({this.fails = false});
+
+  /// Whether every upload fails, as with the server unreachable.
+  final bool fails;
+
   final List<String> puts = [];
 
   @override
@@ -142,6 +160,13 @@ class _RecordingTarget implements NextcloudSyncTarget {
     required String remotePath,
     required Uint8List bytes,
   }) async {
+    if (fails) {
+      throw const NextcloudSyncException(
+        'unreachable',
+        kind: SyncErrorKind.network,
+        retryable: true,
+      );
+    }
     puts.add(remotePath);
     return 'etag';
   }
@@ -279,6 +304,96 @@ void main() {
     expect(advanced!.isAfter(aMonthAgo), isTrue);
     // An anticipated failure, not a bug.
     expect(reported, isEmpty);
+  });
+
+  test('a bug in one metric is reported, and the rest still run', () async {
+    final repo = _PartlyFailingRepository(
+      HealthMetric.heartRate,
+      failsWithBug: true,
+    );
+    final services = servicesOver(repo);
+    addTearDown(services.dispose);
+
+    final result = await services.refresh();
+
+    expect(result.status, RefreshStatus.readFailed);
+    expect(reported.single.exception, isA<StateError>());
+    expect(services.dataRevision.value, 1);
+    final weight = await services.store.lastSyncAnchor(HealthMetric.weight);
+    expect(
+      weight!.isAfter(DateTime.now().subtract(const Duration(days: 1))),
+      isTrue,
+    );
+  });
+
+  test('the upload still runs when the whole read fails', () async {
+    final target = _RecordingTarget();
+    final services = servicesOver(
+      _FailingRepository(() => throw UnsupportedError('no Health Connect')),
+      target: target,
+    );
+    addTearDown(services.dispose);
+    // Something from an earlier run waiting to go up.
+    await services.store.setSyncAnchor(HealthMetric.weight, DateTime(2026));
+
+    final result = await services.refresh();
+
+    expect(result.status, RefreshStatus.readFailed);
+    expect(target.puts, isNotEmpty);
+  });
+
+  test('no upload while Health Connect is missing', () async {
+    // Nothing new to send, and the user has to act on the device first.
+    final target = _RecordingTarget();
+    final services = servicesOver(
+      _FailingRepository(() => throw const HealthStoreUnavailableException()),
+      target: target,
+    );
+    addTearDown(services.dispose);
+    await services.store.setSyncAnchor(HealthMetric.weight, DateTime(2026));
+
+    final result = await services.refresh();
+
+    expect(result.status, RefreshStatus.healthUnavailable);
+    expect(target.puts, isEmpty);
+  });
+
+  test('a read that saved nothing outranks a failed upload', () async {
+    // The upload's message would claim "saved locally" — untrue here.
+    final services = servicesOver(
+      _FailingRepository(() => throw UnsupportedError('no Health Connect')),
+      target: _RecordingTarget(fails: true),
+    );
+    addTearDown(services.dispose);
+    await services.store.setSyncAnchor(HealthMetric.weight, DateTime(2026));
+
+    final result = await services.refresh();
+
+    expect(result.status, RefreshStatus.readFailed);
+  });
+
+  test('with something saved, a failed upload is shown first', () async {
+    final services = servicesOver(
+      _PartlyFailingRepository(HealthMetric.heartRate),
+      target: _RecordingTarget(fails: true),
+    );
+    addTearDown(services.dispose);
+
+    final result = await services.refresh();
+
+    expect(result.status, RefreshStatus.syncFailed);
+    expect(result.cause?.kind, SyncErrorKind.network);
+  });
+
+  test('a shared bug failing every metric is reported once', () async {
+    final services = servicesOver(
+      _PartlyFailingRepository(null, bugInEveryRead: true),
+    );
+    addTearDown(services.dispose);
+
+    await services.refresh();
+
+    expect(reported, hasLength(1));
   });
 
   test('a failed read leaves the data revision untouched', () async {

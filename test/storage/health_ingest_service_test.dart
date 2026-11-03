@@ -17,7 +17,7 @@ class _FakeRepository implements HealthRepository {
   final List<({HealthMetric metric, DateTime start, DateTime end})> reads = [];
 
   /// 1-based read that throws [failure] — by default a `StateError`, standing
-  /// in for the process dying mid-ingest.
+  /// in for a bug mid-ingest.
   final int? failAtRead;
 
   /// What the [failAtRead] read throws instead, e.g. a [HealthReadException].
@@ -477,7 +477,7 @@ void main() {
       clock: () => now,
     ).ingest({HealthMetric.steps});
 
-    expect(results.single.readFailed, isTrue);
+    expect(results.single.failed, isTrue);
     final pinned = await store.lastSyncAnchor(HealthMetric.steps);
     final firstRunStart = now.subtract(const Duration(days: 30));
     expect(pinned!.isAtSameMomentAs(firstRunStart), isTrue);
@@ -539,10 +539,11 @@ void main() {
         store: store,
         clock: () => now,
       );
-      await expectLater(
-        ingest.ingest({HealthMetric.heartRate}),
-        throwsStateError,
-      );
+      // Any failure — here a bug's StateError — stops only this metric, and
+      // comes back with the result rather than out of ingest.
+      final results = await ingest.ingest({HealthMetric.heartRate});
+      expect(results.single.error, isA<StateError>());
+      expect(results.single.stackTrace, isNotNull);
 
       // Two slices landed, so the next run resumes after them instead of
       // re-reading (and re-crashing on) the whole gap.
@@ -599,14 +600,14 @@ void main() {
       ).ingest({HealthMetric.heartRate, HealthMetric.weight});
 
       final heartRate = results.first;
-      expect(heartRate.readFailed, isTrue);
+      expect(heartRate.failed, isTrue);
       expect(heartRate.dataPointCount, 14);
       // Held at the last finished slice — not walked past the failed one.
       final held = await store.lastSyncAnchor(HealthMetric.heartRate);
       expect(held!.isAtSameMomentAs(repo.reads[1].end), isTrue);
 
       final weight = results.last;
-      expect(weight.readFailed, isFalse);
+      expect(weight.failed, isFalse);
       expect(weight.dataPointCount, 1);
       final weightAnchor = await store.lastSyncAnchor(HealthMetric.weight);
       expect(weightAnchor!.isAtSameMomentAs(now), isTrue);
@@ -658,6 +659,97 @@ void main() {
         to: now,
       );
       expect(onDisk, hasLength(1));
+    });
+  });
+
+  group('a failure other than a read', () {
+    final now = DateTime(2026, 6, 14, 12);
+    final weighIn = now.subtract(const Duration(hours: 1));
+    final samples = {
+      HealthMetric.steps: [
+        ScalarSample(
+          metric: HealthMetric.steps,
+          value: 1200,
+          unit: 'steps',
+          start: weighIn,
+          end: weighIn,
+          source: source,
+        ),
+      ],
+      HealthMetric.weight: [
+        ScalarSample(
+          metric: HealthMetric.weight,
+          value: 70,
+          unit: 'kg',
+          start: weighIn,
+          end: weighIn,
+          source: source,
+        ),
+      ],
+    };
+
+    test('stops only its own metric, holding its anchor', () async {
+      // A failure that is the metric's own (here a bad record's
+      // FormatException on steps' first read): the rest still run.
+      await store.setSyncAnchor(HealthMetric.steps, weighIn);
+      final before = await store.lastSyncAnchor(HealthMetric.steps);
+      final repo = _FakeRepository(
+        samples,
+        failAtRead: 1,
+        failure: const FormatException('bad record'),
+      );
+
+      final results = await HealthIngestService(
+        repository: repo,
+        store: store,
+        clock: () => now,
+      ).ingest({HealthMetric.steps, HealthMetric.weight});
+
+      expect(results.first.error, isA<FormatException>());
+      final held = await store.lastSyncAnchor(HealthMetric.steps);
+      expect(held!.isAtSameMomentAs(before!), isTrue);
+      final weight = results.last;
+      expect(weight.failed, isFalse);
+      expect(weight.dataPointCount, 1);
+      final advanced = await store.lastSyncAnchor(HealthMetric.weight);
+      expect(advanced!.isAtSameMomentAs(now), isTrue);
+    });
+
+    test('a local storage failure ends the run after its metric', () async {
+      // A real write failure — a plain file where the steps shard directory
+      // has to go. Like a full disk, it isn't steps' own: carrying on would
+      // only tear another metric's shard.
+      File('${tempRoot.path}/steps').writeAsStringSync('in the way');
+      await store.setSyncAnchor(HealthMetric.steps, weighIn);
+      final before = await store.lastSyncAnchor(HealthMetric.steps);
+
+      final results = await HealthIngestService(
+        repository: _FakeRepository(samples),
+        store: store,
+        clock: () => now,
+      ).ingest({HealthMetric.steps, HealthMetric.weight});
+
+      expect(results.single.error, isA<FileSystemException>());
+      final held = await store.lastSyncAnchor(HealthMetric.steps);
+      expect(held!.isAtSameMomentAs(before!), isTrue);
+      expect(await store.lastSyncAnchor(HealthMetric.weight), isNull);
+    });
+
+    test('a missing health store ends the run, without throwing', () async {
+      // Nothing more can be read; the refresh reports it as its own outcome.
+      final repo = _FakeRepository(
+        samples,
+        failAtRead: 1,
+        failure: const HealthStoreUnavailableException(),
+      );
+
+      final results = await HealthIngestService(
+        repository: repo,
+        store: store,
+        clock: () => now,
+      ).ingest({HealthMetric.steps, HealthMetric.weight});
+
+      expect(results.single.error, isA<HealthStoreUnavailableException>());
     });
   });
 }

@@ -91,6 +91,38 @@ void main() {
     expect(asMap(read.single['header'])['id'], 'ok');
   });
 
+  test('an append after a torn line starts on a line of its own', () async {
+    // A crash or full disk mid-append left a fragment with no newline; the
+    // next record must not be glued onto it and lost with it.
+    await store.append(
+      metric: HealthMetric.heartRate,
+      day: day,
+      dataPoints: [dp('a')],
+    );
+    final shard = File(
+      p.join(
+        tempRoot.path,
+        HealthMetric.heartRate.slug,
+        '2026',
+        '2026-06-14.jsonl',
+      ),
+    )..writeAsStringSync('{"header":{"id":"to', mode: FileMode.append);
+
+    await store.append(
+      metric: HealthMetric.heartRate,
+      day: day,
+      dataPoints: [dp('b')],
+    );
+
+    final ids = (await store.readRange(
+      metric: HealthMetric.heartRate,
+      from: day,
+      to: day,
+    )).map((d) => asMap(d['header'])['id']);
+    expect(ids, ['a', 'b']);
+    expect(shard.readAsStringSync(), endsWith('\n'));
+  });
+
   test('sync anchor writes and reads back; manifest is atomic', () async {
     expect(await store.lastSyncAnchor(HealthMetric.heartRate), isNull);
     final anchor = DateTime(2026, 6, 15, 12);

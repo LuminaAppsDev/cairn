@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:cairn/src/health/health_metric.dart';
 import 'package:cairn/src/health/health_repository.dart';
@@ -10,25 +11,36 @@ import 'package:cairn/src/storage/omh_file_store.dart';
 import 'package:flutter/foundation.dart';
 
 /// How many datapoints were persisted for one metric in an ingest run, and
-/// whether its read failed partway.
+/// why it stopped early, if it did.
 @immutable
 class IngestResult {
   /// Creates an ingest result.
   const IngestResult({
     required this.metric,
     required this.dataPointCount,
-    this.readFailed = false,
+    this.error,
+    this.stackTrace,
   });
 
   /// The metric ingested.
   final HealthMetric metric;
 
-  /// Number of OMH datapoints written to disk (before any failure).
+  /// Number of OMH datapoints written by the spans that completed — a span
+  /// that failed partway may have saved some points without counting them.
   final int dataPointCount;
 
-  /// Whether the health store failed a read of [metric]. Its anchor then
-  /// stays at the last finished span, so a later run retries from there.
-  final bool readFailed;
+  /// Why ingesting [metric] stopped early, if it did: a [HealthReadException]
+  /// when the store failed a read, a [HealthStoreUnavailableException] or a
+  /// [FileSystemException] (both of which also end the run), or else some
+  /// other local failure or a bug. Its anchor stays at the last finished
+  /// span, so a later run retries from there.
+  final Object? error;
+
+  /// Where [error] was thrown.
+  final StackTrace? stackTrace;
+
+  /// Whether ingesting [metric] stopped early.
+  bool get failed => error != null;
 }
 
 /// The local write path (DESIGN.md §9, minus Nextcloud): read health for the
@@ -115,19 +127,30 @@ final class HealthIngestService {
   /// `RecordHelper.getReadTableWhereClause`), so a record crossing a boundary
   /// is read exactly once, by the slice holding its start.
   ///
-  /// A metric whose read fails ([HealthReadException]) is reported with
-  /// [IngestResult.readFailed] and keeps its anchor at the last finished span;
-  /// the remaining metrics still run. Any other error aborts the run.
+  /// A metric that fails — a read the store failed, a bug — is reported with
+  /// [IngestResult.error] and keeps its anchor at the last finished span; the
+  /// remaining metrics still run. Two failures end the run after their metric,
+  /// as they aren't that metric's own: the store gone
+  /// ([HealthStoreUnavailableException]), and local storage failing
+  /// ([FileSystemException], e.g. a full disk), where every further write
+  /// would only leave another torn shard. Never throws.
   /// Returns the per-metric count of **newly written** datapoints.
   Future<List<IngestResult>> ingest(Set<HealthMetric> metrics) async {
     // Whole seconds: source dedup keys competing readings on whole seconds,
     // so a boundary mid-second could split a pair across two reads.
     final now = _wholeSeconds(_now());
     final reconcileStart = now.subtract(reconcileLookback);
-    return [
-      for (final metric in metrics)
-        await _ingestMetric(metric, now, reconcileStart),
-    ];
+    final results = <IngestResult>[];
+    for (final metric in metrics) {
+      final result = await _ingestMetric(metric, now, reconcileStart);
+      results.add(result);
+      final error = result.error;
+      if (error is HealthStoreUnavailableException ||
+          error is FileSystemException) {
+        break;
+      }
+    }
+    return results;
   }
 
   Future<IngestResult> _ingestMetric(
@@ -135,14 +158,15 @@ final class HealthIngestService {
     DateTime now,
     DateTime reconcileStart,
   ) async {
-    final anchor = await store.lastSyncAnchor(metric);
-    // Older anchors may carry sub-second parts; boundaries must not.
-    var start = _wholeSeconds(_windowStart(anchor, now, reconcileStart));
-    // First run: pin the window start, so a read failing before any span lands
-    // retries from here rather than from a start that slides forward with now.
-    if (anchor == null) await store.setSyncAnchor(metric, start);
     var count = 0;
     try {
+      final anchor = await store.lastSyncAnchor(metric);
+      // Older anchors may carry sub-second parts; boundaries must not.
+      var start = _wholeSeconds(_windowStart(anchor, now, reconcileStart));
+      // First run: pin the window start, so a read failing before any span
+      // lands retries from here rather than from a start that slides forward
+      // with now.
+      if (anchor == null) await store.setSyncAnchor(metric, start);
       // Sleep is never sliced: its nightly episodes are aggregated per read,
       // so a boundary mid-night would persist two partial episodes — and a few
       // segments a night never needs slicing.
@@ -155,13 +179,18 @@ final class HealthIngestService {
         start = end;
       }
       count += await _ingestSpan(metric, start, now);
-    } on HealthReadException catch (error) {
-      // The failed span never advanced the anchor, so the next run retries it.
-      debugPrint('Health read failed: $error');
+    } on Object catch (error, stack) {
+      // The failure stops this metric. The span it was on never advanced the
+      // anchor, so the next run retries it. Logged by type only: an arbitrary
+      // error's text could quote record contents (a HealthReadException's is
+      // the platform's own, and carries none).
+      final what = error is HealthReadException ? '$error' : error.runtimeType;
+      debugPrint('Ingesting ${metric.name} failed: $what');
       return IngestResult(
         metric: metric,
         dataPointCount: count,
-        readFailed: true,
+        error: error,
+        stackTrace: stack,
       );
     }
     return IngestResult(metric: metric, dataPointCount: count);

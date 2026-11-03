@@ -51,7 +51,28 @@ final class JsonlOmhFileStore implements OmhFileStore {
     final file = _shardFile(metric, day);
     await file.parent.create(recursive: true);
     final lines = dataPoints.map(jsonEncode).join('\n');
-    await file.writeAsString('$lines\n', mode: FileMode.append, flush: true);
+    // A torn append (a crash or a full disk mid-write) leaves the shard without
+    // its trailing newline: start on a fresh line, so the first new record
+    // isn't glued onto the fragment and lost with it.
+    final lead = await _endsMidLine(file) ? '\n' : '';
+    await file.writeAsString(
+      '$lead$lines\n',
+      mode: FileMode.append,
+      flush: true,
+    );
+  }
+
+  static Future<bool> _endsMidLine(File file) async {
+    if (!file.existsSync()) return false;
+    final handle = await file.open();
+    try {
+      final length = await handle.length();
+      if (length == 0) return false;
+      await handle.setPosition(length - 1);
+      return await handle.readByte() != 0x0A; // '\n'
+    } finally {
+      await handle.close();
+    }
   }
 
   @override
