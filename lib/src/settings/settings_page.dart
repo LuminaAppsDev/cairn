@@ -17,7 +17,7 @@ import 'package:flutter/material.dart';
 /// BMI), and the app-language picker.
 class SettingsPage extends StatefulWidget {
   /// Creates the settings page.
-  const SettingsPage({
+  const new({
     required this.services,
     required this.localeController,
     super.key,
@@ -244,10 +244,7 @@ class _SettingsPageState extends State<SettingsPage>
       value = parsed;
     }
     // Construct directly (not copyWith) so a blank field clears the height.
-    final next = Profile(
-      heightCm: value,
-      dateOfBirth: _profile.dateOfBirth,
-    );
+    final next = Profile(heightCm: value, dateOfBirth: _profile.dateOfBirth);
     await widget.services.profileStore.write(next);
     // The shell (and the notifier it owns) may be gone after the await.
     if (!mounted) return;
@@ -449,9 +446,7 @@ class _SettingsPageState extends State<SettingsPage>
               subtitle: Text(l10n.settingsHelpGuideSubtitle),
               trailing: const Icon(Icons.chevron_right),
               onTap: () => Navigator.of(context).push<void>(
-                MaterialPageRoute<void>(
-                  builder: (_) => const SetupGuidePage(),
-                ),
+                MaterialPageRoute<void>(builder: (_) => const SetupGuidePage()),
               ),
             ),
           ),

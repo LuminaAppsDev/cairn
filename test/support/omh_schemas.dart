@@ -15,10 +15,10 @@ import 'package:path/path.dart' as p;
 /// refs. OMH and IEEE `$ref` pools are kept separate because their utility
 /// filenames overlap (e.g. `descriptive-statistic-1.0.json`).
 class OmhSchemas {
-  OmhSchemas._(this._omhRefs, this._ieeeRefs);
+  new _(this._omhRefs, this._ieeeRefs);
 
   /// Loads every schema fixture from disk.
-  factory OmhSchemas.load() => OmhSchemas._(
+  factory load() => OmhSchemas._(
     _loadDir('test/fixtures/schemas/omh'),
     _loadDir('test/fixtures/schemas/ieee'),
   );

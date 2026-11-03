@@ -8,7 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// Fake [FlutterSecureStorage] driven via `noSuchMethod` so the test does not
 /// have to restate the plugin's full (option-laden) method signatures.
 class _FakeStorage implements FlutterSecureStorage {
-  _FakeStorage({this.corrupt = false, this.alwaysFail = false});
+  new({this.corrupt = false, this.alwaysFail = false});
 
   final Map<String, String> store = {};
 

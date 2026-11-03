@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 @immutable
 class SchemaId {
   /// Creates a schema identifier.
-  const SchemaId({
+  const new({
     required this.namespace,
     required this.name,
     required this.version,
@@ -32,7 +32,7 @@ class SchemaId {
 @immutable
 class AcquisitionProvenance {
   /// Creates an acquisition-provenance block.
-  const AcquisitionProvenance({
+  const new({
     required this.sourceName,
     required this.modality,
     this.sourceCreationDateTime,
@@ -59,7 +59,7 @@ class AcquisitionProvenance {
 @immutable
 class OmhHeader {
   /// Creates an OMH datapoint header.
-  const OmhHeader({
+  const new({
     required this.id,
     required this.creationDateTime,
     required this.schemaId,
@@ -91,7 +91,7 @@ class OmhHeader {
 @immutable
 class OmhDataPoint {
   /// Creates an OMH datapoint.
-  const OmhDataPoint({required this.header, required this.body});
+  const new({required this.header, required this.body});
 
   /// The datapoint header (id, schema id, provenance).
   final OmhHeader header;
@@ -100,8 +100,5 @@ class OmhDataPoint {
   final Map<String, Object?> body;
 
   /// Serialises to the full `{header, body}` OMH datapoint object.
-  Map<String, Object?> toJson() => {
-    'header': header.toJson(),
-    'body': body,
-  };
+  Map<String, Object?> toJson() => {'header': header.toJson(), 'body': body};
 }

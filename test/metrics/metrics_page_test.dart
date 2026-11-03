@@ -64,11 +64,8 @@ void main() {
     home: home,
   );
 
-  ScalarReading kg(int day, double value) => ScalarReading(
-    value: value,
-    unit: 'kg',
-    at: DateTime(2026, 6, day),
-  );
+  ScalarReading kg(int day, double value) =>
+      ScalarReading(value: value, unit: 'kg', at: DateTime(2026, 6, day));
 
   testWidgets('weight page shows the trend and latest/change tiles', (
     tester,

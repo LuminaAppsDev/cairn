@@ -130,10 +130,7 @@ void main() {
     (map['header']! as Map<String, Object?>)['creation_date_time'] =
         '2026-06-16T09:25:31+02:00';
     final reading = parseInterval(map);
-    expect(
-      reading?.ingestedAt?.toUtc(),
-      DateTime.utc(2026, 6, 16, 7, 25, 31),
-    );
+    expect(reading?.ingestedAt?.toUtc(), DateTime.utc(2026, 6, 16, 7, 25, 31));
   });
 
   test('parseWorkout parses optional metrics', () {

@@ -11,8 +11,9 @@ import 'package:cairn/src/sync/webdav_nextcloud_sync_target.dart';
 
 /// Builds the WebDAV target for a set of credentials. Injectable so tests can
 /// substitute an in-memory target.
-typedef SyncTargetFactory =
-    NextcloudSyncTarget Function(NextcloudCredentials credentials);
+typedef SyncTargetFactory = NextcloudSyncTarget Function(
+  NextcloudCredentials credentials,
+);
 
 /// Ties the sync pieces together: Login Flow v2 auth, secure credential
 /// storage, and the WebDAV push (DESIGN.md §6). Pure Dart (no Flutter) so the
@@ -22,7 +23,7 @@ typedef SyncTargetFactory =
 /// the steps it drives: [begin], [pollAndStore], and [syncNow].
 final class NextcloudSyncCoordinator {
   /// Creates a coordinator. [targetFactory] defaults to the real WebDAV target.
-  NextcloudSyncCoordinator({
+  new({
     required this.auth,
     required this.tokenStore,
     required this.localRoot,
@@ -82,9 +83,8 @@ final class NextcloudSyncCoordinator {
     final credentials = await tokenStore.readCredentials();
     if (credentials == null) return null;
     try {
-      return await _targetFactory(
-        credentials,
-      ).getFile(remotePath, maxBytes: maxBytes);
+      return await _targetFactory(credentials)
+          .getFile(remotePath, maxBytes: maxBytes);
     } on NextcloudNotFoundException {
       return null;
     }
@@ -119,6 +119,6 @@ final class NextcloudSyncCoordinator {
       localRoot: localRoot,
       journalStore: journalStore,
     );
-    return service.push();
+    return await service.push();
   }
 }

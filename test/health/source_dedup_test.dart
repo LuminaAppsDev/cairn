@@ -51,10 +51,7 @@ void main() {
       hr(71, t, src('Tablet')),
     ]);
     expect(result, hasLength(1));
-    expect(
-      result.single.source.recordingMethod,
-      RecordingMethodKind.automatic,
-    );
+    expect(result.single.source.recordingMethod, RecordingMethodKind.automatic);
   });
 
   test('empty input yields empty output', () {

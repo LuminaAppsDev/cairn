@@ -10,7 +10,7 @@ import 'package:flutter/material.dart';
 /// rather than as a single stepped line.
 class HypnogramChart extends StatelessWidget {
   /// Creates a hypnogram for [night].
-  const HypnogramChart({required this.night, super.key});
+  const new({required this.night, super.key});
 
   /// The night to plot.
   final NightSleep night;
@@ -139,7 +139,7 @@ List<FlSpot> _segmentSpots(double x0, double x1, double y) {
 }
 
 class _Placeholder extends StatelessWidget {
-  const _Placeholder({required this.text, required this.theme});
+  const new({required this.text, required this.theme});
 
   final String text;
   final ThemeData theme;
@@ -147,8 +147,6 @@ class _Placeholder extends StatelessWidget {
   @override
   Widget build(BuildContext context) => SizedBox(
     height: 180,
-    child: Center(
-      child: Text(text, style: theme.textTheme.bodyMedium),
-    ),
+    child: Center(child: Text(text, style: theme.textTheme.bodyMedium)),
   );
 }

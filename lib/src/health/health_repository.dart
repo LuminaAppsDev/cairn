@@ -66,7 +66,7 @@ abstract interface class HealthRepository {
 /// can work.
 class HealthStoreUnavailableException implements Exception {
   /// Creates the exception.
-  const HealthStoreUnavailableException();
+  const new();
 
   @override
   String toString() =>
@@ -98,7 +98,7 @@ enum HealthReadFailure {
 /// anchor must stay put and a later run must retry the window.
 class HealthReadException implements Exception {
   /// Creates the exception for a failed read of [metric].
-  const HealthReadException(
+  const new(
     this.metric, {
     this.code,
     this.message,

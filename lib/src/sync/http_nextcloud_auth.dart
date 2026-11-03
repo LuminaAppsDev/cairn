@@ -24,7 +24,7 @@ const Duration _requestTimeout = Duration(seconds: 30);
 final class HttpNextcloudAuth implements NextcloudAuth {
   /// Creates an auth client. [client] is injectable for tests; the default is
   /// owned elsewhere (callers reuse one client across the app).
-  HttpNextcloudAuth({http.Client? client}) : _client = client ?? http.Client();
+  new({http.Client? client}) : _client = client ?? http.Client();
 
   final http.Client _client;
 

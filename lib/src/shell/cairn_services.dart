@@ -53,7 +53,7 @@ enum RefreshStatus {
 @immutable
 class RefreshResult {
   /// Creates a refresh result.
-  const RefreshResult(
+  const new(
     this.status, {
     this.cause,
     this.report,
@@ -89,7 +89,7 @@ class RefreshResult {
 /// coordinator, and the health-store reader.
 final class CairnServices {
   /// Creates a services holder. Prefer [create].
-  CairnServices({
+  new({
     required this.client,
     required this.store,
     required this.profileStore,
@@ -109,9 +109,7 @@ final class CairnServices {
     final journalStore = await JsonSyncJournalStore.appSupport();
     // Clear temp files a crashed write left behind; best-effort, off the path.
     unawaited(sweepStaleTempFiles(store.root));
-    unawaited(
-      sweepStaleTempFiles(journalStore.file.parent, recursive: false),
-    );
+    unawaited(sweepStaleTempFiles(journalStore.file.parent, recursive: false));
     final profileStore = JsonProfileStore(root: store.root);
     final coordinator = NextcloudSyncCoordinator(
       auth: HttpNextcloudAuth(client: client),
@@ -175,9 +173,7 @@ final class CairnServices {
   /// Whether background sync may read the health store; `null` until first
   /// checked. Foreground refreshes, [checkReadAccess] and
   /// [askForBackgroundRead] keep it current; Settings shows it.
-  final ValueNotifier<ReadAccessStatus?> backgroundRead = ValueNotifier(
-    null,
-  );
+  final ValueNotifier<ReadAccessStatus?> backgroundRead = ValueNotifier(null);
 
   /// Whether data older than 30 days before the first grant may be read;
   /// `null` until first checked. Kept current like [backgroundRead], by
@@ -225,7 +221,7 @@ final class CairnServices {
     // A refresh that waited for the lock may find the services torn down by
     // then (the shell disposed meanwhile); it must not touch them.
     if (_disposed) return const RefreshResult(RefreshStatus.ok);
-    return _runRefresh(background: false);
+    return await _runRefresh(background: false);
   }
 
   bool _disposed = false;
@@ -426,7 +422,7 @@ final class CairnServices {
       HealthMetric.values.toSet(),
     );
     _readsGranted = granted.isNotEmpty;
-    return HealthIngestService(
+    return await HealthIngestService(
       repository: repository,
       store: store,
     ).ingest(granted);

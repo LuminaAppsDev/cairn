@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart';
 @immutable
 class RemoteResource {
   /// Creates a remote resource descriptor.
-  const RemoteResource({
+  const new({
     required this.path,
     required this.isCollection,
     this.etag,
@@ -81,7 +81,7 @@ class NextcloudSyncException implements Exception {
   /// HTTP [statusCode]. Set [retryable] for transient failures (a timeout or
   /// network/DNS blip) that a polling caller may retry rather than abort on.
   /// [kind] is what the UI translates; [message] stays English, for logs.
-  const NextcloudSyncException(
+  const new(
     this.message, {
     this.kind = SyncErrorKind.unknown,
     this.statusCode,
@@ -111,7 +111,7 @@ class NextcloudSyncException implements Exception {
 /// `404 Not Found`.
 class NextcloudNotFoundException extends NextcloudSyncException {
   /// Creates a not-found exception for [path].
-  const NextcloudNotFoundException(String path)
+  const new(String path)
     : super('Not found: $path', kind: SyncErrorKind.notFound, statusCode: 404);
 }
 

@@ -16,7 +16,7 @@ const int _trendNights = 7;
 class SleepPage extends StatefulWidget {
   /// Creates the sleep page reading from [query]. [revision] fires when new
   /// data lands in the cache (reload trigger); [onRefresh] ingests + syncs.
-  const SleepPage({
+  const new({
     required this.query,
     required this.revision,
     required this.onRefresh,
@@ -142,9 +142,8 @@ class _SleepPageState extends State<SleepPage> {
           // "older" steps forward in the list, "newer" steps back toward 0.
           title: index == 0
               ? l10n.sleepLastNight
-              : MaterialLocalizations.of(context).formatMediumDate(
-                  selected.night,
-                ),
+              : MaterialLocalizations.of(context)
+                    .formatMediumDate(selected.night),
           onOlder: index < nights.length - 1
               ? () => setState(() => _selected = index + 1)
               : null,
@@ -155,10 +154,7 @@ class _SleepPageState extends State<SleepPage> {
           l10n: l10n,
         ),
         const SizedBox(height: 4),
-        Text(
-          _dateLabel(selected),
-          style: theme.textTheme.bodySmall,
-        ),
+        Text(_dateLabel(selected), style: theme.textTheme.bodySmall),
         const SizedBox(height: 12),
         SleepSummaryTiles(night: selected),
         if (selected.sources.length > 1)
@@ -204,7 +200,7 @@ class _SleepPageState extends State<SleepPage> {
 }
 
 class _SectionTitle extends StatelessWidget {
-  const _SectionTitle(this.text, this.theme);
+  const new(this.text, this.theme);
 
   final String text;
   final ThemeData theme;
@@ -220,7 +216,7 @@ class _SectionTitle extends StatelessWidget {
 /// step-back / step-forward controls. A `null` callback disables its button
 /// (at the ends of the available range).
 class _NightNavigator extends StatelessWidget {
-  const _NightNavigator({
+  const new({
     required this.title,
     required this.onOlder,
     required this.onNewer,
@@ -237,9 +233,7 @@ class _NightNavigator extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Row(
     children: [
-      Expanded(
-        child: Text(title, style: theme.textTheme.titleLarge),
-      ),
+      Expanded(child: Text(title, style: theme.textTheme.titleLarge)),
       IconButton(
         icon: const Icon(Icons.chevron_left),
         tooltip: l10n.sleepOlderNight,

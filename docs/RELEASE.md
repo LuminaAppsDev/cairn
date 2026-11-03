@@ -438,6 +438,11 @@ flutter build apk --debug          # what `flutter run` resolves
 flutter build apk --profile
 ```
 
+**On a Flutter SDK bump, prune the old engine by hand.** Gradle only ever adds
+pins, so the previous engine's twelve `io.flutter` entries (version
+`1.0.0-<old engine hash>`, from the old SDK's `bin/internal/engine.version`)
+stay accepted until deleted. Remove them, then re-run the builds above.
+
 **The file must stay host-agnostic.** `aapt2` is the one dependency published
 per operating system, and Gradle records only the classifier for the host that
 generated the file. Left as generated it is Linux-only, so a contributor on

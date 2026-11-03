@@ -58,18 +58,37 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- **Flutter 3.47.9 (Dart 3.13.7), up from 3.44.0.** Bumped together in
+  `.fvmrc`, `release.yml` (`FLUTTER_VERSION` and `FLUTTER_COMMIT`), and
+  `docs/DEVELOPMENT.md`; the SDK floor in `pubspec.yaml` is now `^3.13.0`. The
+  SDK's own pins moved intl to 0.20.3, meta to 1.19.0 and vector_math to
+  2.4.4, and the test-only matcher and test_api to 0.12.20 and 0.7.12.
+  very_good_analysis 11 and xml 7.1, which need Dart 3.13, come along:
+  - very_good_analysis 11 enables `unnecessary_type_name_in_constructor`, so
+    constructors use Dart 3.13's `new` form (`const new(...)`), applied by
+    `dart fix` across 61 files. It also enables `async_return_with_no_await`;
+    the 11 hits now `return await`. None sits in a `try`, so error handling is
+    unchanged; the returning function now shows in async stack traces.
+  - xml 7.1 brings petitparser 7.1.0 and deprecates
+    `findAllElements(namespace:)` for `namespaceUri:`. It is an alias, so the
+    PROPFIND parser matches exactly as before.
+  - The Dart 3.13 formatter reflowed 34 files.
+  - `verification-metadata.xml` swaps the 12 `io.flutter` engine pins from
+    the 3.44 engine (`4c525da`) to engine `89c39ed`. Gradle only adds pins,
+    so the old ones were removed by hand; `docs/RELEASE.md` §2a-deps now says
+    so for future SDK bumps.
+
 - **Dependencies upgraded within their existing constraints.** fl_chart
   1.3.0, flutter_secure_storage 10.3.4, path_provider 2.1.6, url_launcher
-  6.3.3, uuid 4.6.0, very_good_analysis 10.3.0, plus their transitive
-  packages. Two of those cross a major version: equatable 3.0.0 (via fl_chart)
-  and package_config 3.0.0. Regenerating `verification-metadata.xml` with
+  6.3.3, uuid 4.6.0, plus their transitive packages. Two of those cross a
+  major version: equatable 3.0.0 (via fl_chart) and package_config 3.0.0. Regenerating `verification-metadata.xml` with
   `--refresh-dependencies` added no pins. `pubspec.yaml` now pins
   `workmanager_android` to 0.9.0+2, so workmanager stays at 0.9.0+3: 0.9.0+3
   through 0.9.3 skip the Kotlin plugin on AGP 9 without checking
   `android.builtInKotlin`,
   which the Flutter template sets to `false`, so its plugin class is never
-  compiled and the APK build fails. 0.10.x checks the flag. Major bumps (flutter_secure_storage 11, workmanager 0.10, xml 7,
-  very_good_analysis 11) and the Flutter SDK move to 3.47 follow separately.
+  compiled and the APK build fails. 0.10.x checks the flag. Major bumps
+  (flutter_secure_storage 11, workmanager 0.10) follow separately.
 
 - **The `health` plugin is vendored at `third_party/health`, with a small
   patch.** Upstream's Android reader returns an empty list when a read fails,

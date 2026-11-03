@@ -7,7 +7,7 @@ typedef StatTile = ({String label, String value});
 /// per-category detail screens.
 class StatTiles extends StatelessWidget {
   /// Creates a row of [tiles].
-  const StatTiles({required this.tiles, super.key});
+  const new({required this.tiles, super.key});
 
   /// The cells to render, left-to-right.
   final List<StatTile> tiles;

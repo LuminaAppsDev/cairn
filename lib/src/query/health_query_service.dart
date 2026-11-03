@@ -43,7 +43,7 @@ abstract interface class HealthQueryService {
 final class OmhHealthQueryService implements HealthQueryService {
   /// Creates a query service. [clock] and [lookback] are injectable; [lookback]
   /// bounds how far "latest"-style queries scan before giving up.
-  OmhHealthQueryService({
+  new({
     required this.store,
     DateTime Function()? clock,
     this.lookback = const Duration(days: 90),
@@ -85,9 +85,7 @@ final class OmhHealthQueryService implements HealthQueryService {
       to: today,
     )).map(parseInterval).whereType<IntervalReading>().toList();
     if (readings.isEmpty) return null;
-    return _dedupIntervals(
-      readings,
-    ).fold<double>(0, (sum, r) => sum + r.value);
+    return _dedupIntervals(readings).fold<double>(0, (sum, r) => sum + r.value);
   }
 
   @override
@@ -276,10 +274,8 @@ final class OmhHealthQueryService implements HealthQueryService {
     return _laterIngest(r.ingestedAt, current.ingestedAt);
   }
 
-  int _rank(SourcePriorityPolicy policy, IntervalReading r) => policy.rank(
-    HealthMetric.steps,
-    _readingHealthSource(r.source),
-  );
+  int _rank(SourcePriorityPolicy policy, IntervalReading r) =>
+      policy.rank(HealthMetric.steps, _readingHealthSource(r.source));
 
   // Recording method is all the steps policy needs beyond the name; platform is
   // unused on the read path (not stored in OMH).

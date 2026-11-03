@@ -9,7 +9,7 @@ import 'package:flutter/material.dart';
 /// A donut of where the [night] went, by sleep stage, with a labelled legend.
 class StageBreakdown extends StatelessWidget {
   /// Creates a stage breakdown for [night].
-  const StageBreakdown({required this.night, super.key});
+  const new({required this.night, super.key});
 
   /// The night to break down.
   final NightSleep night;
@@ -67,7 +67,7 @@ class StageBreakdown extends StatelessWidget {
 }
 
 class _LegendRow extends StatelessWidget {
-  const _LegendRow({required this.stage, required this.duration});
+  const new({required this.stage, required this.duration});
 
   final SleepStage stage;
   final Duration duration;

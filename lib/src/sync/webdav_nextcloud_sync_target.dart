@@ -27,7 +27,7 @@ const String _propfindBody = '''
 final class WebDavNextcloudSyncTarget implements NextcloudSyncTarget {
   /// Creates a target for [credentials]. [client] and `requestTimeout` are
   /// injectable for tests.
-  WebDavNextcloudSyncTarget({
+  new({
     required NextcloudCredentials credentials,
     http.Client? client,
     this._requestTimeout = _defaultRequestTimeout,
@@ -159,14 +159,14 @@ final class WebDavNextcloudSyncTarget implements NextcloudSyncTarget {
     }
     final self = _trimSlash(Uri.decodeFull(selfPath));
     final resources = <RemoteResource>[];
-    for (final node in doc.findAllElements('response', namespace: '*')) {
+    for (final node in doc.findAllElements('response', namespaceUri: '*')) {
       final hrefRaw = _firstText(node, 'href');
       if (hrefRaw == null) continue;
       final href = Uri.parse(hrefRaw).path;
       // Skip the directory's own entry — callers want only its children.
       if (_trimSlash(Uri.decodeFull(href)) == self) continue;
       final isCollection = node
-          .findAllElements('collection', namespace: '*')
+          .findAllElements('collection', namespaceUri: '*')
           .isNotEmpty;
       final size = int.tryParse(_firstText(node, 'getcontentlength') ?? '');
       resources.add(
@@ -267,7 +267,7 @@ final class WebDavNextcloudSyncTarget implements NextcloudSyncTarget {
       path.split('/').where((s) => s.isNotEmpty).toList();
 
   static String? _firstText(XmlElement node, String localName) {
-    final matches = node.findAllElements(localName, namespace: '*');
+    final matches = node.findAllElements(localName, namespaceUri: '*');
     return matches.isEmpty ? null : matches.first.innerText.trim();
   }
 

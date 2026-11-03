@@ -7,7 +7,7 @@ import 'package:flutter/material.dart';
 /// efficiency (when determinable).
 class SleepSummaryTiles extends StatelessWidget {
   /// Creates the summary tiles for [night].
-  const SleepSummaryTiles({required this.night, super.key});
+  const new({required this.night, super.key});
 
   /// The night to summarise.
   final NightSleep night;
@@ -33,7 +33,7 @@ class SleepSummaryTiles extends StatelessWidget {
 }
 
 class _Tile extends StatelessWidget {
-  const _Tile({required this.label, required this.value});
+  const new({required this.label, required this.value});
 
   final String label;
   final String value;

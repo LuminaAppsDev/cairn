@@ -14,7 +14,7 @@ const int _heartRateDays = 14;
 /// [_heartRateDays] days plus the latest reading, window average and range.
 class HeartRatePage extends StatefulWidget {
   /// Creates the heart-rate page reading from [query].
-  const HeartRatePage({required this.query, super.key});
+  const new({required this.query, super.key});
 
   /// The query service over the local OMH cache.
   final HealthQueryService query;
@@ -101,15 +101,10 @@ class _HeartRatePageState extends State<HeartRatePage> {
           ],
         ),
         const SizedBox(height: 24),
-        Text(
-          l10n.heartRateDailyAverage,
-          style: theme.textTheme.titleMedium,
-        ),
+        Text(l10n.heartRateDailyAverage, style: theme.textTheme.titleMedium),
         const SizedBox(height: 8),
         SeriesLineChart(
-          points: [
-            for (final s in stats) (at: s.day, value: s.mean),
-          ],
+          points: [for (final s in stats) (at: s.day, value: s.mean)],
           emptyLabel: l10n.heartRateEmpty,
         ),
       ],

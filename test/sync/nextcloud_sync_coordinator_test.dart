@@ -14,11 +14,8 @@ class _FakeAuth implements NextcloudAuth {
   NextcloudCredentials? result;
 
   @override
-  Future<LoginFlowSession> begin(Uri host) async => LoginFlowSession(
-    loginUrl: host,
-    pollToken: 't',
-    pollEndpoint: host,
-  );
+  Future<LoginFlowSession> begin(Uri host) async =>
+      LoginFlowSession(loginUrl: host, pollToken: 't', pollEndpoint: host);
 
   @override
   Future<NextcloudCredentials?> poll(LoginFlowSession session) async => result;

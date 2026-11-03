@@ -17,13 +17,13 @@ const int kProfileFormatVersion = 1;
 @immutable
 class Profile {
   /// Creates a profile.
-  const Profile({this.heightCm, this.dateOfBirth});
+  const new({this.heightCm, this.dateOfBirth});
 
   /// An empty profile (nothing entered yet).
-  factory Profile.empty() => const Profile();
+  factory empty() => const Profile();
 
   /// Parses a profile map, tolerating missing/malformed fields.
-  factory Profile.fromJson(Map<String, Object?> json) {
+  factory fromJson(Map<String, Object?> json) {
     final height = json['height'];
     final heightValue = height is Map<String, Object?> ? height['value'] : null;
     final dob = json['date_of_birth'];

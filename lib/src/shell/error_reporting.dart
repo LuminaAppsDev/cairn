@@ -19,11 +19,7 @@ import 'package:flutter/foundation.dart';
 /// this lands in the debug console and in `logcat` on a release build — not in
 /// anyone's inbox. That is enough to make a bug visible to whoever is looking
 /// at the device, and it is the most an app that sends nothing anywhere can do.
-void reportIfBug(
-  Object error,
-  StackTrace stack, {
-  required String whileDoing,
-}) {
+void reportIfBug(Object error, StackTrace stack, {required String whileDoing}) {
   if (error is Exception) return;
   reportBug(error, stack, whileDoing: whileDoing);
 }
@@ -33,11 +29,7 @@ void reportIfBug(
 /// plugin failed through a fault of its own. Reach as for [reportIfBug]. Its
 /// text can quote a native message, and a plugin fault's message could quote a
 /// record value: keep this local-only if crash reporting is ever wired in.
-void reportBug(
-  Object error,
-  StackTrace stack, {
-  required String whileDoing,
-}) {
+void reportBug(Object error, StackTrace stack, {required String whileDoing}) {
   FlutterError.reportError(
     FlutterErrorDetails(
       exception: error,

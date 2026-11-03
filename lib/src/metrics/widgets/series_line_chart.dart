@@ -31,11 +31,7 @@ double _niceStep(double raw) {
 class SeriesLineChart extends StatelessWidget {
   /// Creates a line chart over [points] (assumed oldest-first). [emptyLabel] is
   /// shown when there are fewer than two points.
-  const SeriesLineChart({
-    required this.points,
-    required this.emptyLabel,
-    super.key,
-  });
+  const new({required this.points, required this.emptyLabel, super.key});
 
   /// The series to plot, oldest-first.
   final List<SeriesPoint> points;
@@ -152,8 +148,6 @@ class SeriesLineChart extends StatelessWidget {
 
   Widget _placeholder(ThemeData theme) => SizedBox(
     height: 180,
-    child: Center(
-      child: Text(emptyLabel, style: theme.textTheme.bodyMedium),
-    ),
+    child: Center(child: Text(emptyLabel, style: theme.textTheme.bodyMedium)),
   );
 }

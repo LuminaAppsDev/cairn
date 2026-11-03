@@ -11,7 +11,7 @@ import 'package:flutter/foundation.dart';
 @immutable
 sealed class HealthSample {
   /// Creates a health sample with its common provenance and time fields.
-  const HealthSample({
+  const new({
     required this.metric,
     required this.start,
     required this.end,
@@ -34,7 +34,7 @@ sealed class HealthSample {
 /// A single scalar reading: heart rate, step count, or body weight.
 final class ScalarSample extends HealthSample {
   /// Creates a scalar sample.
-  const ScalarSample({
+  const new({
     required super.metric,
     required super.start,
     required super.end,
@@ -53,7 +53,7 @@ final class ScalarSample extends HealthSample {
 /// A workout / physical-activity reading.
 final class WorkoutSample extends HealthSample {
   /// Creates a workout sample. The metric is always [HealthMetric.activity].
-  const WorkoutSample({
+  const new({
     required super.start,
     required super.end,
     required super.source,
@@ -80,7 +80,7 @@ final class WorkoutSample extends HealthSample {
 /// losslessly before any nightly aggregation (DESIGN.md §5.2).
 final class SleepSegmentSample extends HealthSample {
   /// Creates a sleep-segment sample. The metric is always [HealthMetric.sleep].
-  const SleepSegmentSample({
+  const new({
     required super.start,
     required super.end,
     required super.source,

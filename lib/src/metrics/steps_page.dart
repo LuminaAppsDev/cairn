@@ -13,7 +13,7 @@ const int _stepDays = 14;
 /// today's total and the average over days that recorded data.
 class StepsPage extends StatefulWidget {
   /// Creates the steps page reading from [query].
-  const StepsPage({required this.query, super.key});
+  const new({required this.query, super.key});
 
   /// The query service over the local OMH cache.
   final HealthQueryService query;

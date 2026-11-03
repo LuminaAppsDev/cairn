@@ -14,12 +14,7 @@ const double _leftAxisWidth = 28;
 /// and [selected] is drawn at full strength while the rest are dimmed.
 class SleepTrendChart extends StatelessWidget {
   /// Creates a trend chart from [nights] (any order; sorted internally).
-  const SleepTrendChart({
-    required this.nights,
-    this.selected,
-    this.onSelect,
-    super.key,
-  });
+  const new({required this.nights, this.selected, this.onSelect, super.key});
 
   /// The nights to plot.
   final List<NightSleep> nights;

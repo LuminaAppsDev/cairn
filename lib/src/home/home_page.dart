@@ -19,7 +19,7 @@ import 'package:flutter/material.dart';
 /// cache, plus a manual Refresh that ingests from the health store and syncs.
 class HomePage extends StatefulWidget {
   /// Creates the home page.
-  const HomePage({
+  const new({
     required this.services,
     required this.onOpenSleep,
     required this.onOpenSettings,
@@ -75,15 +75,14 @@ class _HomePageState extends State<HomePage> {
       heartRate: await query.latestScalar(HealthMetric.heartRate),
       steps: await query.todayStepTotal(),
       lastNight: await query.lastNight(),
-      workoutCount: (await query.recentWorkouts(
-        days: _recentWorkoutDays,
-      )).length,
+      workoutCount: (await query.recentWorkouts(days: _recentWorkoutDays))
+          .length,
     );
   }
 
-  void _push(Widget page) => Navigator.of(
-    context,
-  ).push<void>(MaterialPageRoute<void>(builder: (_) => page));
+  void _push(Widget page) =>
+      Navigator.of(context)
+          .push<void>(MaterialPageRoute<void>(builder: (_) => page));
 
   Future<void> _refresh() async {
     final messenger = ScaffoldMessenger.of(context);
@@ -208,7 +207,7 @@ class _HomePageState extends State<HomePage> {
 }
 
 class _Overview {
-  const _Overview({
+  const new({
     required this.weight,
     required this.heartRate,
     required this.steps,
@@ -224,7 +223,7 @@ class _Overview {
 }
 
 class _BmiCard extends StatelessWidget {
-  const _BmiCard({
+  const new({
     required this.weight,
     required this.profile,
     required this.onAddProfile,
@@ -316,7 +315,7 @@ class _BmiCard extends StatelessWidget {
 }
 
 class _SleepCard extends StatelessWidget {
-  const _SleepCard({required this.night, required this.onOpen});
+  const new({required this.night, required this.onOpen});
 
   final NightSleep? night;
   final VoidCallback onOpen;
@@ -351,7 +350,7 @@ class _SleepCard extends StatelessWidget {
 }
 
 class _StatCard extends StatelessWidget {
-  const _StatCard({
+  const new({
     required this.icon,
     required this.label,
     required this.value,
@@ -389,7 +388,7 @@ class _StatCard extends StatelessWidget {
 /// A gentle, dismissible reminder that the synced files are the only long-term
 /// copy of the user's history (DESIGN.md §10.2).
 class _BackupNudge extends StatelessWidget {
-  const _BackupNudge({required this.onDismiss});
+  const new({required this.onDismiss});
 
   final VoidCallback onDismiss;
 
@@ -425,11 +424,7 @@ class _BackupNudge extends StatelessWidget {
 }
 
 class _InfoCard extends StatelessWidget {
-  const _InfoCard({
-    required this.icon,
-    required this.title,
-    required this.body,
-  });
+  const new({required this.icon, required this.title, required this.body});
 
   final IconData icon;
   final String title;

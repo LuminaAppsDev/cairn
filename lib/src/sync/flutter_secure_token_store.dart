@@ -21,7 +21,7 @@ const String _credentialsKey = 'nextcloud_credentials';
 final class FlutterSecureTokenStore implements SecureTokenStore {
   /// Creates a store. [storage] is injectable for tests; the default uses the
   /// platform-secure backend (Keychain / Android Keystore-backed ciphers).
-  FlutterSecureTokenStore({FlutterSecureStorage? storage})
+  new({FlutterSecureStorage? storage})
     : _storage = storage ?? const FlutterSecureStorage();
 
   final FlutterSecureStorage _storage;

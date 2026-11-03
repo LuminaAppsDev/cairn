@@ -40,9 +40,8 @@ void main() {
   );
 
   test('adopts when the remote is newer than the local profile', () async {
-    await storeStampedAt(
-      DateTime(2026, 6, 2),
-    ).write(const Profile(heightCm: 80));
+    await storeStampedAt(DateTime(2026, 6, 2))
+        .write(const Profile(heightCm: 80));
     final remote = remoteBytes(
       const Profile(heightCm: 178),
       DateTime(2026, 6, 10),
@@ -55,9 +54,8 @@ void main() {
   });
 
   test('keeps the local profile when it is newer than the remote', () async {
-    await storeStampedAt(
-      DateTime(2026, 6, 17),
-    ).write(const Profile(heightCm: 80));
+    await storeStampedAt(DateTime(2026, 6, 17))
+        .write(const Profile(heightCm: 80));
     final remote = remoteBytes(
       const Profile(heightCm: 178),
       DateTime(2026, 6, 10),
@@ -73,9 +71,8 @@ void main() {
   });
 
   test('ignores a malformed remote, keeping the local profile', () async {
-    await storeStampedAt(
-      DateTime(2026, 6, 2),
-    ).write(const Profile(heightCm: 80));
+    await storeStampedAt(DateTime(2026, 6, 2))
+        .write(const Profile(heightCm: 80));
     final store = storeStampedAt(DateTime(2026, 6, 2));
     final garbage = Uint8List.fromList(utf8.encode('not json{'));
     expect(await service(store, garbage).pull(), isNull);
@@ -85,9 +82,8 @@ void main() {
   test(
     'a remote without a timestamp cannot displace a local profile',
     () async {
-      await storeStampedAt(
-        DateTime(2026, 6, 2),
-      ).write(const Profile(heightCm: 80));
+      await storeStampedAt(DateTime(2026, 6, 2))
+          .write(const Profile(heightCm: 80));
       final store = storeStampedAt(DateTime(2026, 6, 2));
       final noTimestamp = Uint8List.fromList(
         utf8.encode(

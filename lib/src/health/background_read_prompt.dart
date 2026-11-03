@@ -11,7 +11,7 @@ import 'package:path_provider/path_provider.dart';
 /// file, which its own store rewrites whole.
 final class BackgroundReadPrompt {
   /// Creates a prompt memory backed by [marker].
-  BackgroundReadPrompt({required this.marker});
+  new({required this.marker});
 
   /// Resolves the marker at `<app-support>/cairn/background_read_asked`.
   static Future<BackgroundReadPrompt> appSupport() async {

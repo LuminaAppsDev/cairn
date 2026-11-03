@@ -59,7 +59,7 @@ abstract interface class HealthGateway {
 final class HealthPackageGateway implements HealthGateway {
   /// Creates a gateway over [health] (defaults to the package singleton).
   /// [isIos] overrides platform detection for the sleep-type set.
-  HealthPackageGateway({Health? health, bool? isIos})
+  new({Health? health, bool? isIos})
     : _health = health ?? Health(),
       _isIos = isIos ?? Platform.isIOS;
 

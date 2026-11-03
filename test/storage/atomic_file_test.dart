@@ -47,9 +47,8 @@ void main() {
     File(p.join(dir.path, 'manifest.json.1700000000000000-ab12.tmp'))
       ..writeAsStringSync('x')
       ..setLastModifiedSync(old);
-    File(
-      p.join(dir.path, 'manifest.json.1700000000000001-cd34.tmp'),
-    ).writeAsStringSync('in flight');
+    File(p.join(dir.path, 'manifest.json.1700000000000001-cd34.tmp'))
+        .writeAsStringSync('in flight');
     File(p.join(dir.path, 'someone-else.tmp'))
       ..writeAsStringSync('not ours')
       ..setLastModifiedSync(old);

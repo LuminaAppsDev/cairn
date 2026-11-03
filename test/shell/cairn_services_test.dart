@@ -26,7 +26,7 @@ import 'package:path/path.dart' as p;
 
 /// A health store that fails the way a real device does.
 class _FailingRepository implements HealthRepository {
-  _FailingRepository(this.fail);
+  new(this.fail);
 
   /// Raises the failure under test. A callback rather than a stored object so
   /// the `throw` happens at the caller, carrying a real stack trace — the same
@@ -63,7 +63,7 @@ class _FailingRepository implements HealthRepository {
 
 /// Grants everything and reads nothing, except [failing], whose read fails.
 class _PartlyFailingRepository implements HealthRepository {
-  _PartlyFailingRepository(
+  new(
     this.failing, {
     this.background = ReadAccessStatus.notApplicable,
     this.grantsReads = true,
@@ -178,7 +178,7 @@ class _ConnectedTokenStore implements SecureTokenStore {
 
 /// Records what a push uploads.
 class _RecordingTarget implements NextcloudSyncTarget {
-  _RecordingTarget({this.fails = false});
+  new({this.fails = false});
 
   /// Whether every upload fails, as with the server unreachable.
   final bool fails;

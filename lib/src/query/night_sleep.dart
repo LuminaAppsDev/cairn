@@ -11,7 +11,7 @@ import 'package:flutter/foundation.dart';
 @immutable
 class NightSleep {
   /// Creates a reconciled night.
-  const NightSleep({
+  const new({
     required this.night,
     required this.start,
     required this.end,

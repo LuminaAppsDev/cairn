@@ -9,7 +9,7 @@ import 'package:flutter/widgets.dart';
 class LocaleController extends ValueNotifier<Locale?> {
   /// Creates a controller seeded with [initial], persisting through a
   /// [LocaleStore].
-  LocaleController(this._store, {required Locale? initial}) : super(initial);
+  new(this._store, {required Locale? initial}) : super(initial);
 
   final LocaleStore _store;
 

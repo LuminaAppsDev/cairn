@@ -14,7 +14,7 @@ const int _weightDays = 90;
 /// latest value and the net change across the window.
 class WeightPage extends StatefulWidget {
   /// Creates the weight page reading from [query].
-  const WeightPage({required this.query, super.key});
+  const new({required this.query, super.key});
 
   /// The query service over the local OMH cache.
   final HealthQueryService query;
@@ -80,9 +80,7 @@ class _WeightPageState extends State<WeightPage> {
         ),
         const SizedBox(height: 24),
         SeriesLineChart(
-          points: [
-            for (final r in readings) (at: r.at, value: r.value),
-          ],
+          points: [for (final r in readings) (at: r.at, value: r.value)],
           emptyLabel: l10n.weightEmpty,
         ),
       ],

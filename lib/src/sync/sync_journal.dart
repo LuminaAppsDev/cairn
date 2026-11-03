@@ -10,10 +10,10 @@ import 'package:path_provider/path_provider.dart';
 @immutable
 class RemoteFileState {
   /// Creates a recorded push state.
-  const RemoteFileState({required this.size, this.etag});
+  const new({required this.size, this.etag});
 
   /// Restores from the JSON map written by [toJson].
-  factory RemoteFileState.fromJson(Map<String, Object?> json) {
+  factory fromJson(Map<String, Object?> json) {
     final size = json['size'];
     final etag = json['etag'];
     return RemoteFileState(
@@ -45,13 +45,13 @@ class RemoteFileState {
 class SyncJournal {
   /// Creates a journal from [files] (remote path → last-pushed state) and the
   /// [syncedAt] instant this device last completed a push.
-  const SyncJournal(this.files, {this.syncedAt});
+  const new(this.files, {this.syncedAt});
 
   /// An empty journal (nothing pushed yet).
-  factory SyncJournal.empty() => const SyncJournal({});
+  factory empty() => const SyncJournal({});
 
   /// Parses a journal map, tolerating missing or malformed entries.
-  factory SyncJournal.fromJson(Map<String, Object?> json) {
+  factory fromJson(Map<String, Object?> json) {
     final files = <String, RemoteFileState>{};
     final raw = json['files'];
     if (raw is Map<String, Object?>) {
@@ -95,7 +95,7 @@ class SyncJournal {
 /// the synced cache. Writes are atomic (temp file + rename).
 final class JsonSyncJournalStore {
   /// Creates a store backed by [file].
-  JsonSyncJournalStore({required this.file});
+  new({required this.file});
 
   /// Resolves the journal at `<app-support>/cairn/sync_journal.json`.
   static Future<JsonSyncJournalStore> appSupport() async {

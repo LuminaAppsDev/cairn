@@ -11,7 +11,7 @@ import 'package:flutter/foundation.dart';
 class NextcloudCredentials {
   /// Creates a credential bundle. [server] must be an `https` URL — Basic
   /// auth is only ever sent over TLS.
-  NextcloudCredentials({
+  new({
     required this.server,
     required this.loginName,
     required this.appPassword,
@@ -31,7 +31,7 @@ class NextcloudCredentials {
   /// Throws [FormatException] if any field is missing or malformed, or if the
   /// stored server is not `https` — so callers reading storage need only
   /// catch an [Exception].
-  factory NextcloudCredentials.fromJson(Map<String, Object?> json) {
+  factory fromJson(Map<String, Object?> json) {
     final server = json['server'];
     final loginName = json['login_name'];
     final appPassword = json['app_password'];

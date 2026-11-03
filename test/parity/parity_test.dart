@@ -58,21 +58,17 @@ void main() {
 
   for (final caseDir in _caseDirs(fixtures)) {
     final slug = p.basename(caseDir.path);
-    final spec =
-        jsonDecode(File(p.join(caseDir.path, 'spec.json')).readAsStringSync())
-            as Map<String, Object?>;
-    final expected =
-        jsonDecode(
-              File(p.join(caseDir.path, 'expected.json')).readAsStringSync(),
-            )
-            as Map<String, Object?>;
+    final spec = jsonDecode(
+      File(p.join(caseDir.path, 'spec.json')).readAsStringSync(),
+    ) as Map<String, Object?>;
+    final expected = jsonDecode(
+      File(p.join(caseDir.path, 'expected.json')).readAsStringSync(),
+    ) as Map<String, Object?>;
 
     test('$slug matches the shared golden', () async {
       final now = DateTime.parse(spec['now']! as String);
       final service = OmhHealthQueryService(
-        store: JsonlOmhFileStore(
-          root: Directory(p.join(caseDir.path, 'tree')),
-        ),
+        store: JsonlOmhFileStore(root: Directory(p.join(caseDir.path, 'tree'))),
         clock: () => now,
       );
 
@@ -82,11 +78,7 @@ void main() {
         actual[query['id']! as String] = await _run(service, query);
       }
 
-      expect(
-        actual,
-        expected,
-        reason: '$slug: ${spec['description'] ?? ''}',
-      );
+      expect(actual, expected, reason: '$slug: ${spec['description'] ?? ''}');
     });
   }
 }
@@ -114,7 +106,7 @@ Future<Object?> _run(
   final name = query['name']! as String;
   switch (name) {
     case 'todayStepTotal':
-      return service.todayStepTotal();
+      return await service.todayStepTotal();
     case 'dailySteps':
       final series = await service.dailySteps(days: query['days']! as int);
       return [

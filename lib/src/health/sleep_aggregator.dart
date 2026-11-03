@@ -10,7 +10,7 @@ import 'package:flutter/foundation.dart';
 @immutable
 class SleepEpisode {
   /// Creates a sleep episode.
-  const SleepEpisode({
+  const new({
     required this.start,
     required this.end,
     required this.source,
@@ -47,9 +47,7 @@ class SleepEpisode {
 class SleepEpisodeAggregator {
   /// Creates an aggregator. [gapTolerance] is the longest gap between
   /// consecutive segments that still counts as the same episode.
-  const SleepEpisodeAggregator({
-    this.gapTolerance = const Duration(minutes: 60),
-  });
+  const new({this.gapTolerance = const Duration(minutes: 60)});
 
   /// Maximum gap between consecutive segments within one episode; larger gaps
   /// start a new episode (e.g. a daytime nap).
@@ -246,7 +244,7 @@ class SleepEpisodeAggregator {
 /// Internal per-group aggregates, before the main-sleep flag is assigned.
 @immutable
 class _EpisodeStats {
-  const _EpisodeStats({
+  const new({
     required this.start,
     required this.end,
     required this.source,

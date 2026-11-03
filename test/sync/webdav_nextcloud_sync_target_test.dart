@@ -126,9 +126,7 @@ void main() {
   test('getFile returns bytes on 200', () async {
     final target = WebDavNextcloudSyncTarget(
       credentials: credentials,
-      client: MockClient(
-        (_) async => http.Response.bytes([7, 8, 9], 200),
-      ),
+      client: MockClient((_) async => http.Response.bytes([7, 8, 9], 200)),
     );
     expect(await target.getFile('Cairn/manifest.json'), [7, 8, 9]);
   });
@@ -165,10 +163,8 @@ void main() {
       credentials: credentials,
       requestTimeout: const Duration(milliseconds: 50),
       client: MockClient.streaming(
-        (request, body) async => http.StreamedResponse(
-          StreamController<List<int>>().stream,
-          status,
-        ),
+        (request, body) async =>
+            http.StreamedResponse(StreamController<List<int>>().stream, status),
       ),
     );
 

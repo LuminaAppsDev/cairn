@@ -22,7 +22,7 @@ enum BmiCategory {
 @immutable
 class Bmi {
   /// Creates a BMI from a raw [value].
-  Bmi(this.value) : category = categorize(value);
+  new(this.value) : category = categorize(value);
 
   /// The BMI value (kg/m²).
   final double value;

@@ -6,11 +6,7 @@ import 'package:flutter/foundation.dart';
 @immutable
 class ReadingSource {
   /// Creates a reading source.
-  const ReadingSource({
-    required this.name,
-    required this.modality,
-    this.creationTime,
-  });
+  const new({required this.name, required this.modality, this.creationTime});
 
   /// The source app/device name (e.g. `com.fitbit.FitbitMobile`).
   final String name;
@@ -26,7 +22,7 @@ class ReadingSource {
 @immutable
 class ScalarReading {
   /// Creates a scalar reading.
-  const ScalarReading({
+  const new({
     required this.value,
     required this.unit,
     required this.at,
@@ -60,7 +56,7 @@ class ScalarReading {
 @immutable
 class IntervalReading {
   /// Creates an interval reading.
-  const IntervalReading({
+  const new({
     required this.value,
     required this.unit,
     required this.start,
@@ -96,7 +92,7 @@ class IntervalReading {
 @immutable
 class WorkoutReading {
   /// Creates a workout reading.
-  const WorkoutReading({
+  const new({
     required this.activityName,
     required this.start,
     required this.end,
@@ -135,7 +131,7 @@ class WorkoutReading {
 @immutable
 class SleepStageReading {
   /// Creates a sleep-stage reading.
-  const SleepStageReading({
+  const new({
     required this.stage,
     required this.start,
     required this.end,
@@ -162,7 +158,7 @@ class SleepStageReading {
 @immutable
 class SleepEpisodeReading {
   /// Creates a sleep-episode reading.
-  const SleepEpisodeReading({
+  const new({
     required this.start,
     required this.end,
     required this.totalSleep,

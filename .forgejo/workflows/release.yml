@@ -74,12 +74,12 @@ env:
   # Flutter SDK version — the single source of truth; the F-Droid recipe greps
   # this literal out of the file. Keep it a plain quoted number on one line:
   # the recipe's sed fails the build if this line's shape changes.
-  FLUTTER_VERSION: '3.44.0'
+  FLUTTER_VERSION: '3.47.9'
   # The exact upstream commit FLUTTER_VERSION must resolve to. Tags are mutable;
   # this build decodes the keystore before invoking the toolchain, so a silently
   # moved tag would run unreviewed code with the signing key readable on disk.
   # Verified after clone; bump both lines together.
-  FLUTTER_COMMIT: '559ffa3f75e7402d65a8def9c28389a9b2e6fe42'
+  FLUTTER_COMMIT: 'c197ca5199e9ee5661e865596c9c07294dfab51c'
   # Absolute path every Flutter/Gradle step compiles from. MUST stay identical
   # to the path the fdroiddata recipe moves its checkout onto, or F-Droid's
   # reproducible-build verification fails. See the header comment.

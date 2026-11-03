@@ -6,7 +6,7 @@ import 'package:health/health.dart';
 
 /// Records which types the gateway asks the plugin about.
 class _RecordingHealth extends Fake implements Health {
-  _RecordingHealth({
+  new({
     this.backgroundAvailable = true,
     this.backgroundGranted,
     this.historyAvailable = true,
@@ -215,10 +215,7 @@ void main() {
       final health = _RecordingHealth();
       final gateway = HealthPackageGateway(health: health, isIos: true);
 
-      expect(
-        await gateway.historyReadStatus(),
-        ReadAccessStatus.notApplicable,
-      );
+      expect(await gateway.historyReadStatus(), ReadAccessStatus.notApplicable);
       expect(await sheetsForReadRequest(health, isIos: true), ['reads']);
     });
   });

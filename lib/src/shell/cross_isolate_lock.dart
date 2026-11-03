@@ -29,7 +29,7 @@ import 'dart:ui' show IsolateNameServer;
 final class CrossIsolateLock {
   /// Creates a lock identified by [name]; every isolate using the same name
   /// shares it.
-  CrossIsolateLock(
+  new(
     this.name, {
     this.pollInterval = const Duration(milliseconds: 250),
     this.staleAfter = const Duration(seconds: 10),
@@ -62,7 +62,7 @@ final class CrossIsolateLock {
   /// still holding after [maxWait]. Releases the lock however [action] ends.
   Future<T> run<T>(Future<T> Function() action) async {
     await _acquire();
-    return _holding(action);
+    return await _holding(action);
   }
 
   /// Runs [action] only if the lock is free, or held by an isolate that has
@@ -75,7 +75,7 @@ final class CrossIsolateLock {
       _takeOver(holder);
       if (!_register()) return null; // another party got there first
     }
-    return _holding(action);
+    return await _holding(action);
   }
 
   Future<T> _holding<T>(Future<T> Function() action) async {

@@ -43,7 +43,7 @@ isolation (DESIGN.md §13). Implementations are added per development phase
 
 | Tool | Version | Notes |
 |---|---|---|
-| Flutter SDK | **3.44.0** (stable) | Pins Dart **3.12.0**. Pin the SDK for the team — `fvm` recommended (see §3.1). |
+| Flutter SDK | **3.47.9** (stable) | Pins Dart **3.13.7**. Pin the SDK for the team — `fvm` recommended (see §3.1). |
 | Git | any recent | — |
 | A Nextcloud instance | 28+ | Your own; for full end-to-end sync testing (§3.6). |
 
@@ -62,12 +62,12 @@ Pin the version so everyone builds with the same toolchain. Recommended via
 
 ```bash
 dart pub global activate fvm
-fvm install 3.44.0
-fvm use 3.44.0          # writes .fvmrc; prefix commands with `fvm flutter ...`
+fvm install 3.47.9
+fvm use 3.47.9          # writes .fvmrc; prefix commands with `fvm flutter ...`
 ```
 
 (If you use a system-wide Flutter instead, just ensure `flutter --version`
-reports 3.44.0.)
+reports 3.47.9.)
 
 ### 3.2 Get the project and verify the toolchain
 

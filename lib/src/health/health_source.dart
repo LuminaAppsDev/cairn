@@ -140,7 +140,7 @@ enum SleepStage {
 @immutable
 class HealthSource {
   /// Creates a health-data source descriptor.
-  const HealthSource({
+  const new({
     required this.name,
     required this.platform,
     required this.recordingMethod,

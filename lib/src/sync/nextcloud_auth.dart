@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart';
 @immutable
 class LoginFlowSession {
   /// Creates a login-flow session.
-  const LoginFlowSession({
+  const new({
     required this.loginUrl,
     required this.pollToken,
     required this.pollEndpoint,

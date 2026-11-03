@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart';
 @immutable
 class DailyValue {
   /// Creates a daily value.
-  const DailyValue({required this.day, required this.value});
+  const new({required this.day, required this.value});
 
   /// The local calendar day this value covers (date-only).
   final DateTime day;
@@ -19,7 +19,7 @@ class DailyValue {
 @immutable
 class DailyStat {
   /// Creates a daily statistic.
-  const DailyStat({
+  const new({
     required this.day,
     required this.min,
     required this.mean,

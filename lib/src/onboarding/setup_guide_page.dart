@@ -7,7 +7,7 @@ import 'package:flutter/material.dart';
 /// selected automatically.
 class SetupGuidePage extends StatelessWidget {
   /// Creates the setup-guide page.
-  const SetupGuidePage({super.key});
+  const new({super.key});
 
   @override
   Widget build(BuildContext context) {

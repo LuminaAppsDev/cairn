@@ -18,7 +18,7 @@ import 'package:path_provider/path_provider.dart';
 final class JsonlOmhFileStore implements OmhFileStore {
   /// Creates a store rooted at [root] (the `/Cairn` directory). [clock] is
   /// injectable for deterministic tests.
-  JsonlOmhFileStore({required this.root, DateTime Function()? clock})
+  new({required this.root, DateTime Function()? clock})
     : _now = clock ?? DateTime.now;
 
   /// Resolves the store under the app documents directory (`…/Cairn`).
@@ -121,7 +121,7 @@ final class JsonlOmhFileStore implements OmhFileStore {
     final content = buffer.toString();
     if (content.trim().isEmpty) return [];
     if (content.length >= _isolateParseThresholdChars) {
-      return compute(_parseJsonl, content);
+      return await compute(_parseJsonl, content);
     }
     return _parseJsonl(content);
   }
@@ -195,9 +195,8 @@ final class JsonlOmhFileStore implements OmhFileStore {
 
   Future<void> _writeManifest(Manifest manifest) async {
     await root.create(recursive: true);
-    final json = const JsonEncoder.withIndent(
-      '  ',
-    ).convert(manifest.toJson(updatedAt: _now()));
+    final json = const JsonEncoder.withIndent('  ')
+        .convert(manifest.toJson(updatedAt: _now()));
     await writeFileAtomically(_manifestFile, json);
   }
 

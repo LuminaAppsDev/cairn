@@ -11,7 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// Records read windows and returns canned samples per metric.
 class _FakeRepository implements HealthRepository {
-  _FakeRepository(this.samples, {this.failAtRead, this.failure});
+  new(this.samples, {this.failAtRead, this.failure});
 
   final Map<HealthMetric, List<HealthSample>> samples;
   final List<({HealthMetric metric, DateTime start, DateTime end})> reads = [];

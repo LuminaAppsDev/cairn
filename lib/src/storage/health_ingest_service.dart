@@ -15,7 +15,7 @@ import 'package:flutter/foundation.dart';
 @immutable
 class IngestResult {
   /// Creates an ingest result.
-  const IngestResult({
+  const new({
     required this.metric,
     required this.dataPointCount,
     this.error,
@@ -71,7 +71,7 @@ class IngestResult {
 final class HealthIngestService {
   /// Creates an ingest service. [mapper], [aggregator], [clock],
   /// [initialLookback] and [reconcileLookback] are injectable for tests.
-  HealthIngestService({
+  new({
     required this.repository,
     required this.store,
     OmhMapper? mapper,

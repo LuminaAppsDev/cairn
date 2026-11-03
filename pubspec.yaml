@@ -7,7 +7,7 @@ publish_to: "none"
 version: 0.3.0+9
 
 environment:
-  sdk: ^3.12.0
+  sdk: ^3.13.0
 
 # Kept alphabetical to satisfy the `sort_pub_dependencies` lint.
 dependencies:
@@ -50,7 +50,7 @@ dependencies:
   # the plugin class never compiles and the APK build fails. 0.10.x checks it.
   workmanager_android: 0.9.0+2
   # Parses the WebDAV PROPFIND multistatus XML response (MIT).
-  xml: ^6.5.0
+  xml: ^7.1.0
 
 dev_dependencies:
   # Generates the Android/iOS launcher icons from assets/icon/ (see
@@ -66,7 +66,7 @@ dev_dependencies:
   # MockPlatformInterfaceMixin for the path_provider fake (BSD-3-Clause).
   plugin_platform_interface: ^2.1.8
   # Strict lint set; configured in analysis_options.yaml (MIT).
-  very_good_analysis: ^10.2.0
+  very_good_analysis: ^11.0.0
 
 flutter:
   uses-material-design: true

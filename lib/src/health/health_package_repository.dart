@@ -18,7 +18,7 @@ import 'package:flutter/services.dart';
 final class HealthPackageRepository implements HealthRepository {
   /// Creates a repository. [gateway] and [deduplicator] are injectable; the
   /// gateway defaults to the real `health`-package implementation.
-  HealthPackageRepository({
+  new({
     HealthGateway? gateway,
     SourcePriorityDeduplicator deduplicator =
         const SourcePriorityDeduplicator(),
@@ -128,7 +128,7 @@ final class HealthPackageRepository implements HealthRepository {
   Future<ReadAccessStatus> backgroundReadStatus() async {
     await _requireAvailable();
     await _ensureConfigured();
-    return _gateway.backgroundReadStatus();
+    return await _gateway.backgroundReadStatus();
   }
 
   @override
@@ -136,14 +136,14 @@ final class HealthPackageRepository implements HealthRepository {
     await _requireAvailable();
     await _ensureConfigured();
     await _oneSheetAtATime(_gateway.requestBackgroundRead);
-    return _gateway.backgroundReadStatus();
+    return await _gateway.backgroundReadStatus();
   }
 
   @override
   Future<ReadAccessStatus> historyReadStatus() async {
     await _requireAvailable();
     await _ensureConfigured();
-    return _gateway.historyReadStatus();
+    return await _gateway.historyReadStatus();
   }
 
   @override
@@ -151,7 +151,7 @@ final class HealthPackageRepository implements HealthRepository {
     await _requireAvailable();
     await _ensureConfigured();
     await _oneSheetAtATime(_gateway.requestHistoryRead);
-    return _gateway.historyReadStatus();
+    return await _gateway.historyReadStatus();
   }
 
   // The plugin keeps a single pending result for any permission sheet: a

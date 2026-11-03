@@ -94,9 +94,7 @@ void main() {
 
   test('a session-only sleep totals the session duration', () {
     final t = DateTime(2026, 6, 13, 23);
-    final episodes = aggregator.aggregate([
-      seg(SleepStage.session, t, 450),
-    ]);
+    final episodes = aggregator.aggregate([seg(SleepStage.session, t, 450)]);
     expect(episodes.single.totalSleep, const Duration(minutes: 450));
     expect(episodes.single.isMainSleep, isTrue);
   });

@@ -14,7 +14,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// In-memory query so the widget test has no real file I/O (which can't
 /// complete under the widget tester's fake-async).
 class _FakeQuery implements HealthQueryService {
-  _FakeQuery(this.nights);
+  new(this.nights);
 
   List<NightSleep> nights;
 
@@ -239,13 +239,7 @@ void main() {
     final query = _FakeQuery([]);
     final revision = ValueNotifier<int>(0);
     await tester.pumpWidget(
-      wrap(
-        SleepPage(
-          query: query,
-          revision: revision,
-          onRefresh: () async {},
-        ),
-      ),
+      wrap(SleepPage(query: query, revision: revision, onRefresh: () async {})),
     );
     await tester.pumpAndSettle();
     expect(find.text('No sleep data yet'), findsOneWidget);

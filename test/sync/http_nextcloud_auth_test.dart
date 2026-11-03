@@ -172,9 +172,6 @@ void main() {
     final auth = HttpNextcloudAuth(
       client: MockClient((_) async => http.Response('', 500)),
     );
-    expect(
-      () => auth.poll(session()),
-      throwsA(isA<NextcloudSyncException>()),
-    );
+    expect(() => auth.poll(session()), throwsA(isA<NextcloudSyncException>()));
   });
 }

@@ -13,7 +13,7 @@ import 'package:path_provider/path_provider.dart';
 /// Writes are atomic (temp file + rename).
 final class LocaleStore {
   /// Creates a store backed by [file].
-  LocaleStore({required this.file});
+  new({required this.file});
 
   /// Resolves the prefs file at `<app-support>/cairn/preferences.json`.
   static Future<LocaleStore> appSupport() async {
@@ -46,9 +46,8 @@ final class LocaleStore {
   /// Writes [languageCode] atomically; `null` clears it (follow the system).
   Future<void> write(String? languageCode) async {
     await file.parent.create(recursive: true);
-    final json = const JsonEncoder.withIndent('  ').convert(<String, Object?>{
-      'locale': ?languageCode,
-    });
+    final json = const JsonEncoder.withIndent('  ')
+        .convert(<String, Object?>{'locale': ?languageCode});
     await writeFileAtomically(file, json);
   }
 }

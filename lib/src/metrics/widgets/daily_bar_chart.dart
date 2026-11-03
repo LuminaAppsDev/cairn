@@ -8,7 +8,7 @@ import 'package:flutter/material.dart';
 /// localized weekday labels and a compact "k" thousands axis.
 class DailyBarChart extends StatelessWidget {
   /// Creates a bar chart over [data] (oldest-first).
-  const DailyBarChart({required this.data, super.key});
+  const new({required this.data, super.key});
 
   /// The daily values to plot, oldest-first.
   final List<DailyValue> data;

@@ -13,7 +13,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// In-memory [HealthGateway] for testing the repository's orchestration without
 /// the platform plugin.
 class _FakeGateway implements HealthGateway {
-  _FakeGateway({
+  new({
     this.permissions = const {},
     this.samples = const {},
     this.failRead = const {},
@@ -383,20 +383,14 @@ void main() {
       final gateway = _FakeGateway()..background = ReadAccessStatus.unavailable;
       final repo = HealthPackageRepository(gateway: gateway);
 
-      expect(
-        await repo.backgroundReadStatus(),
-        ReadAccessStatus.unavailable,
-      );
+      expect(await repo.backgroundReadStatus(), ReadAccessStatus.unavailable);
       expect(gateway.configureCalls, 1);
     });
 
     test('a request returns the status it left behind', () async {
       final repo = HealthPackageRepository(gateway: _FakeGateway());
 
-      expect(
-        await repo.requestBackgroundRead(),
-        ReadAccessStatus.granted,
-      );
+      expect(await repo.requestBackgroundRead(), ReadAccessStatus.granted);
     });
 
     test('without a health store, fail with the typed exception', () {

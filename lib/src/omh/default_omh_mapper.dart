@@ -17,7 +17,7 @@ import 'package:uuid/uuid.dart';
 final class DefaultOmhMapper implements OmhMapper {
   /// Creates a mapper. [uuid] and [clock] are injectable for deterministic
   /// tests; they default to a real v4 generator and [DateTime.now].
-  DefaultOmhMapper({Uuid? uuid, DateTime Function()? clock})
+  new({Uuid? uuid, DateTime Function()? clock})
     : _uuid = uuid ?? const Uuid(),
       _clock = clock ?? DateTime.now;
 

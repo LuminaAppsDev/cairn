@@ -12,7 +12,7 @@ const int _activityDays = 30;
 /// days, newest first, each with duration / distance / energy where reported.
 class ActivityPage extends StatefulWidget {
   /// Creates the activity page reading from [query].
-  const ActivityPage({required this.query, super.key});
+  const new({required this.query, super.key});
 
   /// The query service over the local OMH cache.
   final HealthQueryService query;
@@ -71,7 +71,7 @@ class _ActivityPageState extends State<ActivityPage> {
 }
 
 class _WorkoutTile extends StatelessWidget {
-  const _WorkoutTile({required this.workout});
+  const new({required this.workout});
 
   final WorkoutReading workout;
 

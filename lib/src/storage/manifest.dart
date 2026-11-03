@@ -12,19 +12,19 @@ const int kFormatVersion = 1;
 @immutable
 class Manifest {
   /// Creates a manifest.
-  const Manifest({
+  const new({
     required this.formatVersion,
     required this.syncAnchors,
     this.devices = const [],
   });
 
   /// An empty manifest for a brand-new cache.
-  factory Manifest.empty() =>
+  factory empty() =>
       const Manifest(formatVersion: kFormatVersion, syncAnchors: {});
 
   /// Parses a manifest map, tolerating missing, malformed, or unknown keys
   /// (e.g. anchors written by a newer format version).
-  factory Manifest.fromJson(Map<String, Object?> json) {
+  factory fromJson(Map<String, Object?> json) {
     final anchors = <HealthMetric, DateTime>{};
     final rawAnchors = json['sync_anchors'];
     if (rawAnchors is Map<String, Object?>) {

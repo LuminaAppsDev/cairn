@@ -24,7 +24,7 @@ const int kMaxProfileBytes = 64 * 1024;
 final class ProfileSyncService {
   /// Creates a profile-pull service over [store], fetching bytes via
   /// [download].
-  ProfileSyncService({required this.store, required this.download});
+  new({required this.store, required this.download});
 
   /// The local profile store to reconcile into.
   final JsonProfileStore store;

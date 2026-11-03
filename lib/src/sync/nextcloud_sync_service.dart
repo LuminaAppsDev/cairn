@@ -17,7 +17,7 @@ const int _maxScanDepth = 8;
 @immutable
 class SyncReport {
   /// Creates a sync report.
-  const SyncReport({
+  const new({
     required this.pushed,
     required this.skipped,
     required this.conflicts,
@@ -55,7 +55,7 @@ final class NextcloudSyncService {
   /// Creates a sync service. [localRoot] is the local `/Cairn` directory (e.g.
   /// `JsonlOmhFileStore.root`); [remoteRoot] is its path under the account's
   /// WebDAV root.
-  NextcloudSyncService({
+  new({
     required this.target,
     required this.localRoot,
     required this.journalStore,

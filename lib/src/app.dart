@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 /// Root widget for the Cairn application.
 class CairnApp extends StatefulWidget {
   /// Creates the root Cairn application widget driven by [localeController].
-  const CairnApp({required this.localeController, super.key});
+  const new({required this.localeController, super.key});
 
   /// The app-wide locale source; the [MaterialApp] rebuilds when it changes.
   /// Owned here and disposed with the app.

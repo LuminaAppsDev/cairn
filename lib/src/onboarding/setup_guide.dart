@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart';
 @immutable
 class GuideStep {
   /// Creates a guide step.
-  const GuideStep({required this.title, required this.body});
+  const new({required this.title, required this.body});
 
   /// Short step heading.
   final String title;
@@ -20,7 +20,7 @@ class GuideStep {
 @immutable
 class SetupGuide {
   /// Creates a setup guide.
-  const SetupGuide({
+  const new({
     required this.platformLabel,
     required this.intro,
     required this.steps,

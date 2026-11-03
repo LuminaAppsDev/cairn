@@ -18,7 +18,7 @@ const Duration _pollInterval = Duration(seconds: 2);
 /// issued. Pops `true` once connected.
 class ConnectNextcloudPage extends StatefulWidget {
   /// Creates the connect screen driven by [coordinator].
-  const ConnectNextcloudPage({required this.coordinator, super.key});
+  const new({required this.coordinator, super.key});
 
   /// Drives the begin/poll/store steps.
   final NextcloudSyncCoordinator coordinator;

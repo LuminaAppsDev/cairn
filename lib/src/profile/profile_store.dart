@@ -13,7 +13,7 @@ import 'package:path/path.dart' as p;
 final class JsonProfileStore {
   /// Creates a store under [root] (the `/Cairn` directory — e.g.
   /// `JsonlOmhFileStore.root`). [clock] is injectable for deterministic tests.
-  JsonProfileStore({required this.root, DateTime Function()? clock})
+  new({required this.root, DateTime Function()? clock})
     : _now = clock ?? DateTime.now;
 
   /// The `/Cairn` directory the profile is stored under.
@@ -60,9 +60,8 @@ final class JsonProfileStore {
   /// Writes [profile] atomically (temp file + rename).
   Future<void> write(Profile profile) async {
     await root.create(recursive: true);
-    final json = const JsonEncoder.withIndent(
-      '  ',
-    ).convert(profile.toJson(updatedAt: _now()));
+    final json = const JsonEncoder.withIndent('  ')
+        .convert(profile.toJson(updatedAt: _now()));
     await writeFileAtomically(_file, json);
   }
 

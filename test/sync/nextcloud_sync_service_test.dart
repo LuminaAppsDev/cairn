@@ -183,10 +183,7 @@ void main() {
     writeFile('steps/2026/2026-06-14.jsonl', '{"a":1}\n');
     target.failPut = true;
 
-    await expectLater(
-      service().push(),
-      throwsA(isA<NextcloudSyncException>()),
-    );
+    await expectLater(service().push(), throwsA(isA<NextcloudSyncException>()));
 
     final journal = await journalStore.read();
     expect(journal.files, isEmpty);

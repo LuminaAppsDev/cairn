@@ -10,12 +10,12 @@ import 'package:cairn/src/health/health_source.dart';
 /// first); a sample whose source matches an earlier fragment wins.
 class SourcePriorityPolicy {
   /// Creates a policy from a metric → ordered source-fragment map.
-  const SourcePriorityPolicy(this.preferredSources);
+  const new(this.preferredSources);
 
   /// Sensible defaults: prefer wearables for sensed metrics. Weight has no
   /// source preference (you typically weigh once), so it falls back to the
   /// recording-method tie-break.
-  const SourcePriorityPolicy.defaults()
+  const new defaults()
     : preferredSources = const {
         HealthMetric.heartRate: _wearables,
         HealthMetric.steps: _wearables,
@@ -54,9 +54,7 @@ class SourcePriorityPolicy {
 /// readings preferred over manual ones on a tie.
 class SourcePriorityDeduplicator {
   /// Creates a deduplicator with the given [policy].
-  const SourcePriorityDeduplicator({
-    this.policy = const SourcePriorityPolicy.defaults(),
-  });
+  const new({this.policy = const SourcePriorityPolicy.defaults()});
 
   /// The source-priority policy applied on collisions.
   final SourcePriorityPolicy policy;

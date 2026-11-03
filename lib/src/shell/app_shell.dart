@@ -14,7 +14,7 @@ import 'package:flutter/material.dart';
 class AppShell extends StatefulWidget {
   /// Creates the app shell driven by [localeController] (passed to Settings so
   /// the user can change the app language).
-  const AppShell({required this.localeController, super.key});
+  const new({required this.localeController, super.key});
 
   /// The app-wide locale source, surfaced in the Settings language picker.
   final LocaleController localeController;
