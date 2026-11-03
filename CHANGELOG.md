@@ -58,6 +58,11 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- **cupertino_icons 2.0.0, up from 1.0.9.** The release only raises the SDK
+  floor to Dart 3.12 and moves the package's own tests to `cupertino_ui`. The
+  icon font is byte-identical, and the package still ships no Dart code, so
+  the app is unchanged.
+
 - **The analyzer skips `build/`, `android/` and `ios/`.** They hold build
   output and the native projects, and no Dart today; Cairn's Dart lives in
   `lib/` and `test/`. Dart placed under these paths later skips the lints.

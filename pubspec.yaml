@@ -11,7 +11,7 @@ environment:
 
 # Kept alphabetical to satisfy the `sort_pub_dependencies` lint.
 dependencies:
-  cupertino_icons: ^1.0.8
+  cupertino_icons: ^2.0.0
   # Charts for the dashboard (hypnogram, sleep trend, stage breakdown) (MIT).
   fl_chart: ^1.0.0
   flutter:
