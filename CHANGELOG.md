@@ -58,6 +58,29 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- **workmanager 0.10.10, up from 0.9.0+3** (workmanager_android 0.10.9,
+  workmanager_apple 0.9.11). 0.10.x checks `android.builtInKotlin` before
+  skipping the Kotlin plugin, so the `workmanager_android` pin is gone. Its
+  only breaking change is a Flutter 3.38 floor. Of the Android 16 fixes in
+  0.10.8–0.10.10, 0.10.10's applies to Cairn's periodic sync: tasks no longer
+  fail ~30 s after start when the Dart isolate boots slowly (the other two
+  fix expedited and one-off work, which Cairn doesn't use). `work-runtime`
+  moves to 2.11.2 (Room 2.7.0, SQLite 2.5.0), which also drops its
+  `SystemAlarmService` and constraint-proxy receivers from the merged
+  manifest. The superseded `work-runtime`, Room and SQLite pins were removed;
+  `room-ktx` 2.6.1 stays, because nothing replaces it and
+  `check_dependency_verification.py` refuses a pin removed without a
+  successor.
+
+  workmanager_android now always declares `FOREGROUND_SERVICE_SHORT_SERVICE`
+  and tags WorkManager's foreground service as `shortService`, for expedited
+  work. Cairn schedules only periodic work, which can't be expedited, so the
+  app manifest removes both again and the merged manifest matches 0.9.x. On iOS, `AppDelegate`
+  moves from the deprecated `registerPeriodicTask(withIdentifier:frequency:)`
+  to `earliestBeginInSeconds:`, which the old name only forwarded to. The
+  plugin's new auto-registration of launch handlers is guarded per
+  identifier, so `AppDelegate`'s registration isn't doubled.
+
 - **flutter_secure_storage 11.2.0, up from 10.3.4** (darwin 0.4.3). v11
   drops the ciphers and the EncryptedSharedPreferences backend deprecated in
   v10, and data still stored with them becomes unreadable. Cairn's stored app

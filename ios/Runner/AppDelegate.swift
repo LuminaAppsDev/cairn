@@ -18,7 +18,7 @@ import workmanager_apple
     // BGTaskSchedulerPermittedIdentifiers; the OS decides actual timing.
     WorkmanagerPlugin.registerPeriodicTask(
       withIdentifier: "com.luminaapps.cairn.sync",
-      frequency: NSNumber(value: 6 * 60 * 60)
+      earliestBeginInSeconds: NSNumber(value: 6 * 60 * 60)
     )
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }

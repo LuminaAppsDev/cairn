@@ -1,4 +1,5 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <!-- Health Connect: READ-only access to the metrics Cairn maps. Cairn
          never writes to the health store (DESIGN.md §2, §4.1, §5.2). -->
     <uses-permission android:name="android.permission.health.READ_HEART_RATE"/>
@@ -23,6 +24,14 @@
     <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_HISTORY"/>
     <!-- WebDAV sync to the user's Nextcloud + Login Flow v2 (DESIGN.md §6). -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- workmanager_android always declares this for expedited work, which runs
+         as a short foreground service. Cairn schedules only periodic work, which
+         can't be expedited, so the permission would never be used. Expedited
+         work or a foregroundServiceConfig would need this and the service
+         override below reverted. -->
+    <uses-permission
+        android:name="android.permission.FOREGROUND_SERVICE_SHORT_SERVICE"
+        tools:node="remove"/>
 
     <application
         android:label="Cairn"
@@ -77,6 +86,13 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- Pairs with the FOREGROUND_SERVICE_SHORT_SERVICE removal above:
+             workmanager_android also tags WorkManager's foreground service as
+             shortService. Without the permission the type is dead, so drop it
+             and keep the service as WorkManager itself declares it. -->
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            tools:remove="android:foregroundServiceType"/>
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and
