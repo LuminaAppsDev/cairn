@@ -4,9 +4,11 @@ Cairn ships a patched copy of the [`health`](https://pub.dev/packages/health)
 Flutter plugin (MIT, see `LICENSE`), used through a path dependency in the root
 `pubspec.yaml`.
 
-- **Upstream version:** 13.3.1, the pub.dev archive with sha256
-  `2d9e119f3a1d281139f93149b41032b9f80b759960875bc784c5a25dd3c17524`. That is
-  the hash the lockfile pinned before vendoring.
+- **Upstream version:** 13.3.2, the pub.dev archive with sha256
+  `8dd9625c9c26379a5753ad24c33af1d3dc5ce1f36f19c03e17c676c2f8fdbb80`, as
+  pub.dev's API lists it. (First vendored at 13.3.1, sha256
+  `2d9e119f3a1d281139f93149b41032b9f80b759960875bc784c5a25dd3c17524`, the hash
+  the lockfile pinned before vendoring.)
 - **Copied:** `lib/`, `android/`, `ios/`, `LICENSE`, `pubspec.yaml`,
   `README.md`, `CHANGELOG.md` and `analysis_options.yaml`.
 - **Left out:** `example/`, `test/` and `tools/`. Nothing here builds them.
@@ -73,8 +75,8 @@ minSdk is 34.
 With this patch the failure arrives in Dart as a `PlatformException`.
 `HealthPackageRepository` turns it into a `HealthReadException`, and the anchor
 stays where it was. The workout handler has no `catch` of its own, so this one
-hunk covers every exception on every type Cairn reads. Upstream 13.3.2 doesn't
-change this path, so the patch is worth offering upstream.
+hunk covers every exception on every type Cairn reads. Upstream hasn't changed
+this path as of 13.3.2, so the patch is worth offering upstream.
 
 ### 2. Report a missing read permission instead of returning an empty list
 
@@ -146,6 +148,12 @@ them would widen the diff against upstream.
   error), the outer `catch` would reply a second time. Upstream had the same
   shape with `success`. The effect is a logged "reply already submitted", not a
   crash.
+- **13.3.2's write-and-return-UUID APIs are rough.** iOS `writeDataUUID`
+  replies twice on success. The Dart wrappers interpolate the reply, so they
+  return `""` or `"null"` rather than `null` on failure, and
+  `writeWorkoutDataUUID` skips the start ≤ end check. Android logs a workout
+  "success" for plain records and after an empty insert. Cairn never writes to
+  the health store, so none of this is reachable; worth reporting upstream.
 
 ## Upgrading
 
@@ -154,7 +162,9 @@ them would widen the diff against upstream.
 2. Re-apply patches 1–3, or drop those upstream has made unnecessary.
 3. Run `dart format .`, then the full gate: `dart analyze --fatal-infos
    --fatal-warnings`, `flutter test`, and `flutter build apk` to compile the
-   Kotlin.
+   Kotlin. On macOS, also `flutter build ios --no-codesign` to compile the
+   Swift: nothing else does, and an upstream change to the podspec or
+   `ios/health/Package.swift` otherwise first fails on the next iOS build.
 4. Update the version and sha256 above.
 5. Re-check the plugin README for Android manifest drift
    (`docs/DEVELOPMENT.md` §3.3).

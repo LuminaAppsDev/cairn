@@ -599,6 +599,100 @@ class Health {
     return success ?? false;
   }
 
+  /// Write health data and return UUID on success.
+  ///
+  /// Returns the UUID of the written record if successful, null otherwise.
+  ///
+  /// Parameters:
+  ///  * [value] - the health data's value in double
+  ///  * [unit] - **iOS ONLY** the unit the health data is measured in.
+  ///  * [type] - the value's HealthDataType
+  ///  * [startTime] - the start time when this [value] is measured.
+  ///    It must be equal to or earlier than [endTime].
+  ///  * [endTime] - the end time when this [value] is measured.
+  ///    It must be equal to or later than [startTime].
+  ///    Simply set [endTime] equal to [startTime] if the [value] is measured
+  ///    only at a specific point in time (default).
+  ///  * [recordingMethod] - the recording method of the data point, automatic by default.
+  ///    (on iOS this must be manual or automatic)
+  ///
+  /// Values for Sleep and Headache are ignored and will be automatically assigned
+  /// the default value.
+  Future<String?> writeHealthDataUUID({
+    required double value,
+    HealthDataUnit? unit,
+    required HealthDataType type,
+    required DateTime startTime,
+    String? clientRecordId,
+    double? clientRecordVersion,
+    DateTime? endTime,
+    RecordingMethod recordingMethod = RecordingMethod.automatic,
+  }) async {
+    await _checkIfHealthConnectAvailableOnAndroid();
+    if (Platform.isIOS && [RecordingMethod.active, RecordingMethod.unknown].contains(recordingMethod)) {
+      throw ArgumentError("recordingMethod must be manual or automatic on iOS");
+    }
+
+    if (type == HealthDataType.WORKOUT) {
+      throw ArgumentError("Adding workouts should be done using the writeWorkoutData method.");
+    }
+    // If not implemented on platform, throw an exception
+    if (!isDataTypeAvailable(type)) {
+      throw HealthException(type, 'Not available on platform $platformType');
+    }
+
+    endTime ??= startTime;
+    if (startTime.isAfter(endTime)) {
+      throw ArgumentError("startTime must be equal or earlier than endTime");
+    }
+
+    if ({
+          HealthDataType.HIGH_HEART_RATE_EVENT,
+          HealthDataType.LOW_HEART_RATE_EVENT,
+          HealthDataType.IRREGULAR_HEART_RATE_EVENT,
+          HealthDataType.ELECTROCARDIOGRAM,
+        }.contains(type) &&
+        Platform.isIOS) {
+      throw ArgumentError("$type - iOS does not support writing this data type in HealthKit");
+    }
+
+    // Assign default unit if not specified
+    unit ??= dataTypeToUnit[type]!;
+
+    // Align values to type in cases where the type defines the value.
+    // E.g. SLEEP_IN_BED should have value 0
+    if (type == HealthDataType.SLEEP_ASLEEP ||
+        type == HealthDataType.SLEEP_AWAKE ||
+        type == HealthDataType.SLEEP_IN_BED ||
+        type == HealthDataType.SLEEP_DEEP ||
+        type == HealthDataType.SLEEP_REM ||
+        type == HealthDataType.SLEEP_LIGHT ||
+        type == HealthDataType.HEADACHE_NOT_PRESENT ||
+        type == HealthDataType.HEADACHE_MILD ||
+        type == HealthDataType.HEADACHE_MODERATE ||
+        type == HealthDataType.HEADACHE_SEVERE ||
+        type == HealthDataType.HEADACHE_UNSPECIFIED) {
+      value = _alignValue(type).toDouble();
+    }
+
+    Map<String, dynamic> args = {
+      'value': value,
+      'dataTypeKey': type.name,
+      'dataUnitKey': unit.name,
+      'startTime': startTime.millisecondsSinceEpoch,
+      'endTime': endTime.millisecondsSinceEpoch,
+      'recordingMethod': recordingMethod.toInt(),
+      'clientRecordId': clientRecordId,
+      'clientRecordVersion': clientRecordVersion,
+    };
+
+    String uuid = '${await _channel.invokeMethod('writeDataUUID', args)}';
+
+    debugPrint("Added health data point: $uuid");
+
+    return uuid;
+  }
+
   /// Writes an [ActivityIntensityRecord] to Google Health Connect.
   ///
   /// This API is Android only.
@@ -1540,6 +1634,64 @@ class Health {
       'recordingMethod': recordingMethod.toInt(),
     };
     return await _channel.invokeMethod('writeWorkoutData', args) == true;
+  }
+
+  /// Write workout data to Apple Health or Google Health Connect and return UUID.
+  ///
+  /// Returns UUID if the workout data was successfully added, null otherwise.
+  ///
+  /// Parameters:
+  ///  - [activityType] The type of activity performed.
+  ///  - [start] The start time of the workout.
+  ///  - [end] The end time of the workout.
+  ///  - [totalEnergyBurned] The total energy burned during the workout.
+  ///  - [totalEnergyBurnedUnit] The UNIT used to measure [totalEnergyBurned]
+  ///    *ONLY FOR IOS* Default value is KILOCALORIE.
+  ///  - [totalDistance] The total distance traveled during the workout.
+  ///  - [totalDistanceUnit] The UNIT used to measure [totalDistance]
+  ///    *ONLY FOR IOS* Default value is METER.
+  ///  - [title] The title of the workout.
+  ///    *ONLY FOR HEALTH CONNECT* Default value is the [activityType], e.g. "STRENGTH_TRAINING".
+  ///  - [recordingMethod] The recording method of the data point, automatic by default (on iOS this can only be automatic or manual).
+  Future<String?> writeWorkoutDataUUID({
+    required HealthWorkoutActivityType activityType,
+    required DateTime start,
+    required DateTime end,
+    int? totalEnergyBurned,
+    HealthDataUnit totalEnergyBurnedUnit = HealthDataUnit.KILOCALORIE,
+    int? totalDistance,
+    HealthDataUnit totalDistanceUnit = HealthDataUnit.METER,
+    String? title,
+    RecordingMethod recordingMethod = RecordingMethod.automatic,
+  }) async {
+    await _checkIfHealthConnectAvailableOnAndroid();
+    if (Platform.isIOS && [RecordingMethod.active, RecordingMethod.unknown].contains(recordingMethod)) {
+      throw ArgumentError("recordingMethod must be manual or automatic on iOS");
+    }
+
+    // Check that value is on the current Platform
+    if (Platform.isIOS && !_isOnIOS(activityType)) {
+      throw HealthException(activityType, "Workout activity type $activityType is not supported on iOS");
+    } else if (Platform.isAndroid && !_isOnAndroid(activityType)) {
+      throw HealthException(activityType, "Workout activity type $activityType is not supported on Android");
+    }
+    final args = <String, dynamic>{
+      'activityType': activityType.name,
+      'startTime': start.millisecondsSinceEpoch,
+      'endTime': end.millisecondsSinceEpoch,
+      'totalEnergyBurned': totalEnergyBurned,
+      'totalEnergyBurnedUnit': totalEnergyBurnedUnit.name,
+      'totalDistance': totalDistance,
+      'totalDistanceUnit': totalDistanceUnit.name,
+      'title': title,
+      'recordingMethod': recordingMethod.toInt(),
+    };
+
+    String uuid = '${await _channel.invokeMethod('writeWorkoutDataUUID', args)}';
+
+    debugPrint("Added workout data point: $uuid");
+
+    return uuid;
   }
 
   /// Start a new workout route recording session on iOS or Android.

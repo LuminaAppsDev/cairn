@@ -58,6 +58,22 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- **The vendored `health` plugin is rebased onto upstream 13.3.2.** Patches
+  1–3 carry over unchanged, because upstream left both patched Kotlin files
+  alone; patch 4's formatting re-applies to `health_plugin.dart`, which
+  matches upstream token for token. 13.3.2 adds write-and-return-UUID APIs,
+  which Cairn never calls, and moves the iOS sources to a Swift package
+  (`ios/health`; the plugin class is now `HealthPlugin`, not
+  `SwiftHealthPlugin`). It needs `device_info_plus` 13 and
+  `carp_serializable` 3, which bring win32 6 (Windows only). That unblocks
+  flutter_secure_storage 11. The Maven graph is unchanged: regenerating
+  `verification-metadata.xml` added no pins.
+
+  The iOS deployment target rises from 14.0 to 15.0, the plugin's new floor,
+  in the `Podfile`, `Runner.xcodeproj` and `AppFrameworkInfo.plist`.
+  iOS 15 runs on every device iOS 14 does. `docs/DEVELOPMENT.md` §3.4
+  still said 13.0 and now says 15.0.
+
 - **Flutter 3.47.9 (Dart 3.13.7), up from 3.44.0.** Bumped together in
   `.fvmrc`, `release.yml` (`FLUTTER_VERSION` and `FLUTTER_COMMIT`), and
   `docs/DEVELOPMENT.md`; the SDK floor in `pubspec.yaml` is now `^3.13.0`. The

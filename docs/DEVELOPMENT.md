@@ -122,7 +122,7 @@ seed data via a vendor app or the Health Connect "sample data" tooling.
 
 ### 3.4 iOS setup (HealthKit)
 
-> Requires **macOS + Xcode**. Deployment target is **iOS 13.0**.
+> Requires **macOS + Xcode**. Deployment target is **iOS 15.0**.
 
 - **The one manual step:** open `ios/Runner.xcworkspace` in Xcode, set your
   signing **Team**, and under **Signing & Capabilities** add the **HealthKit**

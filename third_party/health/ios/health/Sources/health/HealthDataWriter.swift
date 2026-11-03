@@ -508,6 +508,71 @@ class HealthDataWriter {
         result(true)
     }
 
+    /// Writes general health data and return UUID on success, otherwise an empty string
+    /// - Parameters:
+    ///   - call: Flutter method call
+    ///   - result: Flutter result callback
+    func writeDataUUID(call: FlutterMethodCall, result: @escaping FlutterResult) throws {
+        guard let arguments = call.arguments as? NSDictionary,
+            let value = (arguments["value"] as? Double),
+            let type = (arguments["dataTypeKey"] as? String),
+            let unit = (arguments["dataUnitKey"] as? String),
+            let startTime = (arguments["startTime"] as? NSNumber),
+            let endTime = (arguments["endTime"] as? NSNumber),
+            let recordingMethod = (arguments["recordingMethod"] as? Int)
+        else {
+            throw PluginError(message: "Invalid Arguments")
+        }
+
+        // Handle mindfulness sessions specifically
+        if type == HealthConstants.MINDFULNESS {
+            try writeMindfulness(call: call, result: result)
+            return
+        }
+
+        let dateFrom = HealthUtilities.dateFromMilliseconds(startTime.doubleValue)
+        let dateTo = HealthUtilities.dateFromMilliseconds(endTime.doubleValue)
+
+        let isManualEntry = recordingMethod == HealthConstants.RecordingMethod.manual.rawValue
+        let metadata: [String: Any] = [
+            HKMetadataKeyWasUserEntered: NSNumber(value: isManualEntry)
+        ]
+
+        let sample: HKObject
+
+        if dataTypesDict[type]!.isKind(of: HKCategoryType.self) {
+            sample = HKCategorySample(
+                type: dataTypesDict[type] as! HKCategoryType, value: Int(value), start: dateFrom,
+                end: dateTo, metadata: metadata)
+        } else {
+            let quantity = HKQuantity(unit: unitDict[unit]!, doubleValue: value)
+            sample = HKQuantitySample(
+                type: dataTypesDict[type] as! HKQuantityType, quantity: quantity, start: dateFrom,
+                end: dateTo, metadata: metadata)
+        }
+
+        healthStore.save(
+            sample,
+            withCompletion: { (success, error) in
+                if let err = error {
+                    print("Error Saving \(type) Sample: \(err.localizedDescription)")
+                }
+                DispatchQueue.main.async {
+                    if success {
+                        // Return the UUID of the saved object
+                        if let savedSample = sample as? HKObject {
+                            print("Saved: \(savedSample.uuid.uuidString)")
+                            result(savedSample.uuid.uuidString) // Return UUID as String
+                        } else {
+                            result("")
+                        }
+                    }
+
+                    result("")
+                }
+            })
+    }
+
     /// Writes audiogram data
     /// - Parameters:
     ///   - call: Flutter method call
@@ -887,5 +952,68 @@ class HealthDataWriter {
                 }
             }
         )
+    }
+
+    /// Writes workout data and return UUID on success, otherwise an empty string
+    /// - Parameters:
+    ///   - call: Flutter method call
+    ///   - result: Flutter result callback
+    func writeWorkoutDataUUID(call: FlutterMethodCall, result: @escaping FlutterResult) throws {
+        guard let arguments = call.arguments as? NSDictionary,
+            let activityType = (arguments["activityType"] as? String),
+            let startTime = (arguments["startTime"] as? NSNumber),
+            let endTime = (arguments["endTime"] as? NSNumber),
+            let activityTypeValue = workoutActivityTypeMap[activityType]
+        else {
+            throw PluginError(
+                message: "Invalid Arguments - activityType, startTime or endTime invalid")
+        }
+
+        var totalEnergyBurned: HKQuantity?
+        var totalDistance: HKQuantity? = nil
+
+        // Handle optional arguments
+        if let teb = (arguments["totalEnergyBurned"] as? Double) {
+            totalEnergyBurned = HKQuantity(
+                unit: unitDict[(arguments["totalEnergyBurnedUnit"] as! String)]!, doubleValue: teb)
+        }
+        if let td = (arguments["totalDistance"] as? Double) {
+            totalDistance = HKQuantity(
+                unit: unitDict[(arguments["totalDistanceUnit"] as! String)]!, doubleValue: td)
+        }
+
+        let dateFrom = HealthUtilities.dateFromMilliseconds(startTime.doubleValue)
+        let dateTo = HealthUtilities.dateFromMilliseconds(endTime.doubleValue)
+
+        let workout = HKWorkout(
+            activityType: activityTypeValue,
+            start: dateFrom,
+            end: dateTo,
+            duration: dateTo.timeIntervalSince(dateFrom),
+            totalEnergyBurned: totalEnergyBurned ?? nil,
+            totalDistance: totalDistance ?? nil,
+            metadata: nil
+        )
+
+        healthStore.save(
+            workout,
+            withCompletion: { (success, error) in
+                if let err = error {
+                    print("Error Saving Workout. Sample: \(err.localizedDescription)")
+                }
+                DispatchQueue.main.async {
+                    if success {
+                        // Return the UUID of the saved object
+                        if let savedSample = workout as? HKWorkout {
+                            print("Saved: \(savedSample.uuid.uuidString)")
+                            result(savedSample.uuid.uuidString) // Return UUID as String
+                        } else {
+                            result("")
+                        }
+                    }
+
+                    result("")
+                }
+            })
     }
 }

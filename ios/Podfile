@@ -2,10 +2,10 @@
 # checkout and every `pod install` builds against the same floor — the app
 # target reads it from Runner.xcodeproj, the Pods read it from here, and the
 # post_install hook below forces it onto pods that declare a lower target.
-# 14.0 is required by the dependency set (HealthKit + plugins); keep this in
+# 15.0 is required by the dependency set (health >= 13.3.2); keep this in
 # sync with IPHONEOS_DEPLOYMENT_TARGET in Runner.xcodeproj and MinimumOSVersion
 # in Flutter/AppFrameworkInfo.plist.
-platform :ios, '14.0'
+platform :ios, '15.0'
 
 # CocoaPods analytics sends network stats synchronously, slowing builds.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
@@ -47,9 +47,9 @@ post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
     # Force the floor onto every pod — some podspecs declare a lower target,
-    # which otherwise reintroduces the 13.0/14.0 mismatch on each pod install.
+    # which otherwise reintroduces a target mismatch on each pod install.
     target.build_configurations.each do |config|
-      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '14.0'
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
     end
   end
 end
