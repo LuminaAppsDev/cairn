@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Nothing of Cairn's leaves the device except through the user's own
+  Nextcloud: no Google cloud backup and no device-to-device transfer (which
+  allowBackup="false" alone doesn't stop on Android 12+). The local cache
+  rebuilds from Health Connect and the profile from Nextcloud.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" path="." />
+        <exclude domain="device_root" path="." />
+        <exclude domain="external" path="." />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" path="." />
+        <exclude domain="device_root" path="." />
+        <exclude domain="external" path="." />
+    </device-transfer>
+</data-extraction-rules>

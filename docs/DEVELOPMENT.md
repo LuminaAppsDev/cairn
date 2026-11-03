@@ -94,9 +94,13 @@ requirements:
   Connect `<queries>`, the permission-rationale activity, and **READ-only**
   permissions for the five v1 metrics (`READ_HEART_RATE`, `READ_STEPS`,
   `READ_WEIGHT`, `READ_EXERCISE`, `READ_SLEEP`) plus `ACTIVITY_RECOGNITION`.
-  Cairn never requests WRITE (DESIGN.md §2). Background-read is deferred to
-  Phase 5. The `health` package is vendored at `third_party/health` with a
-  patch, so bumping it means re-vendoring per
+  Cairn never requests WRITE (DESIGN.md §2). `READ_HEALTH_DATA_IN_BACKGROUND`
+  is asked for once per device — after the first foreground refresh in which
+  reads are granted and it is still missing — and again on demand from
+  Settings; without it background sync only uploads. Backup and device
+  transfer are off (`allowBackup="false"` plus `data_extraction_rules.xml`), so
+  a reinstall starts clean. The `health` package is vendored at
+  `third_party/health` with a patch, so bumping it means re-vendoring per
   `third_party/health/CAIRN_PATCHES.md`, and re-checking its README for
   manifest drift: <https://pub.dev/packages/health>.
 - **Health Connect must be present on the device/emulator.** It is built in on

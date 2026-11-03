@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:cairn/src/health/background_read_status.dart';
 import 'package:cairn/src/health/health_gateway.dart';
 import 'package:cairn/src/health/health_metric.dart';
 import 'package:cairn/src/health/health_package_repository.dart';
@@ -31,6 +34,17 @@ class _FakeGateway implements HealthGateway {
   int configureCalls = 0;
   Set<HealthMetric>? requestedMetrics;
 
+  /// The background-read status; granting it is what [requestBackgroundRead]
+  /// does unless [background] stays put (declined).
+  BackgroundReadStatus background = BackgroundReadStatus.missing;
+  bool grantsBackground = true;
+
+  /// When set, the read-permission sheet stays open until it completes.
+  Completer<void>? readSheet;
+
+  /// Sheets in the order they opened and closed, to check they never overlap.
+  final List<String> sheetEvents = [];
+
   @override
   Future<bool> isAvailable() async => available;
 
@@ -43,7 +57,21 @@ class _FakeGateway implements HealthGateway {
 
   @override
   Future<void> requestReadAuthorization(Set<HealthMetric> metrics) async {
+    sheetEvents.add('reads open');
     requestedMetrics = metrics;
+    await readSheet?.future;
+    sheetEvents.add('reads closed');
+  }
+
+  @override
+  Future<BackgroundReadStatus> backgroundReadStatus() async => background;
+
+  @override
+  Future<void> requestBackgroundRead() async {
+    sheetEvents
+      ..add('background open')
+      ..add('background closed');
+    if (grantsBackground) background = BackgroundReadStatus.granted;
   }
 
   @override
@@ -209,5 +237,61 @@ void main() {
 
     expect(granted, {HealthMetric.steps});
     expect(gateway.configureCalls, 2);
+  });
+
+  group('background reads', () {
+    test('report the gateway status once the store is up', () async {
+      final gateway = _FakeGateway()
+        ..background = BackgroundReadStatus.unavailable;
+      final repo = HealthPackageRepository(gateway: gateway);
+
+      expect(
+        await repo.backgroundReadStatus(),
+        BackgroundReadStatus.unavailable,
+      );
+      expect(gateway.configureCalls, 1);
+    });
+
+    test('a request returns the status it left behind', () async {
+      final repo = HealthPackageRepository(gateway: _FakeGateway());
+
+      expect(
+        await repo.requestBackgroundRead(),
+        BackgroundReadStatus.granted,
+      );
+    });
+
+    test('without a health store, fail with the typed exception', () {
+      final repo = HealthPackageRepository(
+        gateway: _FakeGateway()..available = false,
+      );
+
+      expect(
+        repo.backgroundReadStatus(),
+        throwsA(isA<HealthStoreUnavailableException>()),
+      );
+    });
+
+    test('a second permission sheet waits for the first', () async {
+      // The plugin holds one pending result for any sheet; overlapping
+      // launches (Settings' Allow during a refresh's read request) would
+      // orphan the first future.
+      final gateway = _FakeGateway()..readSheet = Completer<void>();
+      final repo = HealthPackageRepository(gateway: gateway);
+
+      final reads = repo.requestAuthorization({HealthMetric.steps});
+      final background = repo.requestBackgroundRead();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(gateway.sheetEvents, ['reads open']);
+
+      gateway.readSheet!.complete();
+      await Future.wait([reads, background]);
+      expect(gateway.sheetEvents, [
+        'reads open',
+        'reads closed',
+        'background open',
+        'background closed',
+      ]);
+    });
   });
 }

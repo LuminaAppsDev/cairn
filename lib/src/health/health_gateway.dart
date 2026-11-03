@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:cairn/src/health/background_read_status.dart';
 import 'package:cairn/src/health/health_metric.dart';
 import 'package:cairn/src/health/health_sample.dart';
 import 'package:cairn/src/health/health_source.dart';
@@ -27,6 +28,12 @@ abstract interface class HealthGateway {
   /// Whether READ access is granted for [metric]. Returns `null` on iOS, which
   /// hides read-authorisation status (DESIGN.md §4.2).
   Future<bool?> hasReadPermission(HealthMetric metric);
+
+  /// Whether the store may be read from the background.
+  Future<BackgroundReadStatus> backgroundReadStatus();
+
+  /// Shows the OS dialog for background reads (Android); a no-op on iOS.
+  Future<void> requestBackgroundRead();
 
   /// Reads samples of [metric] whose start time is in `[start, end)` (Health
   /// Connect's own read filter; HealthKit via `.strictStartDate`), converted
@@ -67,6 +74,23 @@ final class HealthPackageGateway implements HealthGateway {
   @override
   Future<bool?> hasReadPermission(HealthMetric metric) =>
       _health.hasPermissions(_requiredTypesFor(metric));
+
+  @override
+  Future<BackgroundReadStatus> backgroundReadStatus() async {
+    if (_isIos) return BackgroundReadStatus.notApplicable;
+    if (!await _health.isHealthDataInBackgroundAvailable()) {
+      return BackgroundReadStatus.unavailable;
+    }
+    return await _health.isHealthDataInBackgroundAuthorized()
+        ? BackgroundReadStatus.granted
+        : BackgroundReadStatus.missing;
+  }
+
+  @override
+  Future<void> requestBackgroundRead() async {
+    if (_isIos) return;
+    await _health.requestHealthDataInBackgroundAuthorization();
+  }
 
   @override
   Future<List<HealthSample>> readSamples({

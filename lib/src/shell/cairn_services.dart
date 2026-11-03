@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:cairn/src/health/background_read_prompt.dart';
+import 'package:cairn/src/health/background_read_status.dart';
 import 'package:cairn/src/health/health_metric.dart';
 import 'package:cairn/src/health/health_package_repository.dart';
 import 'package:cairn/src/health/health_repository.dart';
@@ -82,6 +84,7 @@ final class CairnServices {
     required this.coordinator,
     required this.profileSync,
     required this.repository,
+    required this.backgroundReadPrompt,
     CrossIsolateLock? refreshLock,
   }) : _refreshLock = refreshLock ?? CrossIsolateLock('cairn.refresh');
 
@@ -119,6 +122,7 @@ final class CairnServices {
         ),
       ),
       repository: HealthPackageRepository(),
+      backgroundReadPrompt: await BackgroundReadPrompt.appSupport(),
     );
   }
 
@@ -147,9 +151,19 @@ final class CairnServices {
   /// The OS health-store reader (for manual refresh/ingest).
   final HealthRepository repository;
 
+  /// Remembers whether this device was already asked for background reads.
+  final BackgroundReadPrompt backgroundReadPrompt;
+
   /// Bumped after every ingest so all data screens reload immediately when new
   /// readings land in the cache (the read-path analogue of [profile]).
   final ValueNotifier<int> dataRevision = ValueNotifier(0);
+
+  /// Whether background sync may read the health store; `null` until first
+  /// checked. Foreground refreshes, [checkBackgroundRead] and
+  /// [askForBackgroundRead] keep it current; Settings shows it.
+  final ValueNotifier<BackgroundReadStatus?> backgroundRead = ValueNotifier(
+    null,
+  );
 
   Future<RefreshResult>? _refreshInFlight;
 
@@ -165,26 +179,71 @@ final class CairnServices {
   /// Concurrent calls in this isolate (e.g. the Home button and a Sleep
   /// pull-to-refresh) are coalesced into a single run; a refresh in another
   /// isolate of the process (background sync) is waited out first — the
-  /// foreground path; background sync uses [refreshIfIdle]. Either way,
+  /// foreground path; background sync uses [refreshInBackground]. Either way,
   /// ingest/sync never overlap.
   Future<RefreshResult> refresh() {
-    return _refreshInFlight ??= _refreshLock
-        .run(_runUnlessDisposed)
-        .whenComplete(() => _refreshInFlight = null);
+    return _refreshInFlight ??= _refreshLock.run(_runForeground).whenComplete(
+      () {
+        _refreshInFlight = null;
+        // Only now — data read and uploaded, the lock released, this refresh's
+        // caller answered — so an open permission sheet holds up nothing.
+        if (_readsGranted && !_disposed) {
+          unawaited(_checkBackgroundRead(askOnce: true));
+        }
+      },
+    );
   }
 
-  /// The background variant of [refresh]: runs only if no other isolate is
-  /// refreshing right now, and returns `null` (having done nothing) if one is.
-  /// Background sync is opportunistic, so it skips rather than waits — which
-  /// also keeps it within the OS's short background budget.
-  Future<RefreshResult?> refreshIfIdle() => _refreshLock.tryRun(_runRefresh);
+  /// The background sync's refresh (WorkManager / BGTaskScheduler): runs only
+  /// if no other isolate is refreshing right now, and returns `null` (having
+  /// done nothing) if one is — background sync is opportunistic, and its OS
+  /// budget short. Reads only where background reads are allowed; otherwise
+  /// it just uploads.
+  Future<RefreshResult?> refreshInBackground() =>
+      _refreshLock.tryRun(() => _runRefresh(background: true));
 
-  // A refresh that waited for the lock may find the services torn down by
-  // then (the shell disposed meanwhile); it must not touch them.
-  Future<RefreshResult> _runUnlessDisposed() async =>
-      _disposed ? const RefreshResult(RefreshStatus.ok) : _runRefresh();
+  Future<RefreshResult> _runForeground() async {
+    // A refresh that waited for the lock may find the services torn down by
+    // then (the shell disposed meanwhile); it must not touch them.
+    if (_disposed) return const RefreshResult(RefreshStatus.ok);
+    return _runRefresh(background: false);
+  }
 
   bool _disposed = false;
+
+  /// Whether the last refresh had any read permission granted.
+  bool _readsGranted = false;
+
+  /// Re-reads [backgroundRead] (Settings: on open and on resume). Completes
+  /// after any check or ask already under way.
+  Future<void> checkBackgroundRead() => _checkBackgroundRead();
+
+  /// Asks for background reads on demand (the Settings button) and returns
+  /// the status afterwards — also published on [backgroundRead] — or `null`
+  /// if the request failed.
+  Future<BackgroundReadStatus?> askForBackgroundRead() =>
+      _oneCheckAtATime(() async {
+        try {
+          final status = await repository.requestBackgroundRead();
+          if (!_disposed) backgroundRead.value = status;
+          return status;
+        } on Object catch (error, stack) {
+          debugPrint('Background-read request failed: $error');
+          reportIfBug(error, stack, whileDoing: 'asking for background reads');
+          return null;
+        }
+      });
+
+  // Checks and asks run one at a time: overlapping, a slower earlier one could
+  // publish a stale status over a newer one, or two could both ask before
+  // either had recorded it.
+  Future<void> _checks = Future<void>.value();
+
+  Future<T> _oneCheckAtATime<T>(Future<T> Function() check) {
+    final next = _checks.then((_) => check());
+    _checks = next.then<void>((_) {}, onError: (Object _) {});
+    return next;
+  }
 
   /// Pulls a newer `profile.json` down from Nextcloud (if any) and adopts it,
   /// updating [profile] so the dashboard reflects it without a manual reload.
@@ -201,7 +260,7 @@ final class CairnServices {
     }
   }
 
-  Future<RefreshResult> _runRefresh() async {
+  Future<RefreshResult> _runRefresh({required bool background}) async {
     // Both catch blocks below are `on Object`, not `on Exception`: the health
     // plugin signals a missing Health Connect with an UnsupportedError, which
     // is an Error. Letting one escape would complete this future with an error,
@@ -209,13 +268,7 @@ final class CairnServices {
     // spinner — the UI would hang with no message at all.
     final List<IngestResult> ingested;
     try {
-      final granted = await repository.requestAuthorization(
-        HealthMetric.values.toSet(),
-      );
-      ingested = await HealthIngestService(
-        repository: repository,
-        store: store,
-      ).ingest(granted);
+      ingested = await _ingest(background: background);
     } on HealthStoreUnavailableException {
       return const RefreshResult(RefreshStatus.healthUnavailable);
     } on Object catch (error, stack) {
@@ -252,11 +305,58 @@ final class CairnServices {
     return RefreshResult(RefreshStatus.ok, report: report);
   }
 
+  // The read half of a refresh. A background run that may not read the health
+  // store (Android's separate background permission — without it a read may
+  // fail) skips it and only uploads.
+  Future<List<IngestResult>> _ingest({required bool background}) async {
+    _readsGranted = false;
+    if (background &&
+        !(await repository.backgroundReadStatus()).allowsBackgroundReads) {
+      return const [];
+    }
+    final granted = await repository.requestAuthorization(
+      HealthMetric.values.toSet(),
+    );
+    _readsGranted = granted.isNotEmpty;
+    return HealthIngestService(
+      repository: repository,
+      store: store,
+    ).ingest(granted);
+  }
+
+  // Updates [backgroundRead]. With [askOnce], also asks on its own — at most
+  // once per device, and only while background reads are missing; Settings
+  // can ask again. A grant found already in place is remembered too, so that
+  // revoking it later on purpose isn't answered with a prompt. Optional, so a
+  // failure never fails anything: the status just stays as it was.
+  Future<void> _checkBackgroundRead({bool askOnce = false}) =>
+      _oneCheckAtATime(() => _checkBackgroundReadNow(askOnce: askOnce));
+
+  Future<void> _checkBackgroundReadNow({required bool askOnce}) async {
+    try {
+      var status = await repository.backgroundReadStatus();
+      if (askOnce && !await backgroundReadPrompt.wasAsked()) {
+        if (status == BackgroundReadStatus.granted) {
+          await backgroundReadPrompt.markAsked();
+        } else if (status == BackgroundReadStatus.missing) {
+          // Recorded first, so a crash during the sheet can't become a loop.
+          await backgroundReadPrompt.markAsked();
+          status = await repository.requestBackgroundRead();
+        }
+      }
+      if (!_disposed) backgroundRead.value = status;
+    } on Object catch (error, stack) {
+      debugPrint('Background-read check failed: $error');
+      reportIfBug(error, stack, whileDoing: 'checking background reads');
+    }
+  }
+
   /// Releases the shared HTTP client and the notifiers.
   void dispose() {
     _disposed = true;
     profile.dispose();
     dataRevision.dispose();
+    backgroundRead.dispose();
     client.close();
   }
 }

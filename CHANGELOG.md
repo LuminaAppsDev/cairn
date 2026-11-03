@@ -6,6 +6,21 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- **Background sync asks for Health Connect's background-read permission.**
+  Cairn declared `READ_HEALTH_DATA_IN_BACKGROUND` but never requested it, so
+  background sync could never read. It now asks once on its own, on the first
+  foreground refresh where reads are granted and this one is missing. It asks
+  only after that refresh has read and uploaded, so an open sheet holds
+  nothing up. The ask is remembered per device, and so is a grant found
+  already in place, so a later deliberate revoke isn't answered with a prompt.
+  Settings has a "Background sync" row on Android that shows whether reading
+  in the background is allowed, missing, or not supported by this Health
+  Connect, and re-checks when you return to the app. When it's missing, an
+  **Allow** button asks again. If Health Connect has stopped showing its
+  sheet after repeated denials, the button opens Health Connect's settings
+  instead, where the user can turn it on under Cairn → Additional access. Permission sheets now open one at a time,
+  because the plugin can only track one at once.
+
 - **The counter-signed code-signing certificate, committed at
   `nextcloud_app/cairn.crt`.** It carries nothing secret, and keeping it in the
   repository means anyone can verify a release signature against the same
@@ -84,6 +99,14 @@ All notable changes to this project are documented in this file.
   evidence if the ruamel version matches theirs.
 
 ### Fixed
+
+- **Background sync read Health Connect without permission.** Health
+  Connect's reference says a background read without
+  `READ_HEALTH_DATA_IN_BACKGROUND` "may result in an error". Since failed reads
+  stopped being swallowed that lost no data, but every WorkManager run spent
+  its reads and ended in `readFailed`. A background run now checks the
+  permission first. Without it, the run skips reading and only uploads, and the
+  next foreground refresh catches up from the anchors.
 
 - **A background sync could tear the manifest under a foreground one.** The UI
   and the WorkManager / BGTaskScheduler isolate each build their own services.
@@ -199,6 +222,18 @@ All notable changes to this project are documented in this file.
   against a buildserver with its own, so the bytes are evidently
   zone-independent — but only the tests need Berlin, and the one workflow where
   being wrong is silent is not the place to confirm that.
+
+### Security
+
+- **Nothing of Cairn's goes into Android backups or device transfers any
+  more.** The manifest never set `allowBackup`, so Android Auto Backup copied
+  the app's private files, including the local OMH health cache and the sync
+  journal, into the user's Google Drive. The user's own Nextcloud is supposed
+  to be the only copy. `allowBackup="false"` stops the cloud backup.
+  `data_extraction_rules.xml` excludes everything from device-to-device
+  transfer too, which `allowBackup` alone doesn't cover on Android 12+. After
+  a reinstall the cache rebuilds from Health Connect and the profile comes
+  back from Nextcloud. The app token never survived a restore anyway.
 
 ## 0.3.0 — 2026-08-22
 

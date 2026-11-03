@@ -1,3 +1,4 @@
+import 'package:cairn/src/health/background_read_status.dart';
 import 'package:cairn/src/health/health_gateway.dart';
 import 'package:cairn/src/health/health_metric.dart';
 import 'package:cairn/src/health/health_repository.dart';
@@ -37,7 +38,7 @@ final class HealthPackageRepository implements HealthRepository {
   ) async {
     await _requireAvailable();
     await _ensureConfigured();
-    await _gateway.requestReadAuthorization(metrics);
+    await _oneSheetAtATime(() => _gateway.requestReadAuthorization(metrics));
 
     final granted = <HealthMetric>{};
     for (final metric in metrics) {
@@ -74,6 +75,39 @@ final class HealthPackageRepository implements HealthRepository {
       );
     }
   }
+
+  @override
+  Future<BackgroundReadStatus> backgroundReadStatus() async {
+    await _requireAvailable();
+    await _ensureConfigured();
+    return _gateway.backgroundReadStatus();
+  }
+
+  @override
+  Future<BackgroundReadStatus> requestBackgroundRead() async {
+    await _requireAvailable();
+    await _ensureConfigured();
+    await _oneSheetAtATime(_gateway.requestBackgroundRead);
+    return _gateway.backgroundReadStatus();
+  }
+
+  // The plugin keeps a single pending result for any permission sheet: a
+  // second launch before the first is answered (Settings' Allow during a
+  // refresh's read request) would orphan the first future for good. So the
+  // sheets this repository opens queue up, one at a time.
+  Future<void> _sheets = Future<void>.value();
+
+  Future<void> _oneSheetAtATime(Future<void> Function() show) {
+    // A sheet whose result the plugin lost (its activity recreated) would
+    // block the queue for good; after [_sheetPatience] it is presumed gone.
+    final next = _sheets
+        .timeout(_sheetPatience, onTimeout: () {})
+        .then((_) => show());
+    _sheets = next.then<void>((_) {}, onError: (Object _) {});
+    return next;
+  }
+
+  static const _sheetPatience = Duration(minutes: 2);
 
   // Fails with a typed exception rather than letting the plugin throw a raw
   // UnsupportedError, which — being an Error, not an Exception — slips past

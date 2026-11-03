@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:cairn/src/health/background_read_prompt.dart';
+import 'package:cairn/src/health/background_read_status.dart';
 import 'package:cairn/src/health/health_metric.dart';
 import 'package:cairn/src/health/health_repository.dart';
 import 'package:cairn/src/health/health_sample.dart';
@@ -35,6 +37,12 @@ class _FailingRepository implements HealthRepository {
   Future<bool> isAvailable() async => false;
 
   @override
+  Future<BackgroundReadStatus> backgroundReadStatus() async => fail();
+
+  @override
+  Future<BackgroundReadStatus> requestBackgroundRead() async => fail();
+
+  @override
   Future<Set<HealthMetric>> requestAuthorization(
     Set<HealthMetric> metrics,
   ) async => fail();
@@ -49,9 +57,26 @@ class _FailingRepository implements HealthRepository {
 
 /// Grants everything and reads nothing, except [failing], whose read fails.
 class _PartlyFailingRepository implements HealthRepository {
-  _PartlyFailingRepository(this.failing);
+  _PartlyFailingRepository(
+    this.failing, {
+    this.background = BackgroundReadStatus.notApplicable,
+    this.grantsReads = true,
+  });
 
-  final HealthMetric failing;
+  /// The metric whose read fails (`null`: none).
+  final HealthMetric? failing;
+
+  /// The background-read status reported; asking leaves it as is (declined).
+  BackgroundReadStatus background;
+
+  /// Whether any read permission is granted.
+  final bool grantsReads;
+
+  final List<HealthMetric> reads = [];
+  int backgroundRequests = 0;
+
+  /// How many reads had happened when background reads were requested.
+  int? readsBeforeAsk;
 
   @override
   Future<bool> isAvailable() async => true;
@@ -59,7 +84,7 @@ class _PartlyFailingRepository implements HealthRepository {
   @override
   Future<Set<HealthMetric>> requestAuthorization(
     Set<HealthMetric> metrics,
-  ) async => metrics;
+  ) async => grantsReads ? metrics : const {};
 
   @override
   Future<List<HealthSample>> readSamples({
@@ -67,8 +92,19 @@ class _PartlyFailingRepository implements HealthRepository {
     required DateTime start,
     required DateTime end,
   }) async {
+    reads.add(metric);
     if (metric == failing) throw HealthReadException(metric);
     return const [];
+  }
+
+  @override
+  Future<BackgroundReadStatus> backgroundReadStatus() async => background;
+
+  @override
+  Future<BackgroundReadStatus> requestBackgroundRead() async {
+    backgroundRequests++;
+    readsBeforeAsk ??= reads.length;
+    return background;
   }
 }
 
@@ -179,6 +215,9 @@ void main() {
         download: () async => null,
       ),
       repository: repository,
+      backgroundReadPrompt: BackgroundReadPrompt(
+        marker: File(p.join(dir.path, 'support', 'background_read_asked')),
+      ),
       refreshLock: refreshLock,
     );
   }
@@ -322,8 +361,147 @@ void main() {
       final services = servicesSharing();
       addTearDown(services.dispose);
 
-      expect(await services.refreshIfIdle(), isNull);
+      expect(await services.refreshInBackground(), isNull);
       expect(services.dataRevision.value, 0);
+    });
+  });
+
+  group('background reads', () {
+    test('a background run without the permission only uploads', () async {
+      final repo = _PartlyFailingRepository(
+        null,
+        background: BackgroundReadStatus.missing,
+      );
+      final target = _RecordingTarget();
+      final services = servicesOver(repo, target: target);
+      addTearDown(services.dispose);
+      // Something on disk to upload.
+      await services.store.setSyncAnchor(HealthMetric.weight, DateTime(2026));
+
+      final result = await services.refreshInBackground();
+
+      expect(result!.status, RefreshStatus.ok);
+      expect(repo.reads, isEmpty);
+      expect(target.puts, isNotEmpty);
+    });
+
+    test('a background run with the permission reads', () async {
+      final repo = _PartlyFailingRepository(
+        null,
+        background: BackgroundReadStatus.granted,
+      );
+      final services = servicesOver(repo);
+      addTearDown(services.dispose);
+
+      await services.refreshInBackground();
+
+      expect(repo.reads, isNotEmpty);
+    });
+
+    test('a foreground refresh asks once per device, never again', () async {
+      final repo = _PartlyFailingRepository(
+        null,
+        background: BackgroundReadStatus.missing,
+      );
+      final first = servicesOver(repo);
+      addTearDown(first.dispose);
+      await first.refresh();
+      await first.checkBackgroundRead();
+      await first.refresh();
+      await first.checkBackgroundRead();
+      // A later launch on the same device remembers it asked (and was
+      // declined: the status is still missing).
+      final relaunched = servicesOver(repo);
+      addTearDown(relaunched.dispose);
+      await relaunched.refresh();
+      await relaunched.checkBackgroundRead();
+
+      expect(repo.backgroundRequests, 1);
+    });
+
+    test('no ask where there is nothing to ask for', () async {
+      for (final status in [
+        BackgroundReadStatus.granted,
+        BackgroundReadStatus.unavailable,
+        BackgroundReadStatus.notApplicable,
+      ]) {
+        final repo = _PartlyFailingRepository(null, background: status);
+        final services = servicesOver(repo);
+        addTearDown(services.dispose);
+
+        await services.refresh();
+        await services.checkBackgroundRead();
+
+        expect(repo.backgroundRequests, 0, reason: '$status');
+      }
+    });
+
+    test('the ask comes only after the data was read', () async {
+      // An open permission sheet must not hold up reading and uploading.
+      final repo = _PartlyFailingRepository(
+        null,
+        background: BackgroundReadStatus.missing,
+      );
+      final services = servicesOver(repo);
+      addTearDown(services.dispose);
+
+      await services.refresh();
+      // The ask runs after the refresh has returned, not inside it.
+      expect(repo.backgroundRequests, 0);
+      await services.checkBackgroundRead();
+
+      expect(repo.readsBeforeAsk, greaterThan(0));
+      expect(services.backgroundRead.value, BackgroundReadStatus.missing);
+    });
+
+    test(
+      'a grant already in place is remembered: no prompt on revoke',
+      () async {
+        final repo = _PartlyFailingRepository(
+          null,
+          background: BackgroundReadStatus.granted,
+        );
+        final services = servicesOver(repo);
+        addTearDown(services.dispose);
+        await services.refresh();
+        await services.checkBackgroundRead();
+
+        // Revoked on purpose in Health Connect later: not nagged about it.
+        repo.background = BackgroundReadStatus.missing;
+        await services.refresh();
+        await services.checkBackgroundRead();
+
+        expect(repo.backgroundRequests, 0);
+        expect(services.backgroundRead.value, BackgroundReadStatus.missing);
+      },
+    );
+
+    test('a background run where Health Connect cannot read there', () async {
+      final repo = _PartlyFailingRepository(
+        null,
+        background: BackgroundReadStatus.unavailable,
+      );
+      final services = servicesOver(repo);
+      addTearDown(services.dispose);
+
+      await services.refreshInBackground();
+
+      expect(repo.reads, isEmpty);
+    });
+
+    test('no ask while no read is granted at all', () async {
+      final repo = _PartlyFailingRepository(
+        null,
+        background: BackgroundReadStatus.missing,
+        grantsReads: false,
+      );
+      final services = servicesOver(repo);
+      addTearDown(services.dispose);
+
+      await services.refresh();
+      await services.checkBackgroundRead();
+
+      expect(repo.backgroundRequests, 0);
     });
   });
 

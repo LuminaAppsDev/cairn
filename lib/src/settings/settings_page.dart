@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:cairn/l10n/app_localizations.dart';
 import 'package:cairn/src/dashboard/connect_nextcloud_page.dart';
+import 'package:cairn/src/health/background_read_status.dart';
+import 'package:cairn/src/health/health_connect_settings.dart';
 import 'package:cairn/src/onboarding/setup_guide_page.dart';
 import 'package:cairn/src/profile/profile.dart';
 import 'package:cairn/src/settings/locale_controller.dart';
@@ -30,7 +32,8 @@ class SettingsPage extends StatefulWidget {
   State<SettingsPage> createState() => _SettingsPageState();
 }
 
-class _SettingsPageState extends State<SettingsPage> {
+class _SettingsPageState extends State<SettingsPage>
+    with WidgetsBindingObserver {
   final TextEditingController _height = TextEditingController();
   bool _connLoaded = false;
   String? _account; // login@host when connected, null otherwise
@@ -38,18 +41,89 @@ class _SettingsPageState extends State<SettingsPage> {
   Profile _profile = Profile.empty();
   bool _syncing = false;
   DateTime? _lastSyncedAt; // when this device last completed a push, if ever
+  bool _askingBackground = false; // a background-read request is in flight
+  bool _sheetShown = false; // the app left the foreground during that request
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     unawaited(_load());
+    unawaited(widget.services.checkBackgroundRead());
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _height.dispose();
     super.dispose();
   }
+
+  // Back from Health Connect (or anywhere): background access may have
+  // changed there, so the row re-reads it.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(widget.services.checkBackgroundRead());
+    } else if (_askingBackground) {
+      // Health Connect's sheet covers the app while it asks.
+      _sheetShown = true;
+    }
+  }
+
+  // Asks for background reads. Health Connect stops showing its sheet after
+  // repeated denials; if no sheet came up and they are still missing, this
+  // opens Health Connect's settings, the one place left to grant them (under
+  // Cairn → Additional access). A sheet the user saw and declined is
+  // respected.
+  Future<void> _allowBackgroundReads() async {
+    setState(() {
+      _askingBackground = true;
+      _sheetShown = false;
+    });
+    try {
+      final status = await widget.services.askForBackgroundRead();
+      if (status == BackgroundReadStatus.missing && !_sheetShown) {
+        await openHealthConnectPermissions();
+      }
+    } finally {
+      if (mounted) setState(() => _askingBackground = false);
+    }
+  }
+
+  // Android only: hidden on iOS, which has no separate background-read
+  // permission, and while the status is unknown (never checked, or the check
+  // failed) rather than claiming one.
+  Widget _backgroundRow(BackgroundReadStatus? status, AppLocalizations l10n) {
+    if (status == null || status == BackgroundReadStatus.notApplicable) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Card(
+        child: ListTile(
+          title: Text(l10n.settingsBackgroundSync),
+          subtitle: Text(_backgroundReadText(status, l10n)),
+          trailing: status == BackgroundReadStatus.missing
+              ? TextButton(
+                  onPressed: _askingBackground ? null : _allowBackgroundReads,
+                  child: Text(l10n.settingsBackgroundSyncAllow),
+                )
+              : null,
+        ),
+      ),
+    );
+  }
+
+  String _backgroundReadText(
+    BackgroundReadStatus status,
+    AppLocalizations l10n,
+  ) => switch (status) {
+    BackgroundReadStatus.granted ||
+    BackgroundReadStatus.notApplicable => l10n.settingsBackgroundSyncOn,
+    BackgroundReadStatus.missing => l10n.settingsBackgroundSyncOff,
+    BackgroundReadStatus.unavailable => l10n.settingsBackgroundSyncUnavailable,
+  };
 
   Future<void> _load() async {
     final credentials = await widget.services.coordinator.currentCredentials();
@@ -262,6 +336,10 @@ class _SettingsPageState extends State<SettingsPage> {
                 ],
               ),
             ),
+          ),
+          ValueListenableBuilder<BackgroundReadStatus?>(
+            valueListenable: widget.services.backgroundRead,
+            builder: (context, status, _) => _backgroundRow(status, l10n),
           ),
           const SizedBox(height: 24),
           Text(l10n.settingsProfile, style: theme.textTheme.titleMedium),

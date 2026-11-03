@@ -140,11 +140,17 @@ class HealthDataOperations(
      */
     fun isHealthDataInBackgroundAvailable(call: MethodCall, result: Result) {
         scope.launch {
-            result.success(
-                    healthConnectClient.features.getFeatureStatus(
-                            HealthConnectFeatures.FEATURE_READ_HEALTH_DATA_IN_BACKGROUND
-                    ) == HealthConnectFeatures.FEATURE_STATUS_AVAILABLE
-            )
+            // Cairn patch: an uncaught exception here would crash the process
+            // (see CAIRN_PATCHES.md).
+            try {
+                result.success(
+                        healthConnectClient.features.getFeatureStatus(
+                                HealthConnectFeatures.FEATURE_READ_HEALTH_DATA_IN_BACKGROUND
+                        ) == HealthConnectFeatures.FEATURE_STATUS_AVAILABLE
+                )
+            } catch (e: Exception) {
+                result.error("HEALTH_STATUS_FAILED", "${e.javaClass.simpleName}: ${e.message}", null)
+            }
         }
     }
 
@@ -157,12 +163,18 @@ class HealthDataOperations(
      */
     fun isHealthDataInBackgroundAuthorized(call: MethodCall, result: Result) {
         scope.launch {
-            result.success(
-                    healthConnectClient
-                            .permissionController
-                            .getGrantedPermissions()
-                            .containsAll(listOf(PERMISSION_READ_HEALTH_DATA_IN_BACKGROUND)),
-            )
+            // Cairn patch: an uncaught exception here would crash the process
+            // (see CAIRN_PATCHES.md).
+            try {
+                result.success(
+                        healthConnectClient
+                                .permissionController
+                                .getGrantedPermissions()
+                                .containsAll(listOf(PERMISSION_READ_HEALTH_DATA_IN_BACKGROUND)),
+                )
+            } catch (e: Exception) {
+                result.error("HEALTH_STATUS_FAILED", "${e.javaClass.simpleName}: ${e.message}", null)
+            }
         }
     }
 

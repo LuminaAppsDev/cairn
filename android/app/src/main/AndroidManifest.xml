@@ -24,7 +24,9 @@
         android:label="Cairn"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
-        android:usesCleartextTraffic="false">
+        android:usesCleartextTraffic="false"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules">
         <!-- usesCleartextTraffic=false: OS-level backstop so no dependency can
              ever open an http:// connection; Cairn only talks https anyway. -->
 

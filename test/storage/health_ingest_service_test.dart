@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:cairn/src/health/background_read_status.dart';
 import 'package:cairn/src/health/health_metric.dart';
 import 'package:cairn/src/health/health_repository.dart';
 import 'package:cairn/src/health/health_sample.dart';
@@ -24,6 +25,14 @@ class _FakeRepository implements HealthRepository {
 
   @override
   Future<bool> isAvailable() async => true;
+
+  @override
+  Future<BackgroundReadStatus> backgroundReadStatus() async =>
+      BackgroundReadStatus.notApplicable;
+
+  @override
+  Future<BackgroundReadStatus> requestBackgroundRead() async =>
+      BackgroundReadStatus.notApplicable;
 
   @override
   Future<Set<HealthMetric>> requestAuthorization(

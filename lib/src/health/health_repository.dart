@@ -1,3 +1,4 @@
+import 'package:cairn/src/health/background_read_status.dart';
 import 'package:cairn/src/health/health_metric.dart';
 import 'package:cairn/src/health/health_sample.dart';
 
@@ -34,6 +35,15 @@ abstract interface class HealthRepository {
     required DateTime start,
     required DateTime end,
   });
+
+  /// Whether the store may be read while the app is in the background — what
+  /// a background sync checks before it tries.
+  Future<BackgroundReadStatus> backgroundReadStatus();
+
+  /// Asks for background reads (Health Connect's sheet on Android) and returns
+  /// the status afterwards. Only meaningful while it is
+  /// [BackgroundReadStatus.missing].
+  Future<BackgroundReadStatus> requestBackgroundRead();
 }
 
 /// Thrown when the OS health store cannot be reached at all — on Android, when

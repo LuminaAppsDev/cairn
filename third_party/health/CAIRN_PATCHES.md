@@ -63,7 +63,20 @@ checks permissions before each refresh, so this only happens when a permission
 is revoked mid-run, for example during a long catch-up. A type that isn't in
 `mapToType` at all (unsupported) still returns an empty list, as upstream does.
 
-### 3. Formatting (no behaviour change)
+### 3. Don't crash on a failed background-read status check
+
+`android/src/main/kotlin/cachet/plugins/health/HealthDataOperations.kt`,
+`isHealthDataInBackgroundAvailable` and `isHealthDataInBackgroundAuthorized`:
+upstream runs the Health Connect call inside `scope.launch` with no `catch`.
+Cairn calls both on every background run and every foreground refresh, so a
+binder failure (for example while Health Connect updates) would go uncaught
+on the main thread and crash the process. Each body is now wrapped in
+`try`/`catch`, which replies `result.error("HEALTH_STATUS_FAILED", …)`. The
+plugin's Dart side maps that to `false`, so a failed check reads as "not
+granted" and fails closed: the background run skips reading instead of
+risking a read without the permission.
+
+### 4. Formatting (no behaviour change)
 
 The repo's format gate runs `dart format .` over everything, including this
 directory. Even with upstream's own `formatter: page_width: 120`, it reformats
@@ -98,7 +111,7 @@ them would widen the diff against upstream.
 
 1. Replace everything here except this file with the new release's copied
    paths (list above).
-2. Re-apply patches 1 and 2, or drop them if upstream now reports read errors.
+2. Re-apply patches 1–3, or drop those upstream has made unnecessary.
 3. Run `dart format .`, then the full gate: `dart analyze --fatal-infos
    --fatal-warnings`, `flutter test`, and `flutter build apk` to compile the
    Kotlin.
