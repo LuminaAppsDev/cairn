@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented in this file.
 
+## Unreleased
+
+### Changed
+
+- **The F-Droid recipe carries 0.4.0.** Three `Builds:` blocks appended at
+  version codes 101/102/103, pinned to the full hash of the commit tagged
+  `v0.4.0`. They are byte-identical clones of the 0.3.0 blocks except for
+  `versionName`, `versionCode` and `commit`, so the wrapped `binary:` fields
+  keep the form fdroiddata's CI accepts. `CurrentVersion` is now 0.4.0 and
+  `CurrentVersionCode` 103. The 0.2.3 and 0.3.0 blocks stay.
+
 ## 0.4.0 — 2026-11-03
 
 ### Added
