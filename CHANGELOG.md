@@ -58,6 +58,11 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- **The analyzer skips `build/`, `android/` and `ios/`.** They hold build
+  output and the native projects, and no Dart today; Cairn's Dart lives in
+  `lib/` and `test/`. Dart placed under these paths later skips the lints.
+  (`ios/.symlinks` was never analyzed: the analyzer skips hidden directories.)
+
 - **workmanager 0.10.10, up from 0.9.0+3** (workmanager_android 0.10.9,
   workmanager_apple 0.9.11). 0.10.x checks `android.builtInKotlin` before
   skipping the Kotlin plugin, so the `workmanager_android` pin is gone. Its

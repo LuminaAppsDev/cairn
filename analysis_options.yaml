@@ -9,6 +9,11 @@ analyzer:
     - lib/l10n/app_localizations*.dart
     # Vendored upstream code keeps its own style; see its CAIRN_PATCHES.md.
     - third_party/**
+    # Build output and the native projects. Cairn's Dart lives in lib/ and
+    # test/; any Dart placed under these paths skips the lints.
+    - build/**
+    - android/**
+    - ios/**
   language:
     strict-casts: true
     strict-inference: true
