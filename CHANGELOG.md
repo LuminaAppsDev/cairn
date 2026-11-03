@@ -85,6 +85,44 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- **A background sync could tear the manifest under a foreground one.** The UI
+  and the WorkManager / BGTaskScheduler isolate each build their own services.
+  The in-isolate guards (the refresh single-flight, the store's manifest lock)
+  never saw the other isolate. Two refreshes could therefore interleave writes
+  through the same fixed `.tmp` paths. A torn `manifest.json` reads as empty
+  and drops every anchor, and mid catch-up that loses the unread gap. A shard
+  compaction's rename could also drop the other isolate's appends.
+
+  Two layers now, so that neither has to be perfect.
+
+  First, the manifest, shard compaction, sync journal, profile and locale each
+  write a temp file of their own, named uniquely per write, and rename it into
+  place. Even
+  if two writes overlap, each lands whole and the last one wins. The worst case
+  is a lost update, which costs a deduplicated re-read. Temp files are never
+  uploaded, and those a crash leaves behind are swept at startup once they are
+  an hour old.
+
+  Second, refreshes take a process-wide lock built on `IsolateNameServer`,
+  whose name registration is an atomic test-and-set across isolates. File
+  locks can't do this, because POSIX record locks are per process.
+  - A foreground refresh waits its turn.
+  - A background one skips if a refresh is running, since it would only redo
+    that work on a short OS budget.
+  - A holder whose isolate died is taken over by either side after two
+    unanswered immediate-priority pings, which the VM answers even
+    mid-computation. Android destroys a stopped worker's engine without
+    running `finally`, for instance when connectivity drops mid-sync.
+  - A foreground refresh takes over a holder that is alive but hung only after
+    15 minutes. That is longer than any legitimate background hold (WorkManager
+    stops a worker after 10 minutes), so a slow but working sync is never
+    overlapped. A shard compaction's rename would otherwise drop the other
+    refresh's appends.
+
+  WebDAV responses also got an idle timeout on their body, not just their
+  headers. It cancels a stalled stream instead of leaving the connection
+  buffering.
+
 - **A failed health read was treated as "no data", and its span was never read
   again.** Two layers turned a failed read into an empty list. The `health`
   plugin's Android reader caught every exception, and Cairn's own repository

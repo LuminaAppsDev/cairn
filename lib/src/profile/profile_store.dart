@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:cairn/src/profile/profile.dart';
+import 'package:cairn/src/storage/atomic_file.dart';
 import 'package:path/path.dart' as p;
 
 /// Reads and writes the user [Profile] as `/Cairn/profile.json`.
@@ -59,12 +60,10 @@ final class JsonProfileStore {
   /// Writes [profile] atomically (temp file + rename).
   Future<void> write(Profile profile) async {
     await root.create(recursive: true);
-    final tmp = File('${_file.path}.tmp');
     final json = const JsonEncoder.withIndent(
       '  ',
     ).convert(profile.toJson(updatedAt: _now()));
-    await tmp.writeAsString(json, flush: true);
-    await tmp.rename(_file.path);
+    await writeFileAtomically(_file, json);
   }
 
   /// Writes raw profile JSON [bytes] verbatim (atomic temp + rename), without
@@ -72,8 +71,6 @@ final class JsonProfileStore {
   /// last-write-wins compares true edit times rather than the pull time.
   Future<void> writeRaw(List<int> bytes) async {
     await root.create(recursive: true);
-    final tmp = File('${_file.path}.tmp');
-    await tmp.writeAsBytes(bytes, flush: true);
-    await tmp.rename(_file.path);
+    await writeBytesAtomically(_file, bytes);
   }
 }

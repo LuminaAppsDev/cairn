@@ -17,15 +17,17 @@ void callbackDispatcher() {
     // manual sync can never diverge.
     final services = await CairnServices.create();
     try {
-      final result = await services.refresh();
+      // null → the UI isolate is mid-refresh, doing this very work; skip.
+      final result = await services.refreshIfIdle();
       // Retry only a (likely transient) upload failure; a read failure won't
       // be helped by an immediate retry — the next periodic run will try again.
-      return result.status != RefreshStatus.syncFailed;
+      return result == null || result.status != RefreshStatus.syncFailed;
     } on Object catch (error) {
-      // services.refresh() returns typed results and doesn't throw, so this is
-      // a truly unexpected error (e.g. isolate/store setup). The message can't
-      // carry the app password (it's never in an exception here). Don't retry —
-      // an immediate retry rarely helps and spends the OS background budget.
+      // refreshIfIdle() returns typed results (or null) and doesn't throw, so
+      // this is a truly unexpected error (e.g. isolate/store setup). The
+      // message can't carry the app password (it's never in an exception
+      // here). Don't retry — an immediate retry rarely helps and spends the
+      // OS background budget.
       debugPrint('Background sync failed: $error');
       return true;
     } finally {

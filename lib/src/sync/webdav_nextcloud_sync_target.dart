@@ -7,8 +7,9 @@ import 'package:cairn/src/sync/nextcloud_sync_target.dart';
 import 'package:http/http.dart' as http;
 import 'package:xml/xml.dart';
 
-/// Per-request timeout, so an unresponsive server can't hang a sync forever.
-const Duration _requestTimeout = Duration(seconds: 30);
+/// Default per-request timeout, so an unresponsive server can't hang a sync
+/// forever.
+const Duration _defaultRequestTimeout = Duration(seconds: 30);
 
 /// Body of the `PROPFIND` request: ask only for the properties the sync engine
 /// uses (type, ETag, size). Insignificant whitespace keeps each line short.
@@ -24,10 +25,12 @@ const String _propfindBody = '''
 /// Authentication is HTTP Basic with the Login Flow v2 app password, only ever
 /// sent over the `https` URL the credentials enforce.
 final class WebDavNextcloudSyncTarget implements NextcloudSyncTarget {
-  /// Creates a target for [credentials]. [client] is injectable for tests.
+  /// Creates a target for [credentials]. [client] and `requestTimeout` are
+  /// injectable for tests.
   WebDavNextcloudSyncTarget({
     required NextcloudCredentials credentials,
     http.Client? client,
+    this._requestTimeout = _defaultRequestTimeout,
   }) : _base = credentials.webDavBase,
        _authHeader = _basicAuth(credentials),
        _client = client ?? http.Client();
@@ -35,6 +38,10 @@ final class WebDavNextcloudSyncTarget implements NextcloudSyncTarget {
   final Uri _base;
   final String _authHeader;
   final http.Client _client;
+
+  /// Limit for a response's headers to arrive, and for each gap between body
+  /// chunks — an idle timeout, so a slow but flowing download isn't cut off.
+  final Duration _requestTimeout;
 
   static String _basicAuth(NextcloudCredentials credentials) {
     final raw = utf8.encode(
@@ -95,26 +102,17 @@ final class WebDavNextcloudSyncTarget implements NextcloudSyncTarget {
     try {
       streamed = await _client.send(request).timeout(_requestTimeout);
     } on TimeoutException {
-      throw NextcloudSyncException(
-        'GET $remotePath timed out',
-        kind: SyncErrorKind.timedOut,
-        retryable: true,
-      );
+      throw _timedOut('GET $remotePath');
     }
     // Read the body with a hard ceiling so a hostile or misconfigured response
     // (even on an error status) can't exhaust memory before a size check runs.
     // Reading to completion — or aborting, which cancels the subscription —
     // releases the connection, so the status is checked only afterwards.
-    final builder = BytesBuilder(copy: false);
-    await for (final chunk in streamed.stream) {
-      builder.add(chunk);
-      if (maxBytes != null && builder.length > maxBytes) {
-        throw NextcloudSyncException(
-          'GET $remotePath too large',
-          kind: SyncErrorKind.tooLarge,
-        );
-      }
-    }
+    final body = await _readBody(
+      streamed,
+      'GET $remotePath',
+      maxBytes: maxBytes,
+    );
     if (streamed.statusCode == 404) {
       throw NextcloudNotFoundException(remotePath);
     }
@@ -125,7 +123,7 @@ final class WebDavNextcloudSyncTarget implements NextcloudSyncTarget {
         statusCode: streamed.statusCode,
       );
     }
-    return builder.takeBytes();
+    return body;
   }
 
   /// Creates each missing parent collection of [remotePath], top-down. An
@@ -205,17 +203,58 @@ final class WebDavNextcloudSyncTarget implements NextcloudSyncTarget {
     } else if (body != null) {
       request.body = body;
     }
+    final http.StreamedResponse streamed;
     try {
-      final streamed = await _client.send(request).timeout(_requestTimeout);
-      return http.Response.fromStream(streamed);
+      streamed = await _client.send(request).timeout(_requestTimeout);
     } on TimeoutException {
-      throw NextcloudSyncException(
-        '$method ${url.path} timed out',
+      throw _timedOut('$method ${url.path}');
+    }
+    // The body too: a connection that stalls after the headers would
+    // otherwise hang the sync — and every refresh queued behind it.
+    final responseBody = await _readBody(streamed, '$method ${url.path}');
+    return http.Response.bytes(
+      responseBody,
+      streamed.statusCode,
+      request: streamed.request,
+      headers: streamed.headers,
+      isRedirect: streamed.isRedirect,
+      persistentConnection: streamed.persistentConnection,
+      reasonPhrase: streamed.reasonPhrase,
+    );
+  }
+
+  /// Reads [streamed]'s body, failing with a timeout when no chunk arrives
+  /// for [_requestTimeout] — which also cancels the stalled subscription, so
+  /// the connection is released rather than left buffering. [maxBytes] caps
+  /// the size; [what] names the request in errors.
+  Future<Uint8List> _readBody(
+    http.StreamedResponse streamed,
+    String what, {
+    int? maxBytes,
+  }) async {
+    final builder = BytesBuilder(copy: false);
+    try {
+      await for (final chunk in streamed.stream.timeout(_requestTimeout)) {
+        builder.add(chunk);
+        if (maxBytes != null && builder.length > maxBytes) {
+          throw NextcloudSyncException(
+            '$what too large',
+            kind: SyncErrorKind.tooLarge,
+          );
+        }
+      }
+    } on TimeoutException {
+      throw _timedOut(what);
+    }
+    return builder.takeBytes();
+  }
+
+  static NextcloudSyncException _timedOut(String what) =>
+      NextcloudSyncException(
+        '$what timed out',
         kind: SyncErrorKind.timedOut,
         retryable: true,
       );
-    }
-  }
 
   /// MIME type for an uploaded file, so the server doesn't have to guess.
   static String _contentTypeFor(String remotePath) {

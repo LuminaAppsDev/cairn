@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -154,5 +155,37 @@ void main() {
       () => target.getFile('Cairn/profile.json', maxBytes: 10),
       throwsA(isA<NextcloudSyncException>()),
     );
+  });
+
+  group('a response that stalls after its headers', () {
+    // A body stream that never delivers: the connection died after the
+    // headers. Without an idle timeout the sync — and every refresh queued
+    // behind it — would hang.
+    WebDavNextcloudSyncTarget stalling(int status) => WebDavNextcloudSyncTarget(
+      credentials: credentials,
+      requestTimeout: const Duration(milliseconds: 50),
+      client: MockClient.streaming(
+        (request, body) async => http.StreamedResponse(
+          StreamController<List<int>>().stream,
+          status,
+        ),
+      ),
+    );
+
+    Matcher timedOut() => throwsA(
+      isA<NextcloudSyncException>().having(
+        (e) => e.kind,
+        'kind',
+        SyncErrorKind.timedOut,
+      ),
+    );
+
+    test('times out a WebDAV call instead of hanging', () {
+      expect(() => stalling(207).list('Cairn'), timedOut());
+    });
+
+    test('times out a download instead of hanging', () {
+      expect(() => stalling(200).getFile('Cairn/profile.json'), timedOut());
+    });
   });
 }

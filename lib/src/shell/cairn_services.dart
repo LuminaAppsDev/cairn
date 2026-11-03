@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cairn/src/health/health_metric.dart';
 import 'package:cairn/src/health/health_package_repository.dart';
 import 'package:cairn/src/health/health_repository.dart';
@@ -5,7 +7,9 @@ import 'package:cairn/src/profile/profile.dart';
 import 'package:cairn/src/profile/profile_store.dart';
 import 'package:cairn/src/profile/profile_sync.dart';
 import 'package:cairn/src/query/health_query_service.dart';
+import 'package:cairn/src/shell/cross_isolate_lock.dart';
 import 'package:cairn/src/shell/error_reporting.dart';
+import 'package:cairn/src/storage/atomic_file.dart';
 import 'package:cairn/src/storage/health_ingest_service.dart';
 import 'package:cairn/src/storage/jsonl_omh_file_store.dart';
 import 'package:cairn/src/sync/flutter_secure_token_store.dart';
@@ -78,13 +82,19 @@ final class CairnServices {
     required this.coordinator,
     required this.profileSync,
     required this.repository,
-  });
+    CrossIsolateLock? refreshLock,
+  }) : _refreshLock = refreshLock ?? CrossIsolateLock('cairn.refresh');
 
   /// Resolves the on-device stores and wires the services together.
   static Future<CairnServices> create() async {
     final client = http.Client();
     final store = await JsonlOmhFileStore.appDocuments();
     final journalStore = await JsonSyncJournalStore.appSupport();
+    // Clear temp files a crashed write left behind; best-effort, off the path.
+    unawaited(sweepStaleTempFiles(store.root));
+    unawaited(
+      sweepStaleTempFiles(journalStore.file.parent, recursive: false),
+    );
     final profileStore = JsonProfileStore(root: store.root);
     final coordinator = NextcloudSyncCoordinator(
       auth: HttpNextcloudAuth(client: client),
@@ -143,17 +153,38 @@ final class CairnServices {
 
   Future<RefreshResult>? _refreshInFlight;
 
+  /// Serialises refreshes across the isolates of the process (UI and
+  /// background sync), which would otherwise interleave their writes to the
+  /// manifest, shards and sync journal.
+  final CrossIsolateLock _refreshLock;
+
   /// Reads new data from the OS health store into the cache, bumps
   /// [dataRevision] so screens reload, then pushes to Nextcloud if connected.
   /// Returns a typed [RefreshResult] the UI localises.
   ///
-  /// Concurrent calls (e.g. the Home button and a Sleep pull-to-refresh) are
-  /// coalesced into a single run, so ingest/sync never overlap.
+  /// Concurrent calls in this isolate (e.g. the Home button and a Sleep
+  /// pull-to-refresh) are coalesced into a single run; a refresh in another
+  /// isolate of the process (background sync) is waited out first — the
+  /// foreground path; background sync uses [refreshIfIdle]. Either way,
+  /// ingest/sync never overlap.
   Future<RefreshResult> refresh() {
-    return _refreshInFlight ??= _runRefresh().whenComplete(() {
-      _refreshInFlight = null;
-    });
+    return _refreshInFlight ??= _refreshLock
+        .run(_runUnlessDisposed)
+        .whenComplete(() => _refreshInFlight = null);
   }
+
+  /// The background variant of [refresh]: runs only if no other isolate is
+  /// refreshing right now, and returns `null` (having done nothing) if one is.
+  /// Background sync is opportunistic, so it skips rather than waits — which
+  /// also keeps it within the OS's short background budget.
+  Future<RefreshResult?> refreshIfIdle() => _refreshLock.tryRun(_runRefresh);
+
+  // A refresh that waited for the lock may find the services torn down by
+  // then (the shell disposed meanwhile); it must not touch them.
+  Future<RefreshResult> _runUnlessDisposed() async =>
+      _disposed ? const RefreshResult(RefreshStatus.ok) : _runRefresh();
+
+  bool _disposed = false;
 
   /// Pulls a newer `profile.json` down from Nextcloud (if any) and adopts it,
   /// updating [profile] so the dashboard reflects it without a manual reload.
@@ -194,8 +225,9 @@ final class CairnServices {
       reportIfBug(error, stack, whileDoing: 'reading the OS health store');
       return const RefreshResult(RefreshStatus.readFailed);
     }
-    // New local data is on disk → refresh the screens even if the upload fails.
-    dataRevision.value++;
+    // New local data is on disk → refresh the screens even if the upload fails
+    // (unless the shell was torn down mid-refresh: no screens, no notifier).
+    if (!_disposed) dataRevision.value++;
     SyncReport? report;
     try {
       if (await coordinator.isConnected()) report = await coordinator.syncNow();
@@ -222,6 +254,7 @@ final class CairnServices {
 
   /// Releases the shared HTTP client and the notifiers.
   void dispose() {
+    _disposed = true;
     profile.dispose();
     dataRevision.dispose();
     client.close();

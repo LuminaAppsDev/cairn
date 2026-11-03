@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:cairn/src/health/health_metric.dart';
+import 'package:cairn/src/storage/atomic_file.dart';
 import 'package:cairn/src/storage/manifest.dart';
 import 'package:cairn/src/storage/omh_file_store.dart';
 import 'package:flutter/foundation.dart';
@@ -70,10 +71,8 @@ final class JsonlOmhFileStore implements OmhFileStore {
     // Atomic temp + rename, like the manifest, so a crash can't leave the shard
     // truncated (a partial append would only lose the trailing line; a partial
     // rewrite could lose the whole day).
-    final tmp = File('${file.path}.tmp');
     final lines = dataPoints.map(jsonEncode).join('\n');
-    await tmp.writeAsString('$lines\n', flush: true);
-    await tmp.rename(file.path);
+    await writeFileAtomically(file, '$lines\n');
   }
 
   @override
@@ -175,12 +174,10 @@ final class JsonlOmhFileStore implements OmhFileStore {
 
   Future<void> _writeManifest(Manifest manifest) async {
     await root.create(recursive: true);
-    final tmp = File('${_manifestFile.path}.tmp');
     final json = const JsonEncoder.withIndent(
       '  ',
     ).convert(manifest.toJson(updatedAt: _now()));
-    await tmp.writeAsString(json, flush: true);
-    await tmp.rename(_manifestFile.path);
+    await writeFileAtomically(_manifestFile, json);
   }
 
   static DateTime _dateOnly(DateTime t) => DateTime(t.year, t.month, t.day);

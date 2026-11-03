@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:cairn/src/health/health_metric.dart';
@@ -8,6 +9,7 @@ import 'package:cairn/src/profile/profile_store.dart';
 import 'package:cairn/src/profile/profile_sync.dart';
 import 'package:cairn/src/query/health_query_service.dart';
 import 'package:cairn/src/shell/cairn_services.dart';
+import 'package:cairn/src/shell/cross_isolate_lock.dart';
 import 'package:cairn/src/storage/jsonl_omh_file_store.dart';
 import 'package:cairn/src/sync/nextcloud_auth.dart';
 import 'package:cairn/src/sync/nextcloud_credentials.dart';
@@ -150,6 +152,7 @@ void main() {
   CairnServices servicesOver(
     HealthRepository repository, {
     NextcloudSyncTarget? target,
+    CrossIsolateLock? refreshLock,
   }) {
     final root = Directory(p.join(dir.path, 'Cairn'))..createSync();
     final store = JsonlOmhFileStore(root: root);
@@ -176,6 +179,7 @@ void main() {
         download: () async => null,
       ),
       repository: repository,
+      refreshLock: refreshLock,
     );
   }
 
@@ -272,6 +276,68 @@ void main() {
     await services.refresh();
 
     expect(reported, isEmpty);
+  });
+
+  group('while another isolate is refreshing', () {
+    // A second lock under the same name stands in for the other isolate's
+    // refresh; the name-to-port mapping is process-wide either way.
+    const lockName = 'cairn.test.refresh';
+    late Completer<void> otherDone;
+    late Future<void> otherRefresh;
+
+    setUp(() {
+      otherDone = Completer<void>();
+      otherRefresh = CrossIsolateLock(lockName).run(() => otherDone.future);
+    });
+    tearDown(() async {
+      if (!otherDone.isCompleted) otherDone.complete();
+      await otherRefresh;
+    });
+
+    CairnServices servicesSharing() => servicesOver(
+      _PartlyFailingRepository(HealthMetric.heartRate),
+      refreshLock: CrossIsolateLock(
+        lockName,
+        pollInterval: const Duration(milliseconds: 10),
+      ),
+    );
+
+    test('a foreground refresh waits its turn', () async {
+      final services = servicesSharing();
+      addTearDown(services.dispose);
+
+      var finished = false;
+      final refresh = services.refresh().then((_) => finished = true);
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(finished, isFalse);
+      // Not merely unfinished: ingest itself hasn't started.
+      expect(services.dataRevision.value, 0);
+
+      otherDone.complete();
+      await refresh;
+      expect(finished, isTrue);
+    });
+
+    test('a background refresh skips instead of waiting', () async {
+      final services = servicesSharing();
+      addTearDown(services.dispose);
+
+      expect(await services.refreshIfIdle(), isNull);
+      expect(services.dataRevision.value, 0);
+    });
+  });
+
+  test('a refresh after dispose does nothing, and does not throw', () async {
+    // E.g. one that waited for the lock while the shell was torn down: the
+    // notifiers and the HTTP client are gone by the time it runs.
+    final services = servicesOver(
+      _PartlyFailingRepository(HealthMetric.heartRate),
+    )..dispose();
+
+    final result = await services.refresh();
+
+    expect(result.status, RefreshStatus.ok);
+    expect(await services.store.lastSyncAnchor(HealthMetric.weight), isNull);
   });
 
   test('a coalesced concurrent refresh resolves for both callers', () async {

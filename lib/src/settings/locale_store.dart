@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:cairn/src/storage/atomic_file.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -45,11 +46,9 @@ final class LocaleStore {
   /// Writes [languageCode] atomically; `null` clears it (follow the system).
   Future<void> write(String? languageCode) async {
     await file.parent.create(recursive: true);
-    final tmp = File('${file.path}.tmp');
     final json = const JsonEncoder.withIndent('  ').convert(<String, Object?>{
       'locale': ?languageCode,
     });
-    await tmp.writeAsString(json, flush: true);
-    await tmp.rename(file.path);
+    await writeFileAtomically(file, json);
   }
 }

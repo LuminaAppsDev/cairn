@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:cairn/src/storage/atomic_file.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -126,9 +127,7 @@ final class JsonSyncJournalStore {
   /// Writes [journal] atomically (temp file + rename).
   Future<void> write(SyncJournal journal) async {
     await file.parent.create(recursive: true);
-    final tmp = File('${file.path}.tmp');
     final json = const JsonEncoder.withIndent('  ').convert(journal.toJson());
-    await tmp.writeAsString(json, flush: true);
-    await tmp.rename(file.path);
+    await writeFileAtomically(file, json);
   }
 }
