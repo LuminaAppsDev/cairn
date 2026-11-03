@@ -1,0 +1,9 @@
+Die Hintergrund-Synchronisierung liest jetzt neue Daten: Cairn bittet Health
+Connect um Lesen im Hintergrund und um deine ganze Historie, die sonst erst 30
+Tage vor Cairns erstem Zugriff beginnt. Die Einstellungen zeigen beides und
+fragen bei Bedarf erneut.
+
+Behoben: Nach langer Pause stürzt die App beim Öffnen nicht mehr ab.
+Fehlgeschlagenes Lesen wird später wiederholt statt übersprungen, und ein
+fehlerhafter Typ hält die anderen nicht auf. Cairns Dateien landen nicht in
+Android-Backups.

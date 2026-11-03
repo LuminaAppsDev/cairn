@@ -1,0 +1,8 @@
+Background sync can now read new data: Cairn asks Health Connect for
+background reads, and for your full history, which Health Connect otherwise
+limits to 30 days before Cairn first got access. Settings shows both and asks
+again when one is missing.
+
+Fixed: opening the app after a long break no longer crashes it. A failed
+health read is retried later instead of skipping that data, and one failing
+type no longer stops the others. Cairn's files stay out of Android backups.

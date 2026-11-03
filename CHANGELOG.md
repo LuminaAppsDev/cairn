@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented in this file.
 
-## Unreleased
+## 0.4.0 — 2026-11-03
 
 ### Added
 
@@ -34,10 +34,11 @@ All notable changes to this project are documented in this file.
   Settings has a "Background sync" row on Android that shows whether reading
   in the background is allowed, missing, or not supported by this Health
   Connect, and re-checks when you return to the app. When it's missing, an
-  **Allow** button asks again. If Health Connect has stopped showing its
-  sheet after repeated denials, the button opens Health Connect's settings
-  instead, where the user can turn it on under Cairn → Additional access. Permission sheets now open one at a time,
-  because the plugin can only track one at once.
+  **Allow** button asks again. If Health Connect has stopped showing its sheet
+  after repeated denials, the button opens Health Connect's settings instead,
+  where the user can turn it on under Cairn → Additional access. Permission
+  sheets now open one at a time, because the plugin can only track one at
+  once.
 
 - **The counter-signed code-signing certificate, committed at
   `nextcloud_app/cairn.crt`.** It carries nothing secret, and keeping it in the
@@ -85,11 +86,12 @@ All notable changes to this project are documented in this file.
   workmanager_android now always declares `FOREGROUND_SERVICE_SHORT_SERVICE`
   and tags WorkManager's foreground service as `shortService`, for expedited
   work. Cairn schedules only periodic work, which can't be expedited, so the
-  app manifest removes both again and the merged manifest matches 0.9.x. On iOS, `AppDelegate`
-  moves from the deprecated `registerPeriodicTask(withIdentifier:frequency:)`
-  to `earliestBeginInSeconds:`, which the old name only forwarded to. The
-  plugin's new auto-registration of launch handlers is guarded per
-  identifier, so `AppDelegate`'s registration isn't doubled.
+  app manifest removes both again and the merged manifest matches 0.9.x. On
+  iOS, `AppDelegate` moves from the deprecated
+  `registerPeriodicTask(withIdentifier:frequency:)` to
+  `earliestBeginInSeconds:`, which the old name only forwarded to. The
+  plugin's new auto-registration of launch handlers is guarded per identifier,
+  so `AppDelegate`'s registration isn't doubled.
 
 - **flutter_secure_storage 11.2.0, up from 10.3.4** (darwin 0.4.3). v11
   drops the ciphers and the EncryptedSharedPreferences backend deprecated in
@@ -137,17 +139,17 @@ All notable changes to this project are documented in this file.
     so the old ones were removed by hand; `docs/RELEASE.md` §2a-deps now says
     so for future SDK bumps.
 
-- **Dependencies upgraded within their existing constraints.** fl_chart
-  1.3.0, flutter_secure_storage 10.3.4, path_provider 2.1.6, url_launcher
-  6.3.3, uuid 4.6.0, plus their transitive packages. Two of those cross a
-  major version: equatable 3.0.0 (via fl_chart) and package_config 3.0.0. Regenerating `verification-metadata.xml` with
-  `--refresh-dependencies` added no pins. `pubspec.yaml` now pins
-  `workmanager_android` to 0.9.0+2, so workmanager stays at 0.9.0+3: 0.9.0+3
-  through 0.9.3 skip the Kotlin plugin on AGP 9 without checking
-  `android.builtInKotlin`,
-  which the Flutter template sets to `false`, so its plugin class is never
-  compiled and the APK build fails. 0.10.x checks the flag. Major bumps
-  (flutter_secure_storage 11, workmanager 0.10) follow separately.
+- **Dependencies upgraded within their existing constraints.** fl_chart 1.3.0,
+  flutter_secure_storage 10.3.4, path_provider 2.1.6, url_launcher 6.3.3, uuid
+  4.6.0, plus their transitive packages. Two of those cross a major version:
+  equatable 3.0.0 (via fl_chart) and package_config 3.0.0. Regenerating
+  `verification-metadata.xml` with `--refresh-dependencies` added no pins.
+  `pubspec.yaml` now pins `workmanager_android` to 0.9.0+2, so workmanager
+  stays at 0.9.0+3: 0.9.0+3 through 0.9.3 skip the Kotlin plugin on AGP 9
+  without checking `android.builtInKotlin`, which the Flutter template sets to
+  `false`, so its plugin class is never compiled and the APK build fails.
+  0.10.x checks the flag. Major bumps (flutter_secure_storage 11, workmanager
+  0.10) follow separately.
 
 - **The `health` plugin is vendored at `third_party/health`, with a small
   patch.** Upstream's Android reader returns an empty list when a read fails,
@@ -155,8 +157,9 @@ All notable changes to this project are documented in this file.
   13.3.2, still does. Callers can't tell that from "no data", so the patch
   reports both as errors. It is the copied 13.3.1 release plus those two hunks
   and a one-time `dart format` of four files. `CAIRN_PATCHES.md` next to it
-  records the upstream hash, the hunks, and how to upgrade. The copy is a path dependency, so F-Droid's `pub get
-  --enforce-lockfile` builds it from this repository with no extra host.
+  records the upstream hash, the hunks, and how to upgrade. The copy is a path
+  dependency, so F-Droid's `pub get --enforce-lockfile` builds it from this
+  repository with no extra host.
 
 - **Phase 7 is complete: the Nextcloud web app is published on the app store.**
   `docs/DESIGN.md` §15 records the exit criteria as met — it installs on a
@@ -362,22 +365,6 @@ All notable changes to this project are documented in this file.
   service already did, and the seam tests pin the date. Checked that nothing
   else is exposed: the only remaining test that reads the wall clock is the one
   covering `SystemClock` itself, which asserts a delta rather than a date.
-
-- **The release build ran the tests in the runner's timezone.** `ci.yml` pins
-  `TZ: Europe/Berlin` because the parity fixtures are authored there and Dart
-  takes its zone from the environment; `release.yml` never did. The parity suite
-  is new in 0.3.0, so the release path had never met it — 0.2.3 predates it —
-  and the first tag that reached it failed on a runner in America/New_York, with
-  every sleep night landing a day early. Nothing was built or published: the
-  test step runs before the APK steps.
-
-  The pin is scoped to the "Analyze and test" step rather than the workflow
-  `env:`, unlike ci.yml. Everything after that step compiles the APK F-Droid
-  rebuilds and compares byte-for-byte, and a verification failure publishes
-  nothing at all. The build inherits the runner's zone today and verifies
-  against a buildserver with its own, so the bytes are evidently
-  zone-independent — but only the tests need Berlin, and the one workflow where
-  being wrong is silent is not the place to confirm that.
 
 ### Security
 
@@ -1231,6 +1218,22 @@ All notable changes to this project are documented in this file.
   publish steps create two `mktemp` files; with a single `trap` registered after
   both, a failing second `mktemp` aborts the step under `set -e` before the trap
   exists, orphaning the first file.
+
+- **The release build ran the tests in the runner's timezone.** `ci.yml` pins
+  `TZ: Europe/Berlin` because the parity fixtures are authored there and Dart
+  takes its zone from the environment; `release.yml` never did. The parity suite
+  is new in 0.3.0, so the release path had never met it — 0.2.3 predates it —
+  and the first tag that reached it failed on a runner in America/New_York, with
+  every sleep night landing a day early. Nothing was built or published: the
+  test step runs before the APK steps.
+
+  The pin is scoped to the "Analyze and test" step rather than the workflow
+  `env:`, unlike ci.yml. Everything after that step compiles the APK F-Droid
+  rebuilds and compares byte-for-byte, and a verification failure publishes
+  nothing at all. The build inherits the runner's zone today and verifies
+  against a buildserver with its own, so the bytes are evidently
+  zone-independent — but only the tests need Berlin, and the one workflow where
+  being wrong is silent is not the place to confirm that.
 
 ### Security
 
