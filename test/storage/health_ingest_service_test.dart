@@ -10,10 +10,13 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// Records read windows and returns canned samples per metric.
 class _FakeRepository implements HealthRepository {
-  _FakeRepository(this.samples);
+  _FakeRepository(this.samples, {this.failAtRead});
 
   final Map<HealthMetric, List<HealthSample>> samples;
   final List<({HealthMetric metric, DateTime start, DateTime end})> reads = [];
+
+  /// 1-based read that throws, standing in for the process dying mid-ingest.
+  final int? failAtRead;
 
   @override
   Future<bool> isAvailable() async => true;
@@ -30,10 +33,12 @@ class _FakeRepository implements HealthRepository {
     required DateTime end,
   }) async {
     reads.add((metric: metric, start: start, end: end));
-    // Behave like the real store: only return samples whose effective time is
-    // within the requested window, so window logic is actually exercised.
+    if (reads.length == failAtRead) throw StateError('simulated crash');
+    // Behave like the real store: match on a sample's start time within the
+    // half-open window, as Health Connect's read filter does, so window and
+    // slice-boundary logic is actually exercised.
     return (samples[metric] ?? const [])
-        .where((s) => !s.start.isBefore(start) && !s.start.isAfter(end))
+        .where((s) => !s.start.isBefore(start) && s.start.isBefore(end))
         .toList();
   }
 }
@@ -174,15 +179,19 @@ void main() {
         store: store,
         clock: () => firstNow,
       ).ingest({HealthMetric.steps});
-      // First run has no anchor → window starts ~30 days back.
+      // First run has no anchor → window starts ~30 days back, read as a
+      // 16-day catch-up (7 + 7 + 2) plus the reconcile window.
       expect(
-        repo.reads.last.start.isBefore(
+        repo.reads.first.start.isBefore(
           firstNow.subtract(const Duration(days: 29)),
         ),
         isTrue,
       );
+      expect(repo.reads, hasLength(4));
+      expect(repo.reads.last.end.isAtSameMomentAs(firstNow), isTrue);
 
       final secondNow = DateTime(2026, 6, 15, 12);
+      repo.reads.clear();
       await HealthIngestService(
         repository: repo,
         store: store,
@@ -191,12 +200,14 @@ void main() {
       // Second run goes back the reconcile window (well before the anchor) so
       // backdated entries are still caught.
       expect(
-        repo.reads.last.start.isAtSameMomentAs(
+        repo.reads.first.start.isAtSameMomentAs(
           secondNow.subtract(const Duration(days: 14)),
         ),
         isTrue,
       );
-      expect(repo.reads.last.start.isBefore(firstNow), isTrue);
+      expect(repo.reads.first.start.isBefore(firstNow), isTrue);
+      // No catch-up span, so the reconcile window is a single read.
+      expect(repo.reads, hasLength(1));
     },
   );
 
@@ -432,5 +443,142 @@ void main() {
     )).map((dp) => asMap(asMap(dp['body'])['step_count'])['value']).toSet();
     // Compaction skipped: 14 was NOT dropped, and 7050 was appended.
     expect(values, containsAll(<double>[14, 7050]));
+  });
+
+  group('a long sync gap', () {
+    final now = DateTime(2026, 6, 14, 12);
+    final anchor = now.subtract(const Duration(days: 60));
+    // One reading a day across the whole gap, each exactly on a day boundary,
+    // so every slice boundary carries a sample (none lost, none doubled).
+    final daily = [
+      for (var d = 0; d < 60; d++)
+        ScalarSample(
+          metric: HealthMetric.heartRate,
+          value: 60,
+          unit: 'count/min',
+          start: anchor.add(Duration(days: d)),
+          end: anchor.add(Duration(days: d)),
+          source: source,
+        ),
+    ];
+
+    test(
+      'catches up in week slices, then reads the reconcile window',
+      () async {
+        await store.setSyncAnchor(HealthMetric.heartRate, anchor);
+        final repo = _FakeRepository({HealthMetric.heartRate: daily});
+        final results = await HealthIngestService(
+          repository: repo,
+          store: store,
+          clock: () => now,
+        ).ingest({HealthMetric.heartRate});
+
+        final reads = repo.reads;
+        expect(reads.first.start.isAtSameMomentAs(anchor), isTrue);
+        for (var i = 1; i < reads.length; i++) {
+          expect(reads[i].start.isAtSameMomentAs(reads[i - 1].end), isTrue);
+        }
+        // Every catch-up read spans at most a week ...
+        for (final read in reads.take(reads.length - 1)) {
+          final span = read.end.difference(read.start);
+          expect(span, lessThanOrEqualTo(const Duration(days: 7)));
+        }
+        // ... and the trailing reconcile window is still one read.
+        final reconcileStart = now.subtract(const Duration(days: 14));
+        expect(reads.last.start.isAtSameMomentAs(reconcileStart), isTrue);
+        expect(reads.last.end.isAtSameMomentAs(now), isTrue);
+        expect(results.single.dataPointCount, daily.length);
+      },
+    );
+
+    test('a failure mid catch-up keeps the finished slices', () async {
+      await store.setSyncAnchor(HealthMetric.heartRate, anchor);
+      final repo = _FakeRepository({
+        HealthMetric.heartRate: daily,
+      }, failAtRead: 3);
+      final ingest = HealthIngestService(
+        repository: repo,
+        store: store,
+        clock: () => now,
+      );
+      await expectLater(
+        ingest.ingest({HealthMetric.heartRate}),
+        throwsStateError,
+      );
+
+      // Two slices landed, so the next run resumes after them instead of
+      // re-reading (and re-crashing on) the whole gap.
+      final resumed = await store.lastSyncAnchor(HealthMetric.heartRate);
+      expect(resumed!.isAtSameMomentAs(repo.reads[1].end), isTrue);
+      final onDisk = await store.readRange(
+        metric: HealthMetric.heartRate,
+        from: anchor,
+        to: now,
+      );
+      expect(onDisk, hasLength(14));
+
+      // The resumed run reads on from that anchor and finishes the gap.
+      await HealthIngestService(
+        repository: _FakeRepository({HealthMetric.heartRate: daily}),
+        store: store,
+        clock: () => now,
+      ).ingest({HealthMetric.heartRate});
+      final afterResume = await store.readRange(
+        metric: HealthMetric.heartRate,
+        from: anchor,
+        to: now,
+      );
+      expect(afterResume, hasLength(daily.length));
+      final finished = await store.lastSyncAnchor(HealthMetric.heartRate);
+      expect(finished!.isAtSameMomentAs(now), isTrue);
+    });
+
+    // Episode integrity itself is covered by the sleep tests above; this pins
+    // the mechanism — one read, so the aggregator always sees whole nights.
+    test('sleep is read in one call even over a long gap', () async {
+      await store.setSyncAnchor(HealthMetric.sleep, anchor);
+      final repo = _FakeRepository({HealthMetric.sleep: const []});
+      await HealthIngestService(
+        repository: repo,
+        store: store,
+        clock: () => now,
+      ).ingest({HealthMetric.sleep});
+
+      final read = repo.reads.single;
+      expect(read.start.isAtSameMomentAs(anchor), isTrue);
+      expect(read.end.isAtSameMomentAs(now), isTrue);
+    });
+
+    test('a record straddling a slice boundary is read exactly once', () async {
+      // A near-whole-day total across the first boundary: matched on its
+      // start time, it belongs to the slice before the boundary and only that
+      // one — neither lost nor doubled.
+      final boundary = anchor.add(const Duration(days: 7));
+      final straddling = ScalarSample(
+        metric: HealthMetric.steps,
+        value: 8000,
+        unit: 'steps',
+        start: boundary.subtract(const Duration(hours: 12)),
+        end: boundary.add(const Duration(hours: 11)),
+        source: source,
+      );
+      await store.setSyncAnchor(HealthMetric.steps, anchor);
+      final repo = _FakeRepository({
+        HealthMetric.steps: [straddling],
+      });
+      final results = await HealthIngestService(
+        repository: repo,
+        store: store,
+        clock: () => now,
+      ).ingest({HealthMetric.steps});
+
+      expect(results.single.dataPointCount, 1);
+      final onDisk = await store.readRange(
+        metric: HealthMetric.steps,
+        from: anchor,
+        to: now,
+      );
+      expect(onDisk, hasLength(1));
+    });
   });
 }

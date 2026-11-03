@@ -76,6 +76,28 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- **Opening the app after a long break crashed it, every time.** Ingest read
+  each metric from its sync anchor to now in one call, and the health plugin
+  holds a whole read in memory several times over before handing it to Dart.
+  After a few months of watch heart rate and steps that ran the process out of
+  memory a few seconds after launch. The anchor only moved after a successful
+  read, so each relaunch retried the same window and crashed again. Seen on a
+  production Pixel; turning off heart rate and steps in Health Connect stopped
+  it.
+
+  `HealthIngestService` now reads any catch-up span older than the 14-day
+  reconcile window in slices of at most a week, advancing the anchor after
+  each. A week is half the window every run already reads in one go. The window
+  itself is still one read, so a normal run makes the same calls as before. A
+  catch-up killed partway resumes from the last finished slice. A record that
+  crosses a slice boundary is read exactly once: Health Connect matches reads
+  on a record's start time alone, `start <= t < end`, which we checked in the
+  platform source rather than assuming it. Sleep is never
+  sliced: its nightly episodes are built per read, so a slice boundary in the
+  middle of a night would write two partial episodes, and a few segments a
+  night never needs slicing. Five older ingest and sync risks that the review
+  turned up are recorded in `docs/DESIGN.md` §14 for follow-up.
+
 - **The new seam tests read the wall clock, so they were true only on the day
   they were written.** Almost every query is defined relative to today, and
   `QueryFactory` built its own `SystemClock` — so a controller test asserting

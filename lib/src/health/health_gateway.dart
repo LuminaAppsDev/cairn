@@ -28,8 +28,9 @@ abstract interface class HealthGateway {
   /// hides read-authorisation status (DESIGN.md §4.2).
   Future<bool?> hasReadPermission(HealthMetric metric);
 
-  /// Reads samples of [metric] recorded in `[start, end]`, converted to Cairn's
-  /// [HealthSample] model. May throw if the OS denies the read.
+  /// Reads samples of [metric] whose start time is in `[start, end)` (Health
+  /// Connect's own read filter; HealthKit via `.strictStartDate`), converted
+  /// to Cairn's [HealthSample] model. May throw if the OS denies the read.
   Future<List<HealthSample>> readSamples({
     required HealthMetric metric,
     required DateTime start,

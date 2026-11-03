@@ -84,36 +84,88 @@ final class HealthIngestService {
   final OmhMapper _mapper;
   final DateTime Function() _now;
 
-  /// Ingests each metric in [metrics] over `[start, now]`, where `start` is
+  /// Longest span read from the health store in one call during a catch-up.
+  /// The plugin holds a whole read in memory several times over (records,
+  /// maps, channel bytes), so an unbounded catch-up after a long gap — months
+  /// of heart rate — runs the process out of memory. A week is half the
+  /// default reconcile window every run reads in one go, so a slice fits
+  /// unless that week is far denser than an ordinary fortnight (days of 1 Hz
+  /// workout heart rate), in which case that one slice still would not.
+  static const _maxSlice = Duration(days: 7);
+
+  /// Ingests each metric in [metrics] over `[start, now)`, where `start` is
   /// the earlier of the sync anchor and `now - reconcileLookback` (or `now -
-  /// initialLookback` on first run), then advances the anchor. Returns the
-  /// per-metric count of **newly written** datapoints.
+  /// initialLookback` on first run). The trailing reconcile window is one
+  /// read, as on every run; only a catch-up span before it (a long sync gap,
+  /// or the first run) is read in slices of at most [_maxSlice], advancing the
+  /// anchor after each, so a run killed mid catch-up resumes from the last
+  /// finished slice instead of re-reading (and re-crashing on) the whole gap.
+  ///
+  /// Slice boundaries lose and double nothing: Health Connect matches reads on
+  /// a record's start time alone, `start <= t < end` (the platform's
+  /// `RecordHelper.getReadTableWhereClause`), so a record crossing a boundary
+  /// is read exactly once, by the slice holding its start.
+  /// Returns the per-metric count of **newly written** datapoints.
   Future<List<IngestResult>> ingest(Set<HealthMetric> metrics) async {
     final results = <IngestResult>[];
-    final now = _now();
+    // Whole seconds: source dedup keys competing readings on whole seconds,
+    // so a boundary mid-second could split a pair across two reads.
+    final now = _wholeSeconds(_now());
+    final reconcileStart = now.subtract(reconcileLookback);
     for (final metric in metrics) {
       final anchor = await store.lastSyncAnchor(metric);
-      final start = _windowStart(anchor, now);
-      final samples = await repository.readSamples(
-        metric: metric,
-        start: start,
-        end: now,
-      );
-      final count = await _persist(metric, samples);
-      await store.setSyncAnchor(metric, now);
+      // Older anchors may carry sub-second parts; boundaries must not.
+      var start = _wholeSeconds(_windowStart(anchor, now, reconcileStart));
+      var count = 0;
+      // Sleep is never sliced: its nightly episodes are aggregated per read,
+      // so a boundary mid-night would persist two partial episodes — and a few
+      // segments a night never needs slicing.
+      while (metric != HealthMetric.sleep && start.isBefore(reconcileStart)) {
+        final sliceEnd = start.add(_maxSlice);
+        final end = sliceEnd.isBefore(reconcileStart)
+            ? sliceEnd
+            : reconcileStart;
+        count += await _ingestSpan(metric, start, end);
+        start = end;
+      }
+      count += await _ingestSpan(metric, start, now);
       results.add(IngestResult(metric: metric, dataPointCount: count));
     }
     return results;
   }
 
+  /// Reads `[start, end)`, persists it and advances the anchor to [end].
+  /// Returns the count of newly written datapoints.
+  Future<int> _ingestSpan(
+    HealthMetric metric,
+    DateTime start,
+    DateTime end,
+  ) async {
+    final samples = await repository.readSamples(
+      metric: metric,
+      start: start,
+      end: end,
+    );
+    final count = await _persist(metric, samples);
+    await store.setSyncAnchor(metric, end);
+    return count;
+  }
+
   /// First run (no anchor) reads the full [initialLookback]; later runs read
   /// from the earlier of the anchor and `now - reconcileLookback`, so a
   /// sync gap is covered by the anchor and recent backdating by the window.
-  DateTime _windowStart(DateTime? anchor, DateTime now) {
+  DateTime _windowStart(
+    DateTime? anchor,
+    DateTime now,
+    DateTime reconcileStart,
+  ) {
     if (anchor == null) return now.subtract(initialLookback);
-    final reconcileStart = now.subtract(reconcileLookback);
     return anchor.isBefore(reconcileStart) ? anchor : reconcileStart;
   }
+
+  static DateTime _wholeSeconds(DateTime t) => t.subtract(
+    Duration(milliseconds: t.millisecond, microseconds: t.microsecond),
+  );
 
   Future<int> _persist(HealthMetric metric, List<HealthSample> samples) async {
     // Datapoints grouped by the local calendar day of the source reading, so
