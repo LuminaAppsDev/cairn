@@ -128,9 +128,15 @@ class HealthDataReader(
                                 records
                             )
                             for (rec in filteredRecords) {
-                                healthConnectData.addAll(
-                                    dataConverter.convertRecord(rec, dataType, dataUnit)
-                                )
+                                // Cairn patch: heart rate goes across as one map per record,
+                                // its samples as arrays (see CAIRN_PATCHES.md).
+                                if (rec is HeartRateRecord) {
+                                    healthConnectData.add(dataConverter.convertHeartRateSeries(rec))
+                                } else {
+                                    healthConnectData.addAll(
+                                        dataConverter.convertRecord(rec, dataType, dataUnit)
+                                    )
+                                }
                             }
                         }
                     }

@@ -33,6 +33,7 @@ migrate_working_dir/
 .pub-cache/
 .pub/
 /build/
+/third_party/health/android/build/
 flutter_*.png
 linked_*.ds
 unlinked.ds

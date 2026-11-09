@@ -1454,7 +1454,9 @@ class Health {
       const thresHold = 100;
       // If the no. of data points are larger than the threshold,
       // call the compute method to spawn an Isolate to do the parsing in a separate thread.
-      if (fetchedDataPoints.length > thresHold) {
+      // Cairn patch: a heart-rate point from Android is a whole record (patch 5),
+      // so the count says nothing about the samples to parse.
+      if (fetchedDataPoints.length > thresHold || dataType == HealthDataType.HEART_RATE) {
         return compute(_parse, msg);
       }
       return _parse(msg);
@@ -1541,7 +1543,7 @@ class Health {
 
   List<HealthDataPoint> _parse(Map<String, dynamic> message) {
     final dataType = message["dataType"] as HealthDataType;
-    final dataPoints = message["dataPoints"] as List;
+    final dataPoints = expandSampleSeries(message["dataPoints"] as List); // Cairn patch
     String? unit = message["unit"] as String?;
 
     return dataPoints
@@ -1938,4 +1940,27 @@ Map<String, dynamic> _serializeWorkoutRouteLocationForNative(WorkoutRouteLocatio
   addIfNotNull('courseAccuracy', location.courseAccuracy);
 
   return map;
+}
+
+/// Cairn patch: Android sends heart rate as one map per record, its samples as
+/// parallel `sample_times` and `sample_values` arrays, instead of a map per
+/// sample (see CAIRN_PATCHES.md). Expands each such map back into upstream's
+/// map per sample, lazily, so each can be dropped once parsed; any other point
+/// passes through unchanged.
+@visibleForTesting
+Iterable<Object?> expandSampleSeries(Iterable<Object?> points) =>
+    points.expand((point) => point is Map && point['sample_times'] is List<int> ? _expandSeries(point) : [point]);
+
+List<Map<Object?, Object?>> _expandSeries(Map<Object?, Object?> series) {
+  final times = series['sample_times']! as List<int>;
+  final values = series['sample_values']! as List<int>;
+  if (values.length != times.length) {
+    throw FormatException('Heart-rate series with ${times.length} sample times but ${values.length} values');
+  }
+  final base = Map.of(series)
+    ..remove('sample_times')
+    ..remove('sample_values');
+  return [
+    for (var i = 0; i < times.length; i++) {...base, 'value': values[i], 'date_from': times[i], 'date_to': times[i]},
+  ];
 }

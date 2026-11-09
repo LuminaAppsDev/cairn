@@ -13,6 +13,37 @@ All notable changes to this project are documented in this file.
   keep the form fdroiddata's CI accepts. `CurrentVersion` is now 0.4.0 and
   `CurrentVersionCode` 103. The 0.2.3 and 0.3.0 blocks stay.
 
+### Fixed
+
+- **Cairn no longer closes seconds after launch while it can read heart
+  rate.** 0.4.0 split only a sync gap older than the 14-day reconcile window
+  into week-long reads, and read that window in one go on every run. The
+  vendored plugin turns every heart-rate sample into its own Java map and
+  encodes them all into one channel reply, about 1 KB of Java heap per
+  sample. A Fitbit writes about 38,000 samples a day, so the fortnight's read
+  ran the 256 MB heap out of memory (`OutOfMemoryError` in the method-channel
+  encoder, from the device's crash log) on every launch.
+
+  Two changes fix it, both measured on the device that crashed:
+  - **Heart rate crosses the channel as arrays.** Plugin patch 5 sends each
+    heart-rate record as one map with its sample times and values as
+    `long[]`, and the plugin's Dart parser expands them back into exactly the
+    points upstream returns, so nothing downstream changes. A re-read wrote
+    no duplicates.
+  - **Every read is sliced, the reconcile window included.** Each slice ends
+    at local midnight, so it fills whole day files: a day at a time for heart
+    rate, and 15 days for steps, activity and weight, longer than the
+    reconcile window, so a normal run still reads those in one go. Sleep is
+    still one read.
+
+  Together they took a day's read from up to 104 MB of Java heap in use to a
+  heap that stayed under 57 MB for the whole fortnight. The sync anchor now
+  only moves forward: a slice ending at or before it leaves it in place, so a
+  steady-state run rewrites the manifest once per metric, not once per slice.
+  An anchor in the future, written while the clock ran ahead, is treated as
+  no anchor, so the forward-only anchor can't hold it there and the run reads
+  back as far as a first run.
+
 ## 0.4.0 — 2026-11-03
 
 ### Added

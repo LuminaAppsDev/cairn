@@ -32,9 +32,10 @@ class IngestResult {
   /// Why ingesting [metric] stopped early, if it did: a [HealthReadException]
   /// when the store failed a read, a [HealthStoreUnavailableException] or a
   /// [FileSystemException], or else some other local failure or a bug. For a
-  /// metric the run never reached, it is the failure that ended the run. Its
-  /// anchor stays at the last finished span, so a later run retries from
-  /// there.
+  /// metric the run never reached, it is the failure that ended the run. The
+  /// run never moves the anchor past the span that failed, so a later run
+  /// retries it — from the anchor, or, if an earlier run's anchor is already
+  /// past it, from the reconcile window while the span is still inside it.
   final Object? error;
 
   /// Where [error] was thrown.
@@ -106,22 +107,39 @@ final class HealthIngestService {
   final OmhMapper _mapper;
   final DateTime Function() _now;
 
-  /// Longest span read from the health store in one call during a catch-up.
-  /// The plugin holds a whole read in memory several times over (records,
-  /// maps, channel bytes), so an unbounded catch-up after a long gap — months
-  /// of heart rate — runs the process out of memory. A week is half the
-  /// default reconcile window every run reads in one go, so a slice fits
-  /// unless that week is far denser than an ordinary fortnight (days of 1 Hz
-  /// workout heart rate), in which case that one slice still would not.
-  static const _maxSlice = Duration(days: 7);
+  /// End of the slice of [metric] that starts at [start]: the local midnight a
+  /// day on for heart rate and 15 days on for the other metrics, or [now] if
+  /// that comes first. Ending at midnight keeps each slice to whole day shards;
+  /// only a heart-rate record crossing midnight reaches one shard ahead.
+  ///
+  /// Slices bound memory: the plugin holds a whole read in the 256 MB Java
+  /// heap at once. A fortnight of a Fitbit's heart rate (~38,000 samples a
+  /// day) in one read ran it out of memory on every launch. With heart rate
+  /// sent as arrays per record (third_party/health/CAIRN_PATCHES.md, patch 5)
+  /// and read a day at a time, that device's heap stayed under 57 MB for the
+  /// whole fortnight. The other metrics hold at most a few records an hour, so
+  /// their slice outlasts the reconcile window: a steady-state run reads them
+  /// in one go.
+  /// Sleep is one read: its nightly episodes are aggregated per read, so a
+  /// boundary mid-night would persist two partial episodes.
+  static DateTime _sliceEnd(HealthMetric metric, DateTime start, DateTime now) {
+    final days = switch (metric) {
+      HealthMetric.heartRate => 1,
+      HealthMetric.steps || HealthMetric.activity || HealthMetric.weight => 15,
+      HealthMetric.sleep => null,
+    };
+    if (days == null) return now;
+    final midnight = DateTime(start.year, start.month, start.day + days);
+    return midnight.isBefore(now) ? midnight : now;
+  }
 
   /// Ingests each metric in [metrics] over `[start, now)`, where `start` is
   /// the earlier of the sync anchor and `now - reconcileLookback` (or `now -
-  /// initialLookback` on first run). The trailing reconcile window is one
-  /// read, as on every run; only a catch-up span before it (a long sync gap,
-  /// or the first run) is read in slices of at most [_maxSlice], advancing the
-  /// anchor after each, so a run killed mid catch-up resumes from the last
-  /// finished slice instead of re-reading (and re-crashing on) the whole gap.
+  /// initialLookback` on first run). The span — the trailing reconcile window
+  /// included — is read in slices up to each [_sliceEnd], moving the anchor
+  /// forward after each, so a run killed mid-span resumes no later than its
+  /// last finished slice instead of re-reading (and re-crashing on) the whole
+  /// span.
   ///
   /// Slice boundaries lose and double nothing: Health Connect matches reads on
   /// a record's start time alone, `start <= t < end` (the platform's
@@ -129,8 +147,8 @@ final class HealthIngestService {
   /// is read exactly once, by the slice holding its start.
   ///
   /// A metric that fails — a read the store failed, a bug — is reported with
-  /// [IngestResult.error] and keeps its anchor at the last finished span; the
-  /// remaining metrics still run. Three failures end the run after their
+  /// [IngestResult.error], and the anchor isn't moved past the failed slice;
+  /// the remaining metrics still run. Three failures end the run after their
   /// metric, as they aren't that metric's own: the store gone
   /// ([HealthStoreUnavailableException]), its read quota spent (a
   /// [HealthReadFailure.rateLimited] read, where each further read would only
@@ -182,22 +200,28 @@ final class HealthIngestService {
       final anchor = await store.lastSyncAnchor(metric);
       // Older anchors may carry sub-second parts; boundaries must not.
       var start = _wholeSeconds(_windowStart(anchor, now, reconcileStart));
-      // First run: pin the window start, so a read failing before any span
-      // lands retries from here rather than from a start that slides forward
-      // with now.
-      if (anchor == null) await store.setSyncAnchor(metric, start);
-      // Sleep is never sliced: its nightly episodes are aggregated per read,
-      // so a boundary mid-night would persist two partial episodes — and a few
-      // segments a night never needs slicing.
-      while (metric != HealthMetric.sleep && start.isBefore(reconcileStart)) {
-        final sliceEnd = start.add(_maxSlice);
-        final end = sliceEnd.isBefore(reconcileStart)
-            ? sliceEnd
-            : reconcileStart;
-        count += await _ingestSpan(metric, start, end);
-        start = end;
+      // The anchor only moves forward: a slice inside the reconcile window can
+      // end before what an earlier run already read. A first run pins the
+      // window start, so a read failing before any slice lands retries from
+      // here rather than from a start that slides forward with now. An anchor
+      // past now (written while the clock ran ahead) is reset the same way, or
+      // it would hold there until real time caught up.
+      DateTime reached;
+      if (anchor == null || anchor.isAfter(now)) {
+        reached = start;
+        await store.setSyncAnchor(metric, reached);
+      } else {
+        reached = anchor;
       }
-      count += await _ingestSpan(metric, start, now);
+      do {
+        final end = _sliceEnd(metric, start, now);
+        count += await _ingestSpan(metric, start, end);
+        if (end.isAfter(reached)) {
+          reached = end;
+          await store.setSyncAnchor(metric, reached);
+        }
+        start = end;
+      } while (start.isBefore(now));
     } on Object catch (error, stack) {
       // The failure stops this metric. The span it was on never advanced the
       // anchor, so the next run retries it. Logged by type only: an arbitrary
@@ -215,8 +239,8 @@ final class HealthIngestService {
     return IngestResult(metric: metric, dataPointCount: count);
   }
 
-  /// Reads `[start, end)`, persists it and advances the anchor to [end].
-  /// Returns the count of newly written datapoints.
+  /// Reads `[start, end)` and persists it. Returns the count of newly written
+  /// datapoints.
   Future<int> _ingestSpan(
     HealthMetric metric,
     DateTime start,
@@ -227,9 +251,7 @@ final class HealthIngestService {
       start: start,
       end: end,
     );
-    final count = await _persist(metric, samples);
-    await store.setSyncAnchor(metric, end);
-    return count;
+    return await _persist(metric, samples);
   }
 
   /// First run (no anchor) reads the full [initialLookback]; later runs read
@@ -240,7 +262,9 @@ final class HealthIngestService {
     DateTime now,
     DateTime reconcileStart,
   ) {
-    if (anchor == null) return now.subtract(initialLookback);
+    if (anchor == null || anchor.isAfter(now)) {
+      return now.subtract(initialLookback);
+    }
     return anchor.isBefore(reconcileStart) ? anchor : reconcileStart;
   }
 

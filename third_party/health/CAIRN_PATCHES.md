@@ -135,6 +135,31 @@ an unresolvable include makes `dart format` ignore the whole file, including
 `page_width: 120`. On a fresh checkout it would then wrap nine files at 80
 columns and fail CI's format gate.
 
+### 5. Send heart rate as one map per record, its samples as arrays
+
+`android/src/main/kotlin/cachet/plugins/health/HealthDataConverter.kt` (new
+`convertHeartRateSeries`), `HealthDataReader.kt` (`getData`'s default branch)
+and `lib/src/health_plugin.dart` (`_parse`, new `expandSampleSeries`).
+Upstream turns every heart-rate sample into its own seven-entry Java map and
+encodes them all into one channel reply. A Fitbit writes about 38,000 samples
+a day (measured on a Pixel 8a: ~1,400 records of ~30 samples), and at about
+1 KB of Java heap per sample a fortnight's read ran the 256 MB heap out of
+memory. Even a day held up to 104 MB. With this patch, the same fortnight
+read a day at a time kept the heap under 57 MB.
+
+`getData` now sends each `HeartRateRecord` as one map: the base fields
+(`uuid`, `source_id`, `source_name`, `recording_method`) once, plus
+`sample_times` (epoch ms) and `sample_values` (bpm) as `long[]`, which the
+codec carries as `Int64List`. `_parse` expands each such map back into
+upstream's map per sample (`value`, `date_from` = `date_to` = the sample's
+time) before building `HealthDataPoint`s, so callers see exactly what
+upstream returns. Arrays of unequal length throw a `FormatException`. Other types, and the by-UUID and changes paths, still use
+`convertRecord`. iOS never sends the new keys. The expansion is lazy, so
+each per-sample map can be dropped once parsed. `_dataQuery` parses heart
+rate on a background isolate whatever the point count, as a point is now a
+whole record. In Cairn, `test/health/sample_series_test.dart` pins the
+expansion.
+
 ## Known upstream quirks, deliberately left alone
 
 These were found in review. Neither is made worse by the patches, and fixing
@@ -159,7 +184,9 @@ them would widen the diff against upstream.
 
 1. Replace everything here except this file with the new release's copied
    paths (list above).
-2. Re-apply patches 1–3, or drop those upstream has made unnecessary.
+2. Re-apply patches 1–3 and 5, or drop those upstream has made unnecessary.
+   Patch 5 has a Kotlin and a Dart half that only work together, and no test
+   checks that `_parse` still calls `expandSampleSeries`: re-apply both.
 3. Run `dart format .`, then the full gate: `dart analyze --fatal-infos
    --fatal-warnings`, `flutter test`, and `flutter build apk` to compile the
    Kotlin. On macOS, also `flutter build ios --no-codesign` to compile the

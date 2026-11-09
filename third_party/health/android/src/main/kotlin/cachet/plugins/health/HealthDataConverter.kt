@@ -11,7 +11,21 @@ import androidx.health.connect.client.records.metadata.Metadata
  * that can be serialized and passed to the Flutter layer.
  */
 class HealthDataConverter {
-    
+
+    /**
+     * Cairn patch: converts a heart-rate record to one map, its samples as parallel
+     * `sample_times` (epoch ms) and `sample_values` (bpm) arrays, instead of
+     * [convertRecord]'s map per sample. A watch writes tens of thousands of samples
+     * a day, and a map per sample costs about 1 KB of the Java heap; the Dart side
+     * expands these back to upstream's per-sample maps (see CAIRN_PATCHES.md).
+     */
+    fun convertHeartRateSeries(record: HeartRateRecord): Map<String, Any?> =
+        createBaseRecord(record.metadata).apply {
+            val samples = record.samples
+            put("sample_times", LongArray(samples.size) { samples[it].time.toEpochMilli() })
+            put("sample_values", LongArray(samples.size) { samples[it].beatsPerMinute })
+        }
+
     /**
      * Converts a Health Connect record to a list of Flutter-compatible maps.
      * Handles various record types including instant records, interval records, and complex types.

@@ -204,15 +204,15 @@ void main() {
         store: store,
         clock: () => firstNow,
       ).ingest({HealthMetric.steps});
-      // First run has no anchor → window starts ~30 days back, read as a
-      // 16-day catch-up (7 + 7 + 2) plus the reconcile window.
+      // First run has no anchor → window starts ~30 days back, read in slices
+      // ending at local midnight 15 days on, then today up to now.
       expect(
         repo.reads.first.start.isBefore(
           firstNow.subtract(const Duration(days: 29)),
         ),
         isTrue,
       );
-      expect(repo.reads, hasLength(4));
+      expect(repo.reads, hasLength(3));
       expect(repo.reads.last.end.isAtSameMomentAs(firstNow), isTrue);
 
       final secondNow = DateTime(2026, 6, 15, 12);
@@ -231,10 +231,31 @@ void main() {
         isTrue,
       );
       expect(repo.reads.first.start.isBefore(firstNow), isTrue);
-      // No catch-up span, so the reconcile window is a single read.
+      // No catch-up span: the reconcile window is one read, as a steps slice
+      // outlasts it.
       expect(repo.reads, hasLength(1));
     },
   );
+
+  test('slices ending before the anchor leave it in place', () async {
+    // Steady state: the last run read up to an hour ago. The reconcile
+    // window's first slices end long before that, and must not move the
+    // anchor back — not even when a later slice fails.
+    final now = DateTime(2026, 6, 14, 12);
+    final lastRun = now.subtract(const Duration(hours: 1));
+    await store.setSyncAnchor(HealthMetric.heartRate, lastRun);
+    final results = await HealthIngestService(
+      repository: _FakeRepository({
+        HealthMetric.heartRate: const [],
+      }, failAtRead: 5),
+      store: store,
+      clock: () => now,
+    ).ingest({HealthMetric.heartRate});
+
+    expect(results.single.failed, isTrue);
+    final held = await store.lastSyncAnchor(HealthMetric.heartRate);
+    expect(held!.isAtSameMomentAs(lastRun), isTrue);
+  });
 
   test('imports a backdated reading on a later run', () async {
     final repo = _FakeRepository({HealthMetric.weight: []});
@@ -509,7 +530,7 @@ void main() {
     ];
 
     test(
-      'catches up in week slices, then reads the reconcile window',
+      'reads heart rate a day at a time, the reconcile window included',
       () async {
         await store.setSyncAnchor(HealthMetric.heartRate, anchor);
         final repo = _FakeRepository({HealthMetric.heartRate: daily});
@@ -524,14 +545,20 @@ void main() {
         for (var i = 1; i < reads.length; i++) {
           expect(reads[i].start.isAtSameMomentAs(reads[i - 1].end), isTrue);
         }
-        // Every catch-up read spans at most a week ...
-        for (final read in reads.take(reads.length - 1)) {
+        // A fortnight of watch heart rate in one read ran a real device out
+        // of memory, so no read spans more than a day — not even in the
+        // trailing reconcile window.
+        for (final read in reads) {
           final span = read.end.difference(read.start);
-          expect(span, lessThanOrEqualTo(const Duration(days: 7)));
+          expect(span, lessThanOrEqualTo(const Duration(days: 1)));
         }
-        // ... and the trailing reconcile window is still one read.
-        final reconcileStart = now.subtract(const Duration(days: 14));
-        expect(reads.last.start.isAtSameMomentAs(reconcileStart), isTrue);
+        // Each slice but the last ends at local midnight, so it fills whole
+        // day shards: half of the anchor's day, 59 whole days, half of today.
+        for (final read in reads.take(reads.length - 1)) {
+          final end = read.end;
+          expect(end, DateTime(end.year, end.month, end.day));
+        }
+        expect(reads, hasLength(61));
         expect(reads.last.end.isAtSameMomentAs(now), isTrue);
         expect(results.single.dataPointCount, daily.length);
       },
@@ -562,7 +589,7 @@ void main() {
         from: anchor,
         to: now,
       );
-      expect(onDisk, hasLength(14));
+      expect(onDisk, hasLength(2));
 
       // The resumed run reads on from that anchor and finishes the gap.
       await HealthIngestService(
@@ -609,7 +636,7 @@ void main() {
 
       final heartRate = results.first;
       expect(heartRate.failed, isTrue);
-      expect(heartRate.dataPointCount, 14);
+      expect(heartRate.dataPointCount, 2);
       // Held at the last finished slice — not walked past the failed one.
       final held = await store.lastSyncAnchor(HealthMetric.heartRate);
       expect(held!.isAtSameMomentAs(repo.reads[1].end), isTrue);
@@ -619,6 +646,42 @@ void main() {
       expect(weight.dataPointCount, 1);
       final weightAnchor = await store.lastSyncAnchor(HealthMetric.weight);
       expect(weightAnchor!.isAtSameMomentAs(now), isTrue);
+    });
+
+    test('an anchor past now, from a clock that ran ahead, is reset', () async {
+      // Left in place, the forward-only anchor would hold it until real time
+      // caught up, and a later gap longer than the reconcile window would be
+      // read only from that window. It is treated as no anchor at all.
+      await store.setSyncAnchor(
+        HealthMetric.heartRate,
+        now.add(const Duration(days: 90)),
+      );
+      final firstRunStart = now.subtract(const Duration(days: 30));
+
+      // The reset is saved before the first read, so even a run whose first
+      // read fails doesn't leave the future anchor behind.
+      final failing = _FakeRepository({
+        HealthMetric.heartRate: daily,
+      }, failAtRead: 1);
+      await HealthIngestService(
+        repository: failing,
+        store: store,
+        clock: () => now,
+      ).ingest({HealthMetric.heartRate});
+      expect(
+        failing.reads.single.start.isAtSameMomentAs(firstRunStart),
+        isTrue,
+      );
+      final pinned = await store.lastSyncAnchor(HealthMetric.heartRate);
+      expect(pinned!.isAtSameMomentAs(firstRunStart), isTrue);
+
+      await HealthIngestService(
+        repository: _FakeRepository({HealthMetric.heartRate: daily}),
+        store: store,
+        clock: () => now,
+      ).ingest({HealthMetric.heartRate});
+      final caughtUp = await store.lastSyncAnchor(HealthMetric.heartRate);
+      expect(caughtUp!.isAtSameMomentAs(now), isTrue);
     });
 
     // Episode integrity itself is covered by the sleep tests above; this pins
@@ -641,7 +704,7 @@ void main() {
       // A near-whole-day total across the first boundary: matched on its
       // start time, it belongs to the slice before the boundary and only that
       // one — neither lost nor doubled.
-      final boundary = anchor.add(const Duration(days: 7));
+      final boundary = DateTime(anchor.year, anchor.month, anchor.day + 15);
       final straddling = ScalarSample(
         metric: HealthMetric.steps,
         value: 8000,
@@ -660,6 +723,8 @@ void main() {
         clock: () => now,
       ).ingest({HealthMetric.steps});
 
+      // Steps are read in 15-day slices, so the boundary is a real one.
+      expect(repo.reads.first.end.isAtSameMomentAs(boundary), isTrue);
       expect(results.single.dataPointCount, 1);
       final onDisk = await store.readRange(
         metric: HealthMetric.steps,
