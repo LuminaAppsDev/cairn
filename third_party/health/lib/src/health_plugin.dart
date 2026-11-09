@@ -1456,7 +1456,8 @@ class Health {
       // call the compute method to spawn an Isolate to do the parsing in a separate thread.
       // Cairn patch: a heart-rate point from Android is a whole record (patch 5),
       // so the count says nothing about the samples to parse.
-      if (fetchedDataPoints.length > thresHold || dataType == HealthDataType.HEART_RATE) {
+      final series = Platform.isAndroid && dataType == HealthDataType.HEART_RATE && fetchedDataPoints.isNotEmpty;
+      if (fetchedDataPoints.length > thresHold || series) {
         return compute(_parse, msg);
       }
       return _parse(msg);

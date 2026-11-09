@@ -39,7 +39,8 @@ All notable changes to this project are documented in this file.
   Together they took a day's read from up to 104 MB of Java heap in use to a
   heap that stayed under 57 MB for the whole fortnight. The sync anchor now
   only moves forward: a slice ending at or before it leaves it in place, so a
-  steady-state run rewrites the manifest once per metric, not once per slice.
+  steady-state run no longer rewrites the manifest for the slices of the
+  reconcile window it had already read.
   An anchor in the future, written while the clock ran ahead, is treated as
   no anchor, so the forward-only anchor can't hold it there and the run reads
   back as far as a first run.

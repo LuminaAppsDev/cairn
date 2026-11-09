@@ -155,9 +155,9 @@ upstream's map per sample (`value`, `date_from` = `date_to` = the sample's
 time) before building `HealthDataPoint`s, so callers see exactly what
 upstream returns. Arrays of unequal length throw a `FormatException`. Other types, and the by-UUID and changes paths, still use
 `convertRecord`. iOS never sends the new keys. The expansion is lazy, so
-each per-sample map can be dropped once parsed. `_dataQuery` parses heart
-rate on a background isolate whatever the point count, as a point is now a
-whole record. In Cairn, `test/health/sample_series_test.dart` pins the
+each per-sample map can be dropped once parsed. `_dataQuery` parses a
+non-empty Android heart-rate reply on a background isolate whatever its point
+count, as a point is now a whole record. In Cairn, `test/health/sample_series_test.dart` pins the
 expansion.
 
 ## Known upstream quirks, deliberately left alone
