@@ -294,6 +294,20 @@ version number).
    changes nothing, and copy the result back over the repo copy so the two never
    diverge.
 
+**Open questions (deferred at 0.4.1).** Neither has been decided yet:
+
+- **Bot or hand pin.** `AutoUpdateMode: Version` lets fdroiddata's
+  `checkupdates` bot add a new tag's blocks by itself, with `commit:` set to the
+  tag name rather than the hash, so it races the hand-pinned merge request of
+  step 3. For 0.4.0 the hand-pinned blocks are what landed. Fix: pick one
+  mechanism — `AutoUpdateMode: None`, so hand pins are the only path (and the
+  key-custody note below changes), or drop step 3 and let the bot bump.
+- **Hand-cloned blocks.** Step 3 copies three 41-line blocks by hand each
+  release. A wrong ABI suffix or version code still parses, and surfaces only as
+  a failed verification after the merge request. Fix: run `fdroid checkupdates
+  --auto` with the toolchain above, which generates the blocks from the last
+  three, then replace `commit: vX.Y.Z` with the hash.
+
 **Key custody — read this before losing the keystore.** Enabling reproducible
 builds moves the signing key onto the critical path for *distribution*, not just
 for uploads. `AllowedAPKSigningKeys` pins exactly one certificate, and
