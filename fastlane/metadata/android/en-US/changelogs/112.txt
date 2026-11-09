@@ -1,0 +1,3 @@
+Fixed: Cairn no longer closes a few seconds after opening while it may read
+heart rate. A watch's dense heart rate is now read a day at a time and passed
+on far more compactly, so reading it no longer runs the app out of memory.

@@ -1,0 +1,4 @@
+Behoben: Cairn schließt sich nicht mehr wenige Sekunden nach dem Öffnen, wenn
+es die Herzfrequenz lesen darf. Die dichte Herzfrequenz einer Uhr wird jetzt
+tageweise gelesen und viel kompakter weitergereicht, sodass der App beim Lesen
+nicht mehr der Speicher ausgeht.
